@@ -4,7 +4,8 @@ WORKDIR /app
 
 COPY requirements/base.txt requirements/base.txt
 COPY requirements/worker.txt requirements/worker.txt
-RUN pip install --no-cache-dir -r requirements/worker.txt
+COPY requirements/collector.txt requirements/collector.txt
+RUN pip install --no-cache-dir -r requirements/worker.txt -r requirements/collector.txt
 
 COPY backend/app/schemas/ backend/app/schemas/
 COPY backend/app/db/ backend/app/db/

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>BBC World News</title>
+    <link>https://www.bbc.co.uk/news/world</link>
+    <description>BBC World News</description>
+    <item>
+      <title>Global leaders meet at summit</title>
+      <link>https://www.bbc.co.uk/news/world-12345678</link>
+      <guid>https://www.bbc.co.uk/news/world-12345678</guid>
+      <description>&lt;p&gt;World leaders gathered in Geneva to discuss climate policy.&lt;/p&gt;</description>
+      <pubDate>Fri, 23 May 2026 08:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>Earthquake strikes coastal region</title>
+      <link>https://www.bbc.co.uk/news/world-87654321</link>
+      <guid>https://www.bbc.co.uk/news/world-87654321</guid>
+      <description>A magnitude 6.2 earthquake struck the coastal region early Friday.</description>
+      <pubDate>Fri, 23 May 2026 06:30:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>

@@ -8,9 +8,11 @@ COPY requirements/base.txt requirements/base.txt
 COPY requirements/serve.txt requirements/serve.txt
 COPY requirements/vector.txt requirements/vector.txt
 COPY requirements/worker.txt requirements/worker.txt
-RUN pip install --no-cache-dir -r requirements/serve.txt -r requirements/vector.txt -r requirements/worker.txt
+COPY requirements/collector.txt requirements/collector.txt
+RUN pip install --no-cache-dir -r requirements/serve.txt -r requirements/vector.txt -r requirements/worker.txt -r requirements/collector.txt
 
 COPY backend/ backend/
+COPY workers/ workers/
 COPY backend/entrypoint.sh /app/entrypoint.sh
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 

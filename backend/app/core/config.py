@@ -32,6 +32,10 @@ class Settings(BaseSettings):
 
     BACKEND_INTERNAL_URL: str = "http://backend:8000"
 
+    RSS_COLLECTOR_FETCH_TIMEOUT_SEC: int = 15
+    RSS_SOURCES_CONFIG_PATH: str = ""
+    RSS_COLLECTOR_USER_AGENT: str = "event-intelligence/0.7 (+ei)"
+
     def redacted_env_status(self) -> dict[str, str]:
         fields = [
             "LANGSMITH_TRACING", "LANGSMITH_ENDPOINT", "LANGSMITH_API_KEY",
@@ -40,6 +44,8 @@ class Settings(BaseSettings):
             "LLM_PROVIDER", "LLM_MODEL",
             "EMBEDDING_PROVIDER", "EMBEDDING_MODEL", "EMBEDDING_DIM",
             "MILVUS_COLLECTION", "BACKEND_INTERNAL_URL",
+            "RSS_COLLECTOR_FETCH_TIMEOUT_SEC", "RSS_SOURCES_CONFIG_PATH",
+            "RSS_COLLECTOR_USER_AGENT",
         ]
         result = {}
         for f in fields:

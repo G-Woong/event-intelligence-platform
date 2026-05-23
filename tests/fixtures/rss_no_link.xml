@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Feed With No-Link Entry</title>
+    <link>https://example.com/rss</link>
+    <description>One entry has no link</description>
+    <item>
+      <title>Entry without a link</title>
+      <guid isPermaLink="false">some-guid-no-link</guid>
+      <description>This entry has no link element — should be skipped.</description>
+      <pubDate>Fri, 23 May 2026 09:00:00 +0000</pubDate>
+    </item>
+    <item>
+      <title>Entry with a link</title>
+      <link>https://example.com/with-link</link>
+      <guid>some-guid-with-link</guid>
+      <description>This entry has a link and should be processed.</description>
+      <pubDate>Fri, 23 May 2026 09:05:00 +0000</pubDate>
+    </item>
+  </channel>
+</rss>
