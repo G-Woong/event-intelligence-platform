@@ -25,6 +25,8 @@ class RawEventORM(Base):
     status = Column(String(16), nullable=False, default="collected")
     enqueued_msg_id = Column(String(64), nullable=True)
     error_reason = Column(String(512), nullable=True)
+    event_card_id = Column(UUID(as_uuid=True), nullable=True)
+    processed_at = Column(DateTime(timezone=True), nullable=True)
     raw_metadata = Column(JSONB, nullable=False, server_default="'{}'::jsonb")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())

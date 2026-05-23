@@ -4,10 +4,13 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import func
 
 from backend.app.models.raw_event import RawEventORM
 from backend.app.schemas.events import RawEvent
@@ -35,6 +38,8 @@ def _orm_to_record(row: RawEventORM) -> RawEventRecord:
         status=row.status,
         enqueued_msg_id=row.enqueued_msg_id,
         error_reason=row.error_reason,
+        event_card_id=str(row.event_card_id) if row.event_card_id else None,
+        processed_at=row.processed_at,
         raw_metadata=row.raw_metadata or {},
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -94,6 +99,7 @@ async def create_raw_event(session: AsyncSession, payload: RawEventCreate) -> Ra
             fetched_at=now,
             raw_text=payload.raw_text,
             raw_metadata=payload.raw_metadata,
+            raw_event_id=str(row.id),
         )
         enqueued_msg_id = await asyncio.to_thread(enqueue_raw_event, raw_event)
         await session.execute(
@@ -105,10 +111,60 @@ async def create_raw_event(session: AsyncSession, payload: RawEventCreate) -> Ra
         row.status = "enqueued"
         row.enqueued_msg_id = enqueued_msg_id
     except Exception as exc:
-        logger.error("XADD failed for content_hash=%s: %s", payload.content_hash, exc)
+        logger.warning("xadd_failed raw_event_id=%s reason=%s", row.id, str(exc)[:200])
+        await session.execute(
+            update(RawEventORM)
+            .where(RawEventORM.id == row.id)
+            .values(
+                status="failed",
+                error_reason=f"xadd_failed: {str(exc)[:480]}",
+                updated_at=datetime.now(timezone.utc),
+            )
+        )
+        await session.commit()
+        row.status = "failed"
+        row.error_reason = f"xadd_failed: {str(exc)[:480]}"
 
     return RawEventCreateResponse(
         record=_orm_to_record(row),
         is_duplicate=False,
         enqueued_msg_id=enqueued_msg_id,
     )
+
+
+async def update_status(
+    session: AsyncSession,
+    raw_event_id: str,
+    status: str,
+    error_reason: Optional[str] = None,
+    event_card_id: Optional[str] = None,
+) -> RawEventRecord:
+    values: dict = {"status": status, "updated_at": func.now()}
+    if status in ("processed", "failed"):
+        values["processed_at"] = func.now()
+    if error_reason is not None:
+        values["error_reason"] = error_reason[:500]
+    if event_card_id is not None:
+        values["event_card_id"] = event_card_id
+
+    result = await session.execute(
+        update(RawEventORM).where(RawEventORM.id == raw_event_id).values(**values)
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        raise NoResultFound(f"raw_event_id={raw_event_id} not found")
+
+    row = (
+        await session.execute(select(RawEventORM).where(RawEventORM.id == raw_event_id))
+    ).scalar_one()
+    return _orm_to_record(row)
+
+
+async def get_raw_event(session: AsyncSession, raw_event_id: str) -> RawEventRecord:
+    result = await session.execute(
+        select(RawEventORM).where(RawEventORM.id == raw_event_id)
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        raise NoResultFound(f"raw_event_id={raw_event_id} not found")
+    return _orm_to_record(row)

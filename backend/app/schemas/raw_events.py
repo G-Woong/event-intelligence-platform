@@ -34,6 +34,8 @@ class RawEventRecord(BaseModel):
     status: str
     enqueued_msg_id: Optional[str]
     error_reason: Optional[str]
+    event_card_id: Optional[str] = None
+    processed_at: Optional[datetime] = None
     raw_metadata: dict
     created_at: datetime
     updated_at: datetime
@@ -45,3 +47,9 @@ class RawEventCreateResponse(BaseModel):
     record: RawEventRecord
     is_duplicate: bool
     enqueued_msg_id: Optional[str]
+
+
+class RawEventStatusUpdate(BaseModel):
+    status: str
+    error_reason: Optional[str] = None
+    event_card_id: Optional[str] = None

@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from backend.app.core.logging import configure_logging
+from backend.app.core.observability import setup_langsmith
 from backend.app.db import redis as redis_db, milvus as milvus_db, postgres as postgres_db  # noqa: F401
 from backend.app.api import health, events, themes, sectors, comments, ai_replies, admin, internal
 
@@ -15,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_langsmith()
+
     if redis_db.ping():
         logger.info("Redis: connected")
     else:

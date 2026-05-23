@@ -15,6 +15,7 @@ def enqueue_raw_event(raw_event: RawEvent) -> str:
         "fetched_at": raw_event.fetched_at.isoformat(),
         "raw_text": raw_event.raw_text,
         "raw_metadata": json.dumps(raw_event.raw_metadata),
+        "raw_event_id": raw_event.raw_event_id or "",
     }
     msg_id = redis_db.xadd(_STREAM, payload)
     return msg_id

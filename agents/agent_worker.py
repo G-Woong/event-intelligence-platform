@@ -3,6 +3,11 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
+from typing import Optional
+
+import httpx
+
+from backend.app.core.config import settings
 from backend.app.db import redis as redis_db
 from backend.app.schemas.events import RawEvent
 from agents.graphs.event_processing_graph import run as graph_run
@@ -15,6 +20,25 @@ _GROUP = "group:agent"
 _CONSUMER = "agent-worker-1"
 
 
+def _notify_status(
+    raw_event_id: Optional[str],
+    status: str,
+    error_reason: Optional[str] = None,
+    event_card_id: Optional[str] = None,
+) -> None:
+    if raw_event_id is None:
+        logger.warning("raw_event_id absent — status update skipped status=%s", status)
+        return
+    try:
+        httpx.patch(
+            f"{settings.BACKEND_INTERNAL_URL}/api/admin/raw-events/{raw_event_id}/status",
+            json={"status": status, "error_reason": error_reason, "event_card_id": event_card_id},
+            timeout=10,
+        )
+    except Exception as exc:
+        logger.warning("raw_event status update failed id=%s reason=%s", raw_event_id, str(exc)[:200])
+
+
 def run_forever() -> None:
     redis_db.ensure_group(_STREAM, _GROUP)
     logger.info("agent-worker started: stream=%s group=%s", _STREAM, _GROUP)
@@ -22,6 +46,7 @@ def run_forever() -> None:
         messages = redis_db.xreadgroup(_STREAM, _GROUP, _CONSUMER)
         for _stream_name, entries in messages:
             for msg_id, fields in entries:
+                raw_event_id = fields.get("raw_event_id") or None
                 try:
                     raw = RawEvent(
                         source=fields.get("source", "unknown"),
@@ -31,12 +56,16 @@ def run_forever() -> None:
                         ),
                         raw_text=fields.get("raw_text", ""),
                         raw_metadata=json.loads(fields.get("raw_metadata", "{}")),
+                        raw_event_id=raw_event_id,
                     )
                     card = graph_run(raw)
                     publish_card(card)
-                    redis_db.xack(_STREAM, _GROUP, msg_id)
+                    _notify_status(raw_event_id, "processed", event_card_id=str(card.id))
                 except Exception as exc:
-                    logger.error("agent-worker: error msg=%s err=%s", msg_id, exc)
+                    logger.exception("agent-worker: error msg=%s err=%s", msg_id, exc)
+                    _notify_status(raw_event_id, "failed", error_reason=str(exc)[:500])
+                finally:
+                    redis_db.xack(_STREAM, _GROUP, msg_id)
 
 
 if __name__ == "__main__":

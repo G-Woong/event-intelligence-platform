@@ -4,12 +4,13 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.db import redis as redis_db
 from backend.app.db.postgres import get_session
 from backend.app.schemas.events import FinalEventCard
-from backend.app.schemas.raw_events import RawEventCreate, RawEventCreateResponse
+from backend.app.schemas.raw_events import RawEventCreate, RawEventCreateResponse, RawEventRecord, RawEventStatusUpdate
 from backend.app.services import event_service
 from backend.app.services import raw_event_service
 
@@ -48,13 +49,42 @@ async def create_raw_event(
     payload: RawEventCreate,
     session: AsyncSession = Depends(get_session),
 ) -> RawEventCreateResponse:
-    # TODO STEP 008: add admin token authentication
+    # TODO STEP 008C: add admin token authentication
     return await raw_event_service.create_raw_event(session, payload)
+
+
+@router.get("/raw-events/{raw_event_id}", response_model=RawEventRecord)
+async def get_raw_event(
+    raw_event_id: str,
+    session: AsyncSession = Depends(get_session),
+) -> RawEventRecord:
+    try:
+        return await raw_event_service.get_raw_event(session, raw_event_id)
+    except NoResultFound:
+        raise HTTPException(status_code=404, detail=f"raw_event_id={raw_event_id} not found")
+
+
+@router.patch("/raw-events/{raw_event_id}/status", response_model=RawEventRecord)
+async def update_raw_event_status(
+    raw_event_id: str,
+    body: RawEventStatusUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> RawEventRecord:
+    try:
+        return await raw_event_service.update_status(
+            session,
+            raw_event_id,
+            status=body.status,
+            error_reason=body.error_reason,
+            event_card_id=body.event_card_id,
+        )
+    except NoResultFound:
+        raise HTTPException(status_code=404, detail=f"raw_event_id={raw_event_id} not found")
 
 
 @router.post("/collect-rss-once")
 async def collect_rss_once() -> dict:
-    # TODO STEP 008: add admin token authentication
+    # TODO STEP 008C: add admin token authentication
     try:
         from workers.collectors import rss_collector
         summary = await asyncio.to_thread(rss_collector.run)

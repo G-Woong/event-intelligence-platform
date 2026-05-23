@@ -12,6 +12,7 @@ class RawEvent(BaseModel):
     fetched_at: datetime = Field(default_factory=datetime.utcnow)
     raw_text: str
     raw_metadata: dict = Field(default_factory=dict)
+    raw_event_id: Optional[str] = None
 
 
 class NormalizedEvent(BaseModel):

@@ -53,6 +53,7 @@ _compiled = _build_graph().compile()
 def run(raw_event: RawEvent) -> FinalEventCard:
     initial: EventState = {
         "raw": raw_event,
+        "raw_event_id": raw_event.raw_event_id,
         "normalized": None,
         "dedupe_key": None,
         "entities": [],

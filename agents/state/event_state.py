@@ -8,6 +8,7 @@ from backend.app.schemas.events import RawEvent, NormalizedEvent, FinalEventCard
 
 class EventState(TypedDict, total=False):
     raw: RawEvent
+    raw_event_id: Optional[str]
     normalized: Optional[NormalizedEvent]
     dedupe_key: Optional[str]
     entities: list[str]

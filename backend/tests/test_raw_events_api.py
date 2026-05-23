@@ -151,6 +151,42 @@ def test_create_raw_event_minimal_payload(client):
     assert body["record"]["title"] is None
 
 
+def test_create_raw_event_xadd_failure_sets_status_failed(client):
+    now = datetime.now(timezone.utc)
+    failed_record = RawEventRecord(
+        id=str(uuid.uuid4()),
+        source_type="rss",
+        source_name="test_feed",
+        external_id=None,
+        url="https://example.com/article/3",
+        title=None,
+        raw_text="body",
+        published_at=None,
+        collected_at=now,
+        content_hash="c" * 64,
+        theme_hint=None,
+        status="failed",
+        enqueued_msg_id=None,
+        error_reason="xadd_failed: Redis connection refused",
+        raw_metadata={},
+        created_at=now,
+        updated_at=now,
+    )
+    response_obj = RawEventCreateResponse(record=failed_record, is_duplicate=False, enqueued_msg_id=None)
+    with patch("backend.app.api.admin.raw_event_service.create_raw_event", new_callable=AsyncMock) as mock_svc:
+        mock_svc.return_value = response_obj
+        resp = client.post(
+            "/api/admin/raw-events",
+            json={"source_name": "test_feed", "url": "https://example.com/article/3", "content_hash": "c" * 64},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["record"]["status"] == "failed"
+    assert body["record"]["error_reason"].startswith("xadd_failed:")
+    assert body["enqueued_msg_id"] is None
+
+
 def test_collect_rss_once_calls_rss_collector_run(client):
     summary = {"sources": 3, "items_seen": 10, "items_enqueued": 8, "duplicates": 2, "errors": 0, "per_source": []}
     with patch("workers.collectors.rss_collector.run", return_value=summary):
