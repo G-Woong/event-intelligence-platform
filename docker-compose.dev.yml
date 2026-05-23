@@ -115,6 +115,11 @@ services:
       MILVUS_HOST: milvus-standalone
       MILVUS_PORT: 19530
       DATABASE_URL: postgresql+asyncpg://event_user:event_pass@postgres:5432/event_intel
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-mock}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
+      MILVUS_COLLECTION: ${MILVUS_COLLECTION:-event_embeddings}
+      BACKEND_INTERNAL_URL: http://backend:8000
     env_file:
       - .env
     depends_on:
@@ -138,6 +143,8 @@ services:
     container_name: ei-worker
     environment:
       REDIS_URL: redis://redis:6379/0
+      MILVUS_HOST: milvus-standalone
+      MILVUS_PORT: 19530
     env_file:
       - .env
     depends_on:
@@ -155,6 +162,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       BACKEND_URL: http://backend:8000
+      BACKEND_INTERNAL_URL: http://backend:8000
+      MILVUS_HOST: milvus-standalone
+      MILVUS_PORT: 19530
       LLM_PROVIDER: ${LLM_PROVIDER:-mock}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
     env_file:

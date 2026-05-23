@@ -24,12 +24,22 @@ class Settings(BaseSettings):
     LLM_MAX_TOKENS: int = 1024
     LLM_TEMPERATURE: float = 0.2
 
+    EMBEDDING_PROVIDER: Literal["mock", "openai"] = "mock"
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_DIM: int = 1536
+    EMBEDDING_TIMEOUT_SEC: float = 30.0
+    MILVUS_COLLECTION: str = "event_embeddings"
+
+    BACKEND_INTERNAL_URL: str = "http://backend:8000"
+
     def redacted_env_status(self) -> dict[str, str]:
         fields = [
             "LANGSMITH_TRACING", "LANGSMITH_ENDPOINT", "LANGSMITH_API_KEY",
             "LANGSMITH_PROJECT", "OPENAI_API_KEY", "MILVUS_HOST",
             "MILVUS_PORT", "REDIS_URL", "DATABASE_URL",
             "LLM_PROVIDER", "LLM_MODEL",
+            "EMBEDDING_PROVIDER", "EMBEDDING_MODEL", "EMBEDDING_DIM",
+            "MILVUS_COLLECTION", "BACKEND_INTERNAL_URL",
         ]
         result = {}
         for f in fields:

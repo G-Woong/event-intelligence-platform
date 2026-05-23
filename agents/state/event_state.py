@@ -14,6 +14,7 @@ class EventState(TypedDict, total=False):
     theme: str
     sectors: list[str]
     past_context: list[str]
+    retrieved_context: list[dict]
     impact: str
     evidence: list[str]
     fact_check: str

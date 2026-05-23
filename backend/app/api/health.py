@@ -14,6 +14,6 @@ async def health_check() -> dict:
     return {
         "status": "ok",
         "redis": "ok" if redis_db.ping() else "error",
-        "milvus": "ok" if milvus_db.is_connected() else "error",
+        "milvus": "ok" if milvus_db.is_connected() else "error",  # real ping via utility.get_server_version
         "postgres": "ok" if await postgres_db.ping() else "error",
     }

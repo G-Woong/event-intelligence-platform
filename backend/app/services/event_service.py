@@ -92,6 +92,13 @@ async def upsert_card(session: AsyncSession, card: FinalEventCard) -> FinalEvent
     )
     await session.execute(stmt)
     await session.commit()
+
+    try:
+        from backend.app.services import vector_index_service
+        await vector_index_service.try_index_card(card)
+    except Exception as exc:
+        logger.warning("vector index failed for card=%s: %s", card.id, exc)
+
     return card
 
 

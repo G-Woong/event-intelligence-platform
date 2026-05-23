@@ -7,7 +7,7 @@ from fastapi import FastAPI
 
 from backend.app.core.logging import configure_logging
 from backend.app.db import redis as redis_db, milvus as milvus_db, postgres as postgres_db  # noqa: F401
-from backend.app.api import health, events, themes, sectors, comments, ai_replies, admin
+from backend.app.api import health, events, themes, sectors, comments, ai_replies, admin, internal
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -37,3 +37,4 @@ app.include_router(sectors.router)
 app.include_router(comments.router)
 app.include_router(ai_replies.router)
 app.include_router(admin.router)
+app.include_router(internal.router, prefix="/api/internal")
