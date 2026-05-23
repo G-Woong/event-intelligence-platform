@@ -88,9 +88,55 @@
 - STEP 003 앱 scaffold 범위에서 사용하지 않음.
 - `.venv`에는 lancedb 0.19.0이 이미 설치된 상태 유지 (재설치/제거 없음).
 
+## Alembic + SQLAlchemy async (STEP 004)
+
+- 앱(FastAPI)은 `asyncpg` driver (`DATABASE_URL = postgresql+asyncpg://...`).
+- Alembic은 동기 실행 전용 → `env.py`에서 URL의 `+asyncpg`를 `+psycopg`로 in-place 치환.
+- psycopg 패키지: `requirements/serve.txt`에 `psycopg[binary]==3.2.3` 핀. 모듈명은 `psycopg` (URL에서 `+psycopg`).
+- alembic `script_location = backend/alembic` — `/app` CWD 기준 상대 경로.
+- Migration 실행: `backend/entrypoint.sh`에서 `alembic -c backend/alembic.ini upgrade head` 후 `exec uvicorn`.
+- `entrypoint.sh`는 LF 라인 엔딩 필수. Dockerfile에 `sed -i 's/\r$//'` 보호 추가.
+
 ## 미검증 / 다음 단계에서 다룰 항목
 - LangSmith 실제 연결 검증 (호출 안 함)
 - Celery + Redis 동작 검증
 - LangGraph 그래프 실행 검증
-- Docker Compose dev 스택 빌드/기동 (backend / worker / agent-worker 서비스)
 - `model: "opusplan"`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`, `Skill(update-config)` 의 실제 동작 검증
+
+## STEP 004.5 Skeleton Audit — 추가 기록
+
+### W4: milvus `_connected` 모듈 플래그 stale 가능성
+
+- 위치: `backend/app/db/milvus.py:29-30`
+- `_connected = False` 모듈 수준 플래그. 프로세스 내에서 한 번 연결되면 재확인 없이 `True` 유지.
+- 현 skeleton 단계(stub)에서 실 영향 없음. 실 Milvus 호출 도입 시 ping 기반 연결 확인으로 전환 권장.
+- **다음 STEP 처리**: STEP 006 (Milvus 실호출) 시점에 `is_connected()` 실 ping으로 교체.
+
+### W5: themes/sectors 정적 상수 (의도된 skeleton)
+
+- 위치: `backend/app/api/themes.py:12-18`, `sectors.py:12-18`
+- `_THEMES`, `_SECTORS` 리스트는 DB/service layer 없이 in-memory 상수.
+- **의도된 skeleton**: 현 단계 테마/섹터는 고정 분류 체계이므로 정적 상수가 적절.
+- DB로 옮길 필요가 생기면 별도 migration + service layer 추가. 현재는 변경 대상 아님.
+
+### W6: worker/agent-worker healthcheck 미정의
+
+- 위치: `docker-compose.dev.yml:134-165`
+- `worker`, `agent-worker` 서비스에 `healthcheck` 없음.
+- 현재: `restart: on-failure`로 장애 복구. compose `ps`에서 healthcheck 상태 미표시.
+- **다음 minor STEP 후보**: consumer loop 도는지 확인하는 lightweight healthcheck 추가 (예: `/tmp/worker.alive` 파일 터치 방식).
+
+### W7: ai.txt의 llama-index-vector-stores-lancedb 분류
+
+- 위치: `requirements/ai.txt:30`
+- `llama-index-vector-stores-lancedb`가 `ai.txt`에 포함됨. LanceDB 관련 패키지는 `graph_optional.txt`가 더 일관된 위치.
+- 현재 기능에 영향 없음 (ai.txt가 graph_optional.txt를 include하므로 중복 설치 없음).
+- **향후**: LanceDB experiment 실제 사용 시 ai.txt에서 제거 후 graph_optional.txt로 이동 고려.
+
+### Codex worktree 동기화 (2026-05-23, STEP 004.5)
+
+- 동기화 전 codex HEAD: `e21ee3d` (STEP 002.5 기준 마지막 sync)
+- 동기화 후: main `7704d17` (STEP 003) 포함 merge 완료
+- merge 전략: `ort` (충돌 없음), 70개 파일 추가
+- codex 고유 변경: `.gitignore`의 `pyproject.toml` 제외 항목 유지됨
+- STEP 004 Postgres 변경 (uncommitted in main)은 이번 sync 범위 외 — 다음 commit 후 재sync 필요
