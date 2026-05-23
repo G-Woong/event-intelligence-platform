@@ -17,7 +17,19 @@
 6. `.env`, `.claude/`, `.codex/`, local config는 commit 금지.
 7. commit 단위는 작게 유지 (atomic).
 
-## Codex 파일 구조 (설계 참조용)
+## Python 가상환경
+
+- **claude worktree**: `C:\Users\computer\Desktop\business\claude\.venv` (Python 3.11)
+- **codex worktree**: `C:\Users\computer\Desktop\business\codex\.venv` (Python 3.11, 별도 독립)
+- 각 worktree는 독립된 `.venv`를 가진다. 공유하지 않는다.
+
+## Docker 인프라 공유 정책
+
+- Docker infra(Redis, Milvus, etcd, MinIO)는 **claude의 `docker-compose.dev.yml`을 기본으로 공유한다**.
+- codex는 `localhost` 로 동일한 포트에 접근한다 (Redis: 6379, Milvus: 19530).
+- 추후 필요 시 `COMPOSE_PROJECT_NAME`을 분리해 codex 독립 infra를 띄울 수 있다 (현재 기본값: shared infra).
+
+## Codex 파일 구조
 
 ```
 C:\Users\computer\Desktop\business\codex
@@ -29,8 +41,6 @@ C:\Users\computer\Desktop\business\codex
 │   └── local/               # 잡다한 로컬, gitignore
 └── plans/                   # main과 동기화 (git 추적)
 ```
-
-> `.codex/`, `AGENTS.md`는 필요 시 별도 생성. 본 문서는 설계 참조용.
 
 ## 브랜치 동기화 정책
 

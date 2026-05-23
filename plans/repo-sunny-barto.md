@@ -1,229 +1,233 @@
-# STEP 002 후속 정리 · STEP 003 사전 설계 PLAN
+# STEP 002.6 — codex worktree 실행환경 실검증/복구
 
 ## Context
-STEP 002(인프라 검증)는 완료했다. 본 단계는 **앱 scaffold 진입(STEP 003) 직전의 운영/문서 정리** 단계로, 다음 4개 목적을 갖는다.
 
-1. STEP 002에서 남긴 WARNING 3건을 가능한 범위에서 해결.
-2. claude/codex worktree 운영 구조와 Codex 파일 구조 정책을 명문화.
-3. `.gitignore` 손상(들여쓰기로 무력화된 패턴) 및 추적 파일 정책 정리.
-4. STEP 003(앱 scaffold) 상세 실행 계획을 별도 plan 파일로 분리.
+STEP 002.5(orchestration 정리)는 main worktree 기준으로 완료했지만, codex worktree는 아직 "껍데기"만 있는 상태다. 본 단계의 목적은 **codex가 단순 폴더/브랜치가 아니라 실제로 atomic task를 수행할 수 있는 독립 실행 환경**임을 검증하고 부족분을 보강하는 것이다.
 
-본 단계에서는 **FastAPI / Next.js / LangGraph 앱 scaffold 코드를 작성하지 않는다.**
-
-## 현재 상태 점검 결과
+### 사전 점검 결과 (read-only)
 
 | 항목 | 상태 |
 |---|---|
-| 작업 디렉토리 | `C:\Users\computer\Desktop\business\claude` |
-| git branch | main, origin/main보다 2 commits 앞섬 |
-| 미커밋 변경 | `.gitignore` 1건 (들여쓰기로 손상된 1–5 라인) |
-| 최신 commit | `1a74cbb` (lancedb 다운그레이드) |
-| worktree | claude=main(1a74cbb), codex=codex(90903c1) |
-| Docker | 4개 서비스 모두 healthy (`ei-redis`, `ei-milvus-etcd`, `ei-milvus-minio`, `ei-milvus`) |
-| `.venv` | Python 3.11.9, serve/worker/ai/vector/dev 설치 완료 |
-| `docs/` | `COMPATIBILITY_NOTES.md` 1개만 존재 |
-| `plans/` | 000, 001, repo-sunny-barto (현재 plan) |
-| codex worktree 상태 | `.claude/settings.json`, `CLAUDE.md` **deleted** 상태 (작업트리에 물리적으로 없음) |
-| codex 브랜치 ahead/behind | main에서 1 commit 뒤짐 (lancedb 핀 미포함) |
+| `git worktree list` | ✅ claude=main(`c93695f`), codex=codex(`511c944`) — 정상 worktree로 인식 |
+| codex 브랜치 head | `511c944 chore: untrack .claude/ and CLAUDE.md (mirror main)` |
+| codex `.env` | ✅ 8개 키 모두 PRESENT (실값 미노출) |
+| codex `.venv` | ❌ **없음** — Python 환경 미구성 |
+| codex `AGENTS.md` | ❌ 없음 |
+| codex `.codex/config.toml` | ❌ 없음 |
+| codex `requirements/vector.txt` | ⚠️ main과 어긋남 (lancedb==0.29.2/pylance==2.0.0이 남아있음) |
+| codex `pyproject.toml` | main에 없는 파일. codex `.gitignore`에 추적 제외로 추가됨 |
+| codex `.gitignore` modified | 사용자가 IDE에서 `pyproject.toml` 라인 추가한 상태 |
+| Docker (claude 측) | ✅ 4개 서비스 healthy (ei-redis, ei-milvus, ei-milvus-etcd, ei-milvus-minio) |
+| `uv` PATH | ⚠️ 현 PowerShell 세션에서 인식 안 됨 (재시작 또는 풀 경로 필요) |
+| `py -3.11` | ✅ Python 3.11.9 사용 가능 |
 
-### 추가 발견
-- `.gitignore` 1–5 라인이 4-space 들여쓰기 → `.claude/`, `CLAUDE.md` 패턴이 **사실상 무력화**되어 있음. main 트리에 `.claude/` 와 `CLAUDE.md`가 추적되고 있는 원인.
-- codex worktree에 `.claude/` 와 `CLAUDE.md`가 없어 deleted로 보고됨. 추적 해제(`git rm --cached`)로 자동 해소될 부분.
+### 사용자 결정 (본 단계에 반영)
 
-## 사용자 결정 (이 단계에서 반영)
-- lancedb optional 파일명: **`requirements/graph_optional.txt`**
-- `.claude/` / `CLAUDE.md` 추적: **Claude가 `git rm --cached`로 추적 해제 후 commit** (파일 자체는 디스크 유지 — 안전한 명령, deny 정책 미저촉)
+1. **codex 동기화**: main → codex **merge** (vector.txt 정리, `.gitignore` 통일, `graph_optional.txt`, docs/plans 동기)
+2. **pyproject.toml**: 현재 상태 유지. codex `.gitignore`의 추적 제외 라인 유지, main에는 추가하지 않음
+3. **uv fallback**: 풀 경로(`%USERPROFILE%\.local\bin\uv.exe` 등) 탐색 후 사용
 
 ## 실행 순서
 
-### 1. `.gitignore` 정상화
-파일: `C:\Users\computer\Desktop\business\claude\.gitignore`
+### 1. codex `.gitignore` 검토 (modified 상태 처리)
+- codex `.gitignore`의 현재 modified 변경(=`pyproject.toml` 라인 추가)을 **그대로 살린다**.
+- 단, main의 `.gitignore`와 비교해 누락 섹션(`.codex_premerge_backup/`, Codex 섹션 정리 등)이 있으면 동일 형식으로 조정한다.
+- main과 동일하게 깔끔하게 재정렬하되, `pyproject.toml` 라인은 보존.
 
-- 1–5 라인의 들여쓰기를 제거하고 섹션을 표준화한다.
-- Codex 관련 섹션, 백업 디렉토리 항목을 추가한다.
-
-수정 후 최종 형태(요지):
+### 2. main → codex merge
+codex worktree에서:
 ```
-# Claude Code / local orchestration
-.claude/
-CLAUDE.md
-.claude/settings.local.json
-.claude/cache/
+git -C C:\Users\computer\Desktop\business\codex fetch  # 필요시
+git -C C:\Users\computer\Desktop\business\codex merge main
+```
+- 충돌 가능 지점: `requirements/vector.txt`, `.gitignore` → 사용자 결정 기준으로 해결
+  - `requirements/vector.txt`: main 버전 채택 (LanceDB 제거)
+  - `.gitignore`: main 형식 채택 + codex의 `pyproject.toml` 라인 유지
+- `pyproject.toml`은 codex 전용 파일이므로 merge로 인해 사라지지 않는다. (main에 없음 + .gitignore에 추적 제외 라인 유지)
+- merge commit 메시지: `chore: sync codex with main (step 002.5)`
 
-# Codex / local sub-agent
-.codex/
-AGENTS.md
-.codex/config.toml
-.codex/cache/
-.codex/logs/
+### 3. codex `.venv` 생성
+PowerShell에서 uv 풀 경로를 먼저 탐색한다:
+- 후보 경로: `$env:USERPROFILE\.local\bin\uv.exe`, `$env:LOCALAPPDATA\Microsoft\WinGet\Links\uv.exe`, `$env:LOCALAPPDATA\Programs\uv\uv.exe`
+- `Get-Command uv -ErrorAction SilentlyContinue` 1차 시도
+- 둘 다 안 되면 `winget show astral-sh.uv` 정보로 설치 경로 추론
 
-# Local backups
-.codex_premerge_backup/
-
-# Secrets
-.env
-.env.*
-!.env.example
-
-# (Python / Node / Editor / Logs / Backups 섹션은 기존 유지)
+uv 발견 시:
+```
+& <uv full path> venv "C:\Users\computer\Desktop\business\codex\.venv" --python 3.11
 ```
 
-### 2. `.claude/` 와 `CLAUDE.md` 추적 해제
-- `git rm --cached -r .claude/`
-- `git rm --cached CLAUDE.md`
-- 파일 자체는 디스크에 남는다 (Claude Code가 계속 읽음).
-- codex worktree의 deleted 상태도 자동 해소된다.
+검증:
+```
+C:\Users\computer\Desktop\business\codex\.venv\Scripts\python.exe --version
+```
+→ `Python 3.11.9` 기대.
 
-### 3. requirements 재구성 (lancedb 분리)
-- `requirements/vector.txt`에서 `lancedb`, `pylance`, `tantivy` 3줄을 제거. pymilvus 중심으로 유지.
-- 신규 `requirements/graph_optional.txt` 생성:
-  - `-r base.txt`
-  - `lancedb==0.19.0`
-  - `pylance==0.23.0`
-  - `tantivy==0.25.1`
-  - 파일 헤더 주석에 "Milvus가 primary, LanceDB는 optional / future GraphRAG 후보. 본 파일은 STEP 003 scaffold 범위에 포함되지 않음." 명시.
-- `requirements/README.md`가 존재하면 새 파일을 표에 추가, 없으면 만들지 않고 `docs/COMPATIBILITY_NOTES.md`에만 명시.
-- `.venv`에는 이미 lancedb 0.19.0이 설치되어 있어 **재설치 / 제거를 수행하지 않는다**. 단순히 핀 파일을 분리해 STEP 003 표준 설치 라인에서 빠지게 한다.
+### 4. requirements 설치 (codex .venv)
+설치 범위 (지정된 5+1 레이어):
+- `requirements/base.txt`
+- `requirements/serve.txt`
+- `requirements/worker.txt`
+- `requirements/ai.txt`
+- `requirements/vector.txt`
+- `requirements/dev.txt`
 
-### 4. `docs/COMPATIBILITY_NOTES.md` 보강
-다음 섹션을 누적 기록한다.
+**설치 금지**:
+- `requirements/ml.txt`
+- `requirements/crawler.txt`
+- `requirements/graph_optional.txt`
 
-- `.codex_premerge_backup/` 처리:
-  - 로컬 백업 잔여물. git 추적 제외 (`.gitignore` 추가됨).
-  - **사용자 직접 정리 필요** — Claude는 삭제하지 않는다.
-  - 사용자 수동 명령(안내만):
-    ```
-    Remove-Item -Recurse -Force C:\Users\computer\Desktop\business\.codex_premerge_backup
-    ```
-- pymilvus / pkg_resources warning:
-  - 원인: pymilvus 2.4.x 또는 하위 의존성의 `pkg_resources` import. setuptools 80.x deprecation 경고.
-  - Milvus Docker image: `milvusdb/milvus:v2.4.10` ↔ pymilvus 2.4.4 (서버-클라이언트 동일 메이저/마이너).
-  - 임시 핀: `requirements/vector.txt`의 `setuptools>=80.9.0,<81` 유지.
-  - 런타임 영향: **없음** (connect 성공 확인됨).
-  - 정식 해결: pymilvus 2.6.x + Milvus image 2.6.x 동시 업그레이드 — STEP 003 이후 compatibility task로 분리.
-- LanceDB 정책:
-  - Milvus가 **primary vector store**.
-  - LanceDB는 **optional / future GraphRAG experiment** 후보로 분리됨 (`requirements/graph_optional.txt`).
-  - STEP 003 앱 scaffold 범위에서 사용하지 않음.
+명령(uv pip):
+```
+& <uv path> pip install --python C:\Users\computer\Desktop\business\codex\.venv\Scripts\python.exe -r requirements\serve.txt
+... (worker, ai, vector, dev 순으로 반복; base는 -r 체이닝으로 자동 포함)
+```
 
-### 5. `docs/AGENT_WORKFLOW.md` 신규
-운영 구조와 Codex 파일 정책을 명문화한다. 핵심 내용:
+각 단계 후 exit code 확인. 실패 시 BLOCKED로 보고하고 진행 중단.
 
-- worktree 역할
-  - `C:\Users\computer\Desktop\business\claude` (main 브랜치): Claude Code main orchestrator. PLAN / 통합 / 리뷰 / 최종 판단 / merge gate.
-  - `C:\Users\computer\Desktop\business\codex` (codex 브랜치): Codex sub-agent execution. atomic task 구현 / 테스트 / 대안 코드.
-- 작업 흐름
-  1. Claude가 task spec(plans 또는 `.codex/tasks/`)을 작성.
-  2. Codex는 codex 브랜치에서 atomic task 수행, diff/patch로 보고.
-  3. Codex는 origin에 직접 push/merge하지 않는다.
-  4. Claude가 diff 리뷰 → 수용 시 main으로 cherry-pick 또는 merge.
-  5. 같은 파일 동시 수정 금지.
-  6. `.env`, `.claude/`, `.codex/`, local config는 commit 금지.
-  7. commit 단위는 작게 유지.
-- Codex 파일 구조 (설계만, 본 단계에서 모든 디렉토리를 생성하지 않음)
+### 5. codex `AGENTS.md` 생성
+파일: `C:\Users\computer\Desktop\business\codex\AGENTS.md`
+(`.gitignore`에 의해 추적 제외, 디스크에만 존재)
+
+내용(간결):
+```
+# AGENTS.md — Codex sub-agent execution worktree
+
+- Codex는 sub-agent execution worktree다.
+- main 브랜치에 직접 merge/push 금지.
+- atomic task만 수행. 완료 후 diff/report 작성.
+- Claude main orchestrator가 수용 여부 판단.
+- `.env` 실값 출력/로그/외부 전송 금지.
+- destructive command(rm/Remove-Item/git reset --hard 등) 실행 금지.
+- 본 worktree는 별도 .venv를 가지며, Docker infra는 claude의 docker-compose.dev.yml을 공유한다.
+```
+
+### 6. codex `.codex/config.toml` 생성
+경로: `C:\Users\computer\Desktop\business\codex\.codex\config.toml`
+(`.gitignore`에 의해 추적 제외)
+
+내용(최소):
+```toml
+# .codex/config.toml — Codex worktree 로컬 실행 환경
+# 본 파일은 .gitignore 대상이며 commit되지 않는다.
+
+[worktree]
+role = "sub-agent-execution"
+python_venv = ".venv"
+python_version = "3.11"
+
+[infra]
+shared_compose = "../claude/docker-compose.dev.yml"
+redis_url = "redis://localhost:6379/0"
+milvus_host = "localhost"
+milvus_port = 19530
+
+[policy]
+allow_push = false
+allow_destructive = false
+allow_main_merge = false
+```
+
+`.codex/tasks/`, `.codex/reports/`, `.codex/local/`은 본 단계에서는 디렉토리 생성만 하지 않고 필요 시점에 생성한다.
+
+### 7. Docker shared infra 연결 검증 (codex .venv 기준)
+- Docker daemon 상태: `docker ps`로 확인
+- compose 상태: `docker compose -f C:\Users\computer\Desktop\business\claude\docker-compose.dev.yml ps`
+- codex .venv Python으로 다음 import 및 smoke:
   ```
-  C:\Users\computer\Desktop\business\codex
-  ├── AGENTS.md                # gitignore 대상 (로컬 운영 노트)
-  ├── .codex/
-  │   ├── config.toml          # 로컬 실행 환경, gitignore
-  │   ├── tasks/               # 로컬 task spec, gitignore
-  │   ├── reports/             # 로컬 실행 보고, gitignore
-  │   └── local/               # 잡다한 로컬, gitignore
-  └── plans/                   # main과 동기화 (git 추적)
+  python -c "import fastapi, redis, pymilvus, langgraph, langchain, openai, pydantic, pytest; print('imports ok')"
+  python -c "import redis; r=redis.from_url('redis://localhost:6379/0'); print('redis ping:', r.ping())"
+  python -c "from pymilvus import connections; connections.connect(host='localhost', port='19530'); print('milvus connect ok')"
   ```
-- 현재 단계에서는 `docs/AGENT_WORKFLOW.md`만 신규 작성하고, codex worktree 안에 실제 `.codex/`나 `AGENTS.md`를 만들지 않는다. (필요한 시점에 별도 생성)
+- LangSmith / OpenAI 키는 `os.getenv` 존재 여부만 확인 (실값 출력 금지)
 
-### 6. `plans/003_APP_SCAFFOLD_PLAN.md` 신규
-STEP 003 상세 plan을 별도 파일로 분리한다. 본 plan에는 outline만 두고, 실제 step-by-step은 003 파일로.
+### 8. 문서 업데이트
+`docs/AGENT_WORKFLOW.md`에 다음 내용을 추가/보강:
+- claude worktree = orchestration / review / merge gate
+- codex worktree = isolated execution / test / atomic implementation
+- **codex는 별도 `.venv`를 가진다**
+- **Docker infra는 기본적으로 claude의 docker-compose.dev.yml을 공유한다** (codex localhost로 접근)
+- 추후 필요 시 `COMPOSE_PROJECT_NAME`으로 codex 독립 infra를 띄울 수 있다는 가능성만 한 줄로 명시
+- 현재 단계 default는 shared infra
 
-003 파일 outline:
-- 목적: 앱 scaffold (FastAPI + LangGraph + Worker + Milvus client + 헬스 엔드포인트 + Dockerfile) 및 docker compose 통합 검증.
-- 산출물:
-  - `backend/app/main.py`
-  - `backend/app/api/health.py`, `backend/app/api/events.py`
-  - `backend/app/core/config.py` (pydantic-settings, `.env` 키 8개 + 향후 확장)
-  - `backend/app/db/redis.py`, `backend/app/db/milvus.py`
-  - `agents/graphs/event_processing_graph.py`
-  - `agents/nodes/*.py` (normalize, dedupe, rank, summarize — mock LLM)
-  - `workers/queue/producer.py`, `workers/queue/consumer.py`
-  - `workers/pipelines/raw_event_pipeline.py`
-  - `backend/Dockerfile`, `workers/Dockerfile`, `agents/Dockerfile`
-  - `docker-compose.dev.yml` 업데이트 (backend / worker / agent-worker 서비스 추가)
-  - `docs/EVENT_SCHEMA.md` 초안
-  - `docs/API_CONTRACT.md` 초안
-  - `tests/smoke/*.py`
-- 비범위(STEP 003에서 하지 않음):
-  - Next.js 풀 UI 구현
-  - 실제 대규모 crawler / Playwright / Selenium
-  - torch / transformers / Gemma 로컬 서빙
-  - 실제 KG-RAG 고도화
-  - production deploy / 도메인 연결
-- 검증 절차:
-  - `docker compose -f docker-compose.dev.yml config`
-  - `docker compose ... build backend worker agent-worker`
-  - `docker compose ... up -d`
-  - `curl http://localhost:8000/health`
-  - Redis ping (컨테이너 ↔ 호스트, app ↔ Redis)
-  - Milvus connect (app ↔ Milvus)
-  - sample raw event enqueue → worker consume → LangGraph mock pipeline → final_card 조회
+### 9. 보고서 생성
+`plans/002_6_CODEX_ENV_RECOVERY_REPORT.md` 신규 작성. 다음 항목을 포함:
+- codex worktree 정상 인식 여부
+- codex 브랜치 / 최근 commit
+- main → codex merge 결과 (commit hash, 충돌 처리 내역)
+- codex `.venv` 생성 결과 (Python 버전 확인 출력)
+- requirements 설치 결과 (5+1 레이어, 각 단계 exit code)
+- codex `.env` 키 점검 (masked)
+- `AGENTS.md`, `.codex/config.toml` 생성 여부
+- Docker shared infra 연결 결과 (Redis ping, Milvus connect)
+- 핵심 패키지 import smoke 결과
+- 남은 WARNING / BLOCKED / UNKNOWN
+- STEP 003 진입 가능 여부
 
-### 7. pymilvus warning 실측 (선택 — venv import smoke)
-이미 STEP 002에서 import / connect 성공 확인. warning 텍스트만 짧게 캡처해 `COMPATIBILITY_NOTES.md`에 인용. 본 단계에서 새로 설치 / 업그레이드하지 않는다.
-
-### 8. commit
-- 메시지: `chore: finalize step 002 orchestration setup`
+### 10. commit (main worktree)
+- 메시지 후보: `docs: document codex worktree env recovery (step 002.6)`
 - 포함 변경:
-  - `.gitignore` 정상화
-  - `.claude/`, `CLAUDE.md` 추적 해제 (`git rm --cached`)
-  - `requirements/vector.txt` (lancedb 3줄 제거)
-  - `requirements/graph_optional.txt` 신규
-  - `docs/COMPATIBILITY_NOTES.md` 갱신
-  - `docs/AGENT_WORKFLOW.md` 신규
-  - `plans/003_APP_SCAFFOLD_PLAN.md` 신규
-- **push는 수행하지 않는다.**
+  - `docs/AGENT_WORKFLOW.md` 보강
+  - `plans/002_6_CODEX_ENV_RECOVERY_REPORT.md` 신규
+  - `plans/repo-sunny-barto.md` 본 plan (참고용)
+- **push 금지**
 
-## 수정·생성 대상 파일
+codex worktree commit:
+- main merge commit (step 2)
+- `.gitignore` 정리 commit (필요 시)
+- **codex 측 commit 메시지는 모두 prefix `chore(codex):` 사용**
 
-| 경로 | 작업 |
-|---|---|
-| `.gitignore` | 수정 (들여쓰기 제거 + Codex/백업 섹션) |
-| `.claude/`, `CLAUDE.md` | `git rm --cached`로 추적 해제 (디스크 유지) |
-| `requirements/vector.txt` | 수정 (lancedb/pylance/tantivy 제거) |
-| `requirements/graph_optional.txt` | 신규 |
-| `docs/COMPATIBILITY_NOTES.md` | 수정 (3개 섹션 추가) |
-| `docs/AGENT_WORKFLOW.md` | 신규 |
-| `plans/003_APP_SCAFFOLD_PLAN.md` | 신규 |
-| `plans/repo-sunny-barto.md` | 본 plan (현재 작성 중) |
+## 수정·생성 대상 파일 정리
+
+| 경로 | worktree | 작업 |
+|---|---|---|
+| `codex/.gitignore` | codex | 정리 (pyproject.toml 라인 유지, main 형식 정렬) |
+| `codex/requirements/vector.txt` | codex | merge 시 main 버전 채택 |
+| `codex/.venv/` | codex | 신규 (uv venv) |
+| `codex/AGENTS.md` | codex | 신규 (gitignore 대상) |
+| `codex/.codex/config.toml` | codex | 신규 (gitignore 대상) |
+| `claude/docs/AGENT_WORKFLOW.md` | main | 보강 (venv/shared infra 명시) |
+| `claude/plans/002_6_CODEX_ENV_RECOVERY_REPORT.md` | main | 신규 |
+| `claude/plans/repo-sunny-barto.md` | main | 본 plan |
 
 ## 검증 (최종 보고에 포함)
-- [ ] `git status` clean (커밋 후)
-- [ ] `git log --oneline -5` 신규 commit 표시
-- [ ] `git ls-files .claude CLAUDE.md` → empty (추적 해제 확인)
-- [ ] `Test-Path .claude\settings.json` = True (디스크 유지 확인)
-- [ ] `Test-Path CLAUDE.md` = True (디스크 유지 확인)
-- [ ] `requirements/vector.txt`에 lancedb/pylance/tantivy 부재
-- [ ] `requirements/graph_optional.txt` 존재 및 3개 패키지 핀
-- [ ] `docs/AGENT_WORKFLOW.md`, `plans/003_APP_SCAFFOLD_PLAN.md` 신규 존재
-- [ ] `docs/COMPATIBILITY_NOTES.md`에 `.codex_premerge_backup`, pymilvus, lancedb 섹션 추가
-- [ ] codex worktree의 deleted 상태 해소 (`git -C codex status`)
+
+- [ ] `git worktree list` claude=main, codex=codex 정상
+- [ ] `git -C codex status` clean (merge 후)
+- [ ] `git -C codex log --oneline -3`에 main 동기 commit 표시
+- [ ] `codex/.venv/Scripts/python.exe --version` → Python 3.11.x
+- [ ] codex `.venv`에서 fastapi/redis/pymilvus/langgraph/langchain/openai/pydantic/pytest import 성공
+- [ ] codex `.venv`에서 Redis ping = True
+- [ ] codex `.venv`에서 Milvus connect 성공
+- [ ] codex `.env` 8개 키 PRESENT (masked)
+- [ ] codex `AGENTS.md`, `.codex/config.toml` 디스크 존재 + git ls-files에서 empty (추적 제외 확인)
+- [ ] `docs/AGENT_WORKFLOW.md`에 venv/shared infra 문구 추가됨
+- [ ] `plans/002_6_CODEX_ENV_RECOVERY_REPORT.md` 신규 존재
 - [ ] Docker 4개 서비스 healthy 유지
 
-## 사용자 직접 정리 필요 (Claude가 실행하지 않음)
-- `C:\Users\computer\Desktop\business\.codex_premerge_backup\` 물리 삭제
-  - 안내 명령(사용자가 직접 입력): `Remove-Item -Recurse -Force C:\Users\computer\Desktop\business\.codex_premerge_backup`
-
 ## 금지 사항 (재확인)
+
 - ❌ `Remove-Item`, `rm`, `del`, `rmdir` (deny 정책)
 - ❌ `git push` (사용자 명시 요청 전까지)
 - ❌ `git reset --hard`, `git clean -fdx`
-- ❌ FastAPI / Next.js / LangGraph 앱 scaffold 코드
-- ❌ ml / crawler 의존성 설치 (torch, playwright 등)
-- ❌ pymilvus / Milvus 버전 업그레이드 (STEP 003 이후 별도 task)
-- ❌ Docker 컨테이너 down/stop (running 상태 유지)
+- ❌ FastAPI / Next.js / LangGraph 앱 scaffold 코드 (STEP 003에서 진행)
+- ❌ `requirements/ml.txt`, `requirements/crawler.txt`, `requirements/graph_optional.txt` 설치
+- ❌ pymilvus / Milvus 버전 업그레이드
+- ❌ Docker 컨테이너 down/stop (running 유지)
 - ❌ `.env` 실값 출력/로그/외부 전송
+- ❌ codex 측 commit을 main으로 자동 merge/push
+
+## BLOCKED 처리 기준
+
+다음 상황이 발생하면 즉시 BLOCKED로 보고하고 사용자 결정을 요청한다:
+- main → codex merge 충돌이 사용자 결정(vector.txt=main, .gitignore=main+pyproject 라인) 범위를 넘는 경우
+- uv 풀 경로를 어떤 후보에서도 찾지 못함 → 사용자에게 설치 경로 문의
+- requirements 설치 단계 중 어느 한 레이어가 실패
+- Redis ping 또는 Milvus connect 실패
 
 ## STEP 003 진입 조건 (본 단계 완료 후)
+
 1. 본 plan의 검증 항목 모두 PASS
-2. codex 브랜치 상태 정상 (deleted 미표시)
-3. `plans/003_APP_SCAFFOLD_PLAN.md`에 다음 단계 명세가 명확히 기록됨
+2. codex `.venv`에서 핵심 라이브러리 import 및 shared infra 연결 OK
+3. `plans/002_6_CODEX_ENV_RECOVERY_REPORT.md` 작성 완료
 4. 사용자가 STEP 003 시작 승인
