@@ -46,19 +46,21 @@
 
 ## FinalEventCard
 
-| 필드 | 타입 | 설명 |
-|---|---|---|
-| id | str (uuid4) | 고유 식별자 |
-| title | str | 최종 제목 |
-| summary | str | 요약문 |
-| theme | str | 주제 (geopolitics/economics/technology/climate/health) |
-| sectors | list[str] | 관련 섹터 목록 |
-| entities | list[str] | 주요 엔티티 목록 |
-| impact_path | str | 영향 경로 설명 |
-| evidence | list[str] | 근거 출처 목록 |
-| confidence_score | float (0–1) | 신뢰도 점수 |
-| status | "published"\|"hold" | 게시 상태 |
-| created_at | datetime | 생성 시각 |
+| 필드 | 타입 | 설명 | PG 컬럼 타입 |
+|---|---|---|---|
+| id | str (uuid4) | 고유 식별자 | UUID PK |
+| title | str | 최종 제목 | VARCHAR |
+| summary | str | 요약문 | VARCHAR |
+| theme | str | 주제 (geopolitics/economics/technology/climate/health) | VARCHAR, INDEX |
+| sectors | list[str] | 관련 섹터 목록 | JSONB, GIN INDEX |
+| entities | list[str] | 주요 엔티티 목록 | JSONB |
+| impact_path | str | 영향 경로 설명 | VARCHAR |
+| evidence | list[str] | 근거 출처 목록 | JSONB |
+| confidence_score | float (0–1) | 신뢰도 점수 | FLOAT, CHECK(0..1) |
+| status | "published"\|"hold" | 게시 상태 | VARCHAR, INDEX |
+| created_at | datetime (tz-aware) | 생성 시각 | TIMESTAMPTZ, INDEX DESC |
+
+ORM 전용 추가 컬럼: `updated_at` (TIMESTAMPTZ) — Pydantic 스키마 미포함.
 
 ```json
 {
@@ -72,6 +74,18 @@
   "evidence": ["reuters.com/...", "bbc.com/..."],
   "confidence_score": 0.82,
   "status": "published",
-  "created_at": "2026-05-23T10:01:00Z"
+  "created_at": "2026-05-23T10:01:00+00:00"
 }
 ```
+
+## Comment
+
+| 필드 | 타입 | 설명 | PG 컬럼 타입 |
+|---|---|---|---|
+| id | str (uuid4) | 고유 식별자 | UUID PK |
+| event_id | str (uuid4) | 연관 이벤트 ID | UUID FK → event_cards.id ON DELETE CASCADE |
+| author | str | 작성자 | VARCHAR |
+| body | str | 댓글 내용 | VARCHAR |
+| created_at | datetime (tz-aware) | 작성 시각 | TIMESTAMPTZ |
+
+인덱스: `ix_comments_event_id_created` (event_id, created_at)

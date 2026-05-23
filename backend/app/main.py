@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from backend.app.core.logging import configure_logging
-from backend.app.db import redis as redis_db, milvus as milvus_db
+from backend.app.db import redis as redis_db, milvus as milvus_db, postgres as postgres_db  # noqa: F401
 from backend.app.api import health, events, themes, sectors, comments, ai_replies, admin
 
 configure_logging()

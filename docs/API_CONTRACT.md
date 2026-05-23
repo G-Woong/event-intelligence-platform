@@ -6,14 +6,27 @@ Base URL: `http://localhost:8000`
 
 ### GET /health
 
+STEP 004에서 `postgres` 필드 추가. 모든 endpoint는 `async def`로 전환됨.
+STEP 004.5에서 `milvus` 부정 값 `"error"`로 통일 (기존 `"disconnected"` 제거).
+
 ```json
 // Response 200
 {
   "status": "ok",
   "redis": "ok",
-  "milvus": "ok"
+  "milvus": "ok",
+  "postgres": "ok"
 }
 ```
+
+각 필드 값: `"ok"` | `"error"` (연결 실패 시 공통 표현 사용).
+
+| 필드 | 정상 | 장애 |
+|---|---|---|
+| `status` | `"ok"` | (항상 ok — 필드 자체 반환 실패 시 500) |
+| `redis` | `"ok"` | `"error"` |
+| `milvus` | `"ok"` | `"error"` |
+| `postgres` | `"ok"` | `"error"` |
 
 ## Events
 
@@ -33,7 +46,7 @@ Base URL: `http://localhost:8000`
     "evidence": [],
     "confidence_score": 0.75,
     "status": "published",
-    "created_at": "2026-05-23T10:00:00Z"
+    "created_at": "2026-05-23T10:00:00+00:00"
   }
 ]
 ```
@@ -62,7 +75,7 @@ Base URL: `http://localhost:8000`
 ### GET /api/themes/{theme_id}/events
 
 ```json
-// Response 200: list[FinalEventCard] filtered by theme
+// Response 200: list[FinalEventCard] filtered by theme (SQL WHERE theme=?)
 ```
 
 ## Sectors
@@ -82,7 +95,7 @@ Base URL: `http://localhost:8000`
 ### GET /api/sectors/{sector_id}/events
 
 ```json
-// Response 200: list[FinalEventCard] filtered by sector
+// Response 200: list[FinalEventCard] filtered by sector (JSONB @> operator)
 ```
 
 ## Comments
@@ -129,7 +142,7 @@ Base URL: `http://localhost:8000`
 
 ### POST /api/admin/upsert-event
 
-Internal endpoint. Used by agent-worker to publish FinalEventCard.
+Internal endpoint. Used by agent-worker to publish FinalEventCard. STEP 004: persists to PostgreSQL via INSERT ... ON CONFLICT DO UPDATE.
 
 ```json
 // Request Body: FinalEventCard

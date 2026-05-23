@@ -11,7 +11,9 @@ COPY requirements/worker.txt requirements/worker.txt
 RUN pip install --no-cache-dir -r requirements/serve.txt -r requirements/vector.txt -r requirements/worker.txt
 
 COPY backend/ backend/
+COPY backend/entrypoint.sh /app/entrypoint.sh
+RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 ENV PYTHONPATH=/app
 
-CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/app/entrypoint.sh"]

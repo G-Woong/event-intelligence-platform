@@ -14,12 +14,13 @@ class Settings(BaseSettings):
     MILVUS_HOST: str = "localhost"
     MILVUS_PORT: int = 19530
     REDIS_URL: str = "redis://localhost:6379/0"
+    DATABASE_URL: str = "postgresql+asyncpg://event_user:event_pass@localhost:5432/event_intel"
 
     def redacted_env_status(self) -> dict[str, str]:
         fields = [
             "LANGSMITH_TRACING", "LANGSMITH_ENDPOINT", "LANGSMITH_API_KEY",
             "LANGSMITH_PROJECT", "OPENAI_API_KEY", "MILVUS_HOST",
-            "MILVUS_PORT", "REDIS_URL",
+            "MILVUS_PORT", "REDIS_URL", "DATABASE_URL",
         ]
         result = {}
         for f in fields:

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.app.db.postgres import get_session
 from backend.app.schemas.events import FinalEventCard
 from backend.app.services import event_service
 
@@ -16,10 +19,10 @@ _THEMES = [
 
 
 @router.get("")
-def list_themes():
+async def list_themes():
     return _THEMES
 
 
 @router.get("/{theme_id}/events", response_model=list[FinalEventCard])
-def events_by_theme(theme_id: str):
-    return [e for e in event_service.list_events() if e.theme == theme_id]
+async def events_by_theme(theme_id: str, session: AsyncSession = Depends(get_session)):
+    return await event_service.list_by_theme(session, theme_id)
