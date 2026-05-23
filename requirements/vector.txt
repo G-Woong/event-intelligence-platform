@@ -14,8 +14,8 @@ proto-plus==1.26.1
 googleapis-common-protos==1.70.0
 
 # --- LanceDB / Tantivy ---
-lancedb==0.29.2
-pylance==2.0.0
+lancedb==0.19.0
+pylance==0.23.0
 tantivy==0.25.1
 
 # --- Sparse / BM25 ---
