@@ -19,3 +19,7 @@ class EventState(TypedDict, total=False):
     fact_check: str
     final_card: Optional[FinalEventCard]
     status: str
+    llm_provider: str
+    llm_errors: list[str]
+    prompt_versions: dict[str, str]
+    model_used: Optional[str]

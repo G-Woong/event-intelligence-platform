@@ -155,6 +155,8 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       BACKEND_URL: http://backend:8000
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
     env_file:
       - .env
     depends_on:

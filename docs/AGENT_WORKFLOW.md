@@ -48,6 +48,31 @@ C:\Users\computer\Desktop\business\codex
 - plans/, docs/, requirements/ 변경은 main → codex 방향으로만 흐른다.
 - codex 브랜치의 app 코드 변경은 Claude가 리뷰 후 cherry-pick 또는 PR 방식으로 main에 통합.
 
+## LLM 호출 경로 (STEP 005 추가)
+
+agent-worker 컨테이너 내부에서 LLM 호출이 발생하는 경로:
+
+```
+EventProcessingGraph.run(raw_event)
+  └── impact_analysis 노드
+        └── agents/tools/llm.py :: analyze_impact()
+              └── get_llm_client()           ← lazy singleton (첫 호출 시 생성)
+                    └── BaseLLMClient
+                          ├── MockLLMClient  (LLM_PROVIDER=mock, 기본값)
+                          └── OpenAILLMClient(LLM_PROVIDER=openai, opt-in)
+                                └── openai.OpenAI (동기 SDK)
+                                      └── tenacity retry 2회
+  └── run_fact_check 노드
+        └── agents/tools/llm.py :: fact_check_claims()
+  └── final_card_writer 노드
+        └── agents/tools/llm.py :: write_final_card()
+```
+
+- `get_llm_client()`는 모듈 레벨 lazy singleton: 그래프 import 시점이 아닌 노드 실행 시점에 생성.
+- `LLM_PROVIDER` 환경변수는 agent-worker의 `docker-compose.dev.yml`에 `${LLM_PROVIDER:-mock}`로 명시.
+- backend의 `ai_replies.py`는 `LLMClient(provider="mock")` legacy 고정. OpenAI 미사용.
+- 새 노드를 LLM과 연결하는 절차: `docs/PROMPT_EXPERIMENT_GUIDE.md` 참조.
+
 ## 금지 사항
 
 - Codex가 `.claude/`, `.codex/`, `.env`를 commit하는 것 금지.

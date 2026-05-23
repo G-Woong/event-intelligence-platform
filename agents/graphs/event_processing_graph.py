@@ -3,6 +3,7 @@ from __future__ import annotations
 from langgraph.graph import StateGraph, END
 
 from agents.state.event_state import EventState
+from backend.app.core.config import settings
 from agents.nodes.parse_source import source_parse
 from agents.nodes.normalize_event import normalize_event
 from agents.nodes.deduplicate import deduplicate_event
@@ -63,6 +64,10 @@ def run(raw_event: RawEvent) -> FinalEventCard:
         "fact_check": "",
         "final_card": None,
         "status": "",
+        "llm_provider": settings.LLM_PROVIDER,
+        "llm_errors": [],
+        "prompt_versions": {"impact_analysis": "v1", "fact_check": "v1", "final_card_writer": "v1"},
+        "model_used": settings.LLM_MODEL if settings.LLM_PROVIDER == "openai" else None,
     }
     final_state = _compiled.invoke(initial)
     card = final_state.get("final_card")

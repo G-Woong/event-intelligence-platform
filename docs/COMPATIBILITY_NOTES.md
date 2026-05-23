@@ -140,3 +140,139 @@
 - merge 전략: `ort` (충돌 없음), 70개 파일 추가
 - codex 고유 변경: `.gitignore`의 `pyproject.toml` 제외 항목 유지됨
 - STEP 004 Postgres 변경 (uncommitted in main)은 이번 sync 범위 외 — 다음 commit 후 재sync 필요
+
+## STEP 005 LLM Agent 도입 — 추가 기록
+
+### Settings LLM_* 5개 필드
+
+`backend/app/config.py` (또는 `agents/config.py`) 에 아래 5개 필드를 추가한다.
+
+| 필드 | 타입 | 기본값 | 비고 |
+|---|---|---|---|
+| `LLM_PROVIDER` | `str` | `"openai"` | `"openai"` \| `"local"` |
+| `LLM_MODEL` | `str` | `"gpt-4o-mini"` | provider별 모델 식별자 |
+| `LLM_TIMEOUT_SEC` | `float` | `30.0` | API 호출 timeout (초) |
+| `LLM_MAX_TOKENS` | `int` | `512` | 응답 최대 토큰 수 |
+| `LLM_TEMPERATURE` | `float` | `0.0` | 샘플링 온도 (0.0 = deterministic) |
+
+모두 `.env` 에서 `os.getenv` 또는 `pydantic-settings` 로 읽는다.
+
+### docker-compose.dev.yml — agent-worker 환경변수 추가
+
+`agent-worker` 서비스에 아래 두 환경변수를 명시한다.
+
+```yaml
+agent-worker:
+  environment:
+    LLM_PROVIDER: openai     # 또는 local
+    LLM_MODEL: gpt-4o-mini
+```
+
+`LLM_TIMEOUT_SEC`, `LLM_MAX_TOKENS`, `LLM_TEMPERATURE` 는 기본값 사용 시 생략 가능.
+비기본값 사용 시 동일하게 environment 블록에 추가.
+
+### 디렉터리 신설
+
+| 경로 | 용도 |
+|---|---|
+| `agents/prompts/` | prompt 파일(`.md`) 저장소. `load_prompt()` 가 이 디렉터리를 탐색. |
+| `agents/tools/` | tool helper 함수 + structured output schema 정의. 진입점은 `agents/tools/llm.py`. |
+
+`agents/prompts/` 은 런타임에 파일 시스템 읽기가 발생하므로 Docker 이미지 빌드 시
+COPY 대상에 포함해야 한다.
+
+```dockerfile
+COPY agents/prompts /app/agents/prompts
+```
+
+### RUN_OPENAI_SMOKE=1 opt-in 패턴
+
+- 환경변수 `RUN_OPENAI_SMOKE=1` 을 설정해야만 실제 OpenAI API 를 호출하는 smoke 테스트가 실행된다.
+- CI 환경에서는 미설정 → 자동 skip.
+- 테스트 파일 내 `pytest.mark.skipif(os.getenv("RUN_OPENAI_SMOKE") != "1", ...)` 패턴 사용.
+
+### MockLLMClient.complete_json() 분기 방식
+
+`MockLLMClient` 는 `schema.__name__` (클래스명) 기반으로 픽스처를 반환한다.
+
+```python
+class MockLLMClient:
+    def complete_json(self, prompt: str, schema: Type[BaseModel]) -> BaseModel | None:
+        name = schema.__name__
+        if name == "ImpactAnalysisOutput":
+            return ImpactAnalysisOutput(
+                severity="medium",
+                affected_sectors=["energy"],
+                confidence=0.8,
+                rationale="mock",
+            )
+        if name == "FactCheckOutput":
+            return FactCheckOutput(
+                verdict="unconfirmed",
+                confidence=0.5,
+                sources=[],
+            )
+        if name == "SummaryOutput":
+            return SummaryOutput(
+                summary="mock summary",
+                key_points=["point A"],
+                tags=["mock"],
+            )
+        return None
+```
+
+새 schema 가 추가될 때마다 `MockLLMClient.complete_json()` 분기도 함께 추가한다.
+
+## STEP 005.5 LLMClient E2E 안정화 — 추가 기록
+
+날짜: 2026-05-23 | 검증 환경: Windows 11 / PowerShell 5.1 / Docker Desktop 27.4.0
+
+### 검증 결과 요약
+
+| 항목 | 결과 |
+|---|---|
+| `docker compose config --quiet` | PASS |
+| `pytest backend/tests -q` | 11/11 PASS |
+| `pytest agents/tests -q` | 10/10 PASS + 1 SKIP (openai_smoke) |
+| backend/worker/agent-worker 이미지 재빌드 | PASS |
+| 7개 컨테이너 Up/healthy | PASS |
+| `/health` 응답 | `{"status":"ok","redis":"ok","milvus":"ok","postgres":"ok"}` |
+| smoke 2파일 (pipeline + persistence) | 2/2 PASS (33.7s) |
+| agent-worker 내부 `LLM_PROVIDER` | `mock` (기대값 일치) |
+| mock 출력 `[mock]` 패턴 | 3개 schema 모두 확인됨 |
+| OpenAI 실호출 | 미실행 (opt-in 미설정) |
+| Commit A (STEP 005) | 완료 |
+| Commit B (STEP 005.5) | 완료 |
+| git push | 미실행 |
+| codex ff-only merge | STEP 005.5 commit 후 재시도 |
+
+### W8: pytest 실행 시 PYTHONPATH 명시 필요
+
+- 로컬(`.venv`) 환경에서 `pytest backend/tests` 또는 `pytest agents/tests` 실행 시
+  `ModuleNotFoundError: No module named 'backend'` 발생.
+- 원인: `.venv`가 프로젝트 루트를 sys.path에 자동 추가하지 않음.
+- 해결: `$env:PYTHONPATH = "C:\Users\computer\Desktop\business\claude"` 설정 후 실행.
+- **CI 대응**: `pyproject.toml` 또는 `pytest.ini`에 `pythonpath = .` 추가를 STEP 006 시점에 검토.
+
+### W9: `complete_json` 키워드 전용 인자 (`schema=`)
+
+- `BaseLLMClient.complete_json(prompt, *, schema=...)` — `schema`는 keyword-only.
+- 위치 인자로 호출(`complete_json(prompt, SomeSchema)`) 시 TypeError.
+- 컨테이너 내부 임시 테스트 코드에서 오류 발생 (실 파이프라인은 keyword 형태로 올바르게 호출).
+- 실 파이프라인 영향: 없음. 노드 코드가 모두 `schema=OutputClass` 형태 사용.
+
+### W10: agent-worker `source_parse` 노드 dict 입력 거부
+
+- `event_processing_graph.run(dict)` 직접 호출 시 `AttributeError: 'dict' object has no attribute 'raw_text'`.
+- 원인: `source_parse` 노드가 `RawEvent` Pydantic 객체를 기대하나 plain dict 전달.
+- 실 파이프라인 영향: 없음. `publish_pipeline.py`가 `RawEvent` 객체를 생성 후 전달.
+- smoke 테스트 2/2 PASS로 실 경로 정상 동작 확인.
+
+### OpenAI opt-in 절차 (미실행, 참고용)
+
+```powershell
+$env:RUN_OPENAI_SMOKE = "1"
+pytest agents/tests/test_openai_smoke.py -q
+```
+
+키 값 출력 금지. 실행 시 응답 길이/모델명만 보고.
