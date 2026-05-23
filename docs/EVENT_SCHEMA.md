@@ -9,6 +9,7 @@
 | fetched_at | datetime | 수집 시각 (UTC) |
 | raw_text | str | 원문 텍스트 |
 | raw_metadata | dict | 소스별 추가 메타데이터 |
+| raw_event_id | Optional[str] | DB raw_events.id. stream payload → agent pipeline 추적 키 (STEP 008A) |
 
 ```json
 {
@@ -109,16 +110,18 @@ collection: `event_embeddings`, dim: 1536, index: IVF_FLAT / COSINE / nlist=128
 | collected_at | TIMESTAMPTZ | NO | now() | |
 | content_hash | VARCHAR(64) | NO | — | sha256(dedup key) |
 | theme_hint | VARCHAR(64) | YES | NULL | sources config에서 주입 |
-| status | VARCHAR(16) | NO | 'collected' | collected→enqueued (STEP 007), processed/failed (STEP 008) |
+| status | VARCHAR(16) | NO | 'collected' | collected→enqueued→processed\|failed (STEP 008A 완료) |
 | enqueued_msg_id | VARCHAR(64) | YES | NULL | Redis XADD msg id |
 | error_reason | VARCHAR(512) | YES | NULL | failed status 시 |
+| event_card_id | UUID | YES | NULL | 처리 완료 후 생성된 FinalEventCard.id (STEP 008A) |
+| processed_at | TIMESTAMPTZ | YES | NULL | processed/failed 전이 시각 (STEP 008A) |
 | raw_metadata | JSONB | NO | '{}' | RSS tags/feed metadata |
 | created_at | TIMESTAMPTZ | NO | now() | |
 | updated_at | TIMESTAMPTZ | NO | now() | |
 
 **UNIQUE 제약**: `content_hash` + partial `(source_type, external_id) WHERE external_id IS NOT NULL`
 
-**인덱스**: collected_at DESC, status, source_type, published_at DESC NULLS LAST, raw_metadata GIN
+**인덱스**: collected_at DESC, status, source_type, published_at DESC NULLS LAST, raw_metadata GIN, event_card_id, processed_at
 
 ## Comment
 

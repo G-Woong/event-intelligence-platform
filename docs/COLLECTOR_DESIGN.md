@@ -10,9 +10,18 @@ RSS feed (feedparser)
   → POST /api/admin/raw-events           (backend admin API)
      ├─ raw_events 테이블 idempotent insert (content_hash UNIQUE)
      ├─ asyncio.to_thread(enqueue_raw_event(...))  → stream:raw_events
+     │    payload에 raw_event_id 포함 (STEP 008A)
      └─ status: collected → enqueued
+            │
+            ├─ XADD 실패 → status="failed", error_reason="xadd_failed:..." (STEP 008A)
+            │
   → worker consumer → ingest_pipeline → stream:to_agent
-  → agent-worker → LangGraph → FinalEventCard → Postgres + Milvus
+         raw_event_id forward (STEP 008A)
+  → agent-worker → LangGraph (EventState.raw_event_id 주입)
+       → FinalEventCard → Postgres + Milvus
+       → PATCH /api/admin/raw-events/{id}/status
+            ├─ 성공: status="processed", event_card_id=card.id (STEP 008A)
+            └─ 실패: status="failed", error_reason=<snippet> (STEP 008A)
 ```
 
 ### 모듈 구조
@@ -51,7 +60,7 @@ sha256(f"{source_type}|{source_name}|{external_id or url}|{title}|{raw_text}")
 | feedparser bozo=1 | 가능한 entries 살리고 진행 |
 | entry.link 없음 | entry 스킵 |
 | backend 5xx | errors 카운트 증가 |
-| XADD 실패 | row는 status="collected" 유지 |
+| XADD 실패 | status="failed", error_reason="xadd_failed:..." (STEP 008A) |
 
 ### CLI 사용
 

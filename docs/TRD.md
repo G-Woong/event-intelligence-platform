@@ -141,3 +141,38 @@ Migration: `alembic upgrade head` (backend/entrypoint.sh에서 자동 실행).
 - `requirements/collector.txt` 신규: `feedparser==6.0.11`
 - `workers/Dockerfile`: `collector.txt` 설치 추가
 - `backend/Dockerfile`: `collector.txt` + `workers/` COPY 추가 (`/collect-rss-once` 지원)
+
+## STEP 008A 신규 컴포넌트
+
+| 컴포넌트 | 경로 | 역할 |
+|---|---|---|
+| observability | `backend/app/core/observability.py` | LangSmith tracing wiring (startup 1회) |
+| update_status | `backend/app/services/raw_event_service.py` | raw_event status lifecycle 단일 진입점 |
+| get_raw_event | `backend/app/services/raw_event_service.py` | 단일 row 조회 (폴링용) |
+| PATCH /raw-events/{id}/status | `backend/app/api/admin.py` | agent-worker → backend 통보 |
+| GET /raw-events/{id} | `backend/app/api/admin.py` | status 폴링 |
+| _notify_status | `agents/agent_worker.py` | agent pipeline 결과 backend 통보 |
+| 0003 migration | `backend/alembic/versions/0003_raw_events_event_card_link.py` | event_card_id + processed_at 컬럼 |
+
+## STEP 008A 환경변수
+
+| 변수 | 기본값 | 설명 |
+|---|---|---|
+| `LANGSMITH_TRACING` | `""` | `true`/`1`/`yes` 이면 LangSmith tracing 활성화 |
+| `BACKEND_INTERNAL_URL` | `http://backend:8000` | agent-worker → backend 내부 통신 |
+| `RUN_LANGSMITH_SMOKE` | `""` | `1`이면 LangSmith 실전송 smoke opt-in |
+
+## STEP 008A DB 구성
+
+| 테이블 | 신규 컬럼/인덱스 | 비고 |
+|---|---|---|
+| `raw_events` | `event_card_id UUID NULL`, `processed_at TIMESTAMPTZ NULL` | Alembic revision c3d4e5f6a7b8 |
+| `raw_events` | ix_raw_events_event_card_id, ix_raw_events_processed_at | — |
+
+## STEP 008A status 라이프사이클
+
+`collected → enqueued → processed | failed`
+
+- XADD 실패: `collected → failed` (error_reason: "xadd_failed:...")
+- agent pipeline 성공: `enqueued → processed` (event_card_id, processed_at 저장)
+- agent pipeline 예외: `enqueued → failed` (error_reason, processed_at 저장)

@@ -185,11 +185,49 @@ TODO STEP 008: admin token authentication.
 }
 ```
 
+### GET /api/admin/raw-events/{raw_event_id} (STEP 008A)
+
+단일 raw_event row 조회. status 폴링용.
+
+```json
+// Response 200: RawEventRecord
+{
+  "id": "...",
+  "status": "processed",
+  "event_card_id": "...",
+  "processed_at": "2026-05-24T00:01:00Z",
+  ...
+}
+// Response 404: { "detail": "raw_event_id=... not found" }
+```
+
+### PATCH /api/admin/raw-events/{raw_event_id}/status (STEP 008A)
+
+agent-worker가 처리 완료/실패 결과를 backend에 통보. status를 processed/failed로 전이.
+
+Request body (`RawEventStatusUpdate`):
+```json
+{ "status": "processed", "event_card_id": "...", "error_reason": null }
+```
+또는
+```json
+{ "status": "failed", "error_reason": "LLM timeout after 30s" }
+```
+
+`error_reason`은 500자로 truncate됨.
+
+```json
+// Response 200: 갱신된 RawEventRecord
+// Response 404: raw_event_id 미존재 시
+```
+
+TODO STEP 008C: admin token authentication.
+
 ### POST /api/admin/collect-rss-once (STEP 007)
 
 Triggers RSS collector run in-process via `asyncio.to_thread`. Fetches all enabled DEFAULT_SOURCES and inserts to `raw_events`. Returns summary JSON.
 
-TODO STEP 008: admin token authentication.
+TODO STEP 008C: admin token authentication.
 
 ```json
 // Response 200:
