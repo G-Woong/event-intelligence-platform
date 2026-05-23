@@ -55,13 +55,42 @@
 | MILVUS_PORT | PRESENT | PRESENT |
 | REDIS_URL | PRESENT | PRESENT |
 
+## .codex_premerge_backup/ 처리
+
+- 로컬 백업 잔여물. git 추적 제외 (`.gitignore`에 `.codex_premerge_backup/` 추가됨).
+- **사용자 직접 정리 필요** — Claude는 삭제하지 않음 (deny 정책).
+- 사용자 수동 명령(참고용):
+  ```powershell
+  Remove-Item -Recurse -Force C:\Users\computer\Desktop\business\.codex_premerge_backup
+  ```
+
+## pymilvus pkg_resources 경고
+
+- 원인: pymilvus 2.4.x 또는 하위 의존성의 `pkg_resources` import. setuptools 80.x deprecation 경고.
+- Milvus Docker image: `milvusdb/milvus:v2.4.10` ↔ pymilvus 2.4.4 (서버-클라이언트 동일 메이저/마이너).
+- 임시 핀: `requirements/vector.txt`의 `setuptools>=80.9.0,<81` 유지.
+- 런타임 영향: **없음** (connect 성공 확인됨).
+- 정식 해결: pymilvus 2.6.x + Milvus image 2.6.x 동시 업그레이드 → STEP 003 이후 별도 compatibility task로 분리.
+- 실측 경고 텍스트 (STEP 002.5 smoke):
+  ```
+  UserWarning: pkg_resources is deprecated as an API.
+    See https://setuptools.pypa.io/en/latest/pkg_resources.html.
+    The pkg_resources package is slated for removal as early as 2025-11-30.
+    Refrain from using this package or pin to Setuptools<81.
+  DeprecationWarning: The '__version_info__' attribute is deprecated (environs/marshmallow).
+  ```
+
+## LanceDB 정책
+
+- Milvus가 **primary vector store**.
+- LanceDB는 **optional / future GraphRAG experiment** 후보로 분리됨.
+- 별도 핀 파일: `requirements/graph_optional.txt` (lancedb==0.19.0, pylance==0.23.0, tantivy==0.25.1).
+- STEP 003 앱 scaffold 범위에서 사용하지 않음.
+- `.venv`에는 lancedb 0.19.0이 이미 설치된 상태 유지 (재설치/제거 없음).
+
 ## 미검증 / 다음 단계에서 다룰 항목
-- `requirements.txt`가 UTF-16 인코딩으로 저장되어 있음 → 다음 단계에서 UTF-8 재인코딩 + 용도별 분리 필요
 - LangSmith 실제 연결 검증 (호출 안 함)
-- Milvus 컨테이너/접속 검증
-- Redis 접속 검증
 - Celery + Redis 동작 검증
 - LangGraph 그래프 실행 검증
-- Docker Compose dev 스택 빌드/기동
-- codex worktree의 git 정책 (init 여부, 메인과의 관계)
+- Docker Compose dev 스택 빌드/기동 (backend / worker / agent-worker 서비스)
 - `model: "opusplan"`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`, `Skill(update-config)` 의 실제 동작 검증

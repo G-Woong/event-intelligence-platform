@@ -1,8 +1,18 @@
-# Claude Code (개인 오버라이드는 비공개)
+# Claude Code / local orchestration
 .claude/
 CLAUDE.md
 .claude/settings.local.json
 .claude/cache/
+
+# Codex / local sub-agent
+.codex/
+AGENTS.md
+.codex/config.toml
+.codex/cache/
+.codex/logs/
+
+# Local backups
+.codex_premerge_backup/
 
 # Secrets
 .env

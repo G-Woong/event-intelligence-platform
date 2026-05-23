@@ -1,0 +1,8 @@
+# graph_optional.txt — optional: LanceDB + Tantivy (GraphRAG 실험용)
+# Milvus가 primary vector store. LanceDB는 optional / future GraphRAG 후보.
+# 본 파일은 STEP 003 scaffold 범위에 포함되지 않음.
+-r base.txt
+
+lancedb==0.19.0
+pylance==0.23.0
+tantivy==0.25.1
