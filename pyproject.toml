@@ -1,0 +1,30 @@
+[project]
+name = "event-intelligence-platform"
+version = "0.0.1"
+description = "전세계 실시간 사건/이벤트 인텔리전스 웹앱"
+requires-python = ">=3.11,<3.12"
+readme = "README.md"
+license = { text = "Proprietary" }
+authors = []
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "W", "UP"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+ignore_missing_imports = true

@@ -1,0 +1,6 @@
+# worker.txt — Celery/RQ 비동기 워커 런타임
+-r base.txt
+
+celery[redis]==5.5.3
+redis==5.0.0
+rq==1.16.2

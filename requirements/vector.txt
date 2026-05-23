@@ -1,0 +1,22 @@
+# vector.txt — 벡터 스토어 (Milvus + LanceDB) 및 검색
+# NOTE: pymilvus==2.4.4 가 setuptools<81을 요구. base에서 정의하지 않고 여기서 핀.
+-r base.txt
+
+# --- setuptools 호환 핀 (pymilvus 2.4.4) ---
+setuptools>=80.9.0,<81
+
+# --- Milvus ---
+pymilvus==2.4.4
+grpcio==1.63.0
+grpcio-status==1.63.0
+protobuf==5.29.5
+proto-plus==1.26.1
+googleapis-common-protos==1.70.0
+
+# --- LanceDB / Tantivy ---
+lancedb==0.29.2
+pylance==2.0.0
+tantivy==0.25.1
+
+# --- Sparse / BM25 ---
+rank-bm25==0.2.2

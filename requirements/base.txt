@@ -1,0 +1,68 @@
+# base.txt — 모든 환경 공통 코어 의존성
+# 다른 requirements/*.txt 파일이 `-r base.txt`로 포함한다.
+
+# --- 설정 / 직렬화 ---
+pydantic==2.11.7
+pydantic-settings==2.7.1
+pydantic_core==2.33.2
+annotated-types==0.7.0
+python-dotenv==1.1.1
+environs==9.5.0
+PyYAML==6.0.2
+orjson==3.11.1
+ujson==5.10.0
+ormsgpack==1.10.0
+
+# --- HTTP / 비동기 IO ---
+httpx==0.28.1
+httpcore==1.0.9
+httptools==0.6.4
+h11==0.16.0
+requests==2.32.4
+requests-toolbelt==1.0.0
+urllib3==2.5.0
+certifi==2025.6.15
+charset-normalizer==3.4.2
+idna==3.10
+aiohttp==3.12.14
+aiohappyeyeballs==2.6.1
+aiosignal==1.4.0
+anyio==4.9.0
+sniffio==1.3.1
+frozenlist==1.7.0
+multidict==6.6.3
+propcache==0.3.2
+yarl==1.20.1
+
+# --- 유틸 ---
+tenacity==8.5.0
+click==8.2.1
+colorama==0.4.6
+packaging==23.2
+six==1.17.0
+typing_extensions==4.14.0
+typing-inspect==0.9.0
+typing-inspection==0.4.1
+exceptiongroup==1.3.0
+python-dateutil==2.9.0.post0
+pytz==2025.2
+Jinja2==3.1.4
+MarkupSafe==2.1.5
+attrs==25.3.0
+psutil==7.0.0
+importlib_metadata==8.7.0
+zipp==3.23.0
+filelock==3.13.1
+fsspec==2024.6.1
+regex==2024.11.6
+xxhash==3.5.0
+
+# --- 직렬화 / 스키마 ---
+dataclasses-json==0.6.7
+marshmallow==3.26.1
+jsonpatch==1.33
+jsonpointer==3.0.0
+mypy_extensions==1.1.0
+
+# --- 관측 ---
+prometheus-client>=0.17.0

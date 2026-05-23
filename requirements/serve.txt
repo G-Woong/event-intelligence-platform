@@ -1,0 +1,8 @@
+# serve.txt — FastAPI 기반 API 서버 런타임
+-r base.txt
+
+fastapi==0.115.14
+starlette==0.46.2
+uvicorn==0.35.0
+websockets==15.0.1
+watchfiles==1.1.0
