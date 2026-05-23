@@ -1,3 +1,9 @@
+# Claude Code (개인 오버라이드는 비공개)
+.claude/
+CLAUDE.md
+.claude/settings.local.json
+.claude/cache/
+
 # Secrets
 .env
 .env.*
@@ -38,10 +44,6 @@ Thumbs.db
 *.log
 logs/
 *.pid
-
-# Claude Code (개인 오버라이드는 비공개)
-.claude/settings.local.json
-.claude/cache/
 
 # Backups
 *.bak
