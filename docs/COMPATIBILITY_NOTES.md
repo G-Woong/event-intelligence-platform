@@ -223,6 +223,36 @@ class MockLLMClient:
 
 새 schema 가 추가될 때마다 `MockLLMClient.complete_json()` 분기도 함께 추가한다.
 
+## STEP 006 Milvus Vector Skeleton — 추가 기록
+
+날짜: 2026-05-23
+
+### W4 해소: `is_connected()` 실 ping 기반으로 교체
+
+- `backend/app/db/milvus.py:is_connected()`가 모듈 플래그 대신 `utility.get_server_version()` 호출로 교체됨.
+- `/health` 엔드포인트의 milvus 판정이 실 ping 기반. 컨테이너 다운 시 즉시 "error" 반영.
+
+### pymilvus 2.4.4 API 호환 노트
+
+- `hit.entity.get(key)`: 1 인자만 허용. default 인자 없음. `hit.entity.get("field") or ""` 패턴 사용.
+- `CollectionSchema(fields=fields, description=...)`: `enable_dynamic_field` 미사용 (skeleton).
+- `Collection.insert(data)`: column-order list of lists. auto_id 필드는 포함하지 않음.
+- `Collection.search()`: `output_fields` 명시 필수. `limit`는 top_k + exclude 여유분.
+
+### STEP 006 검증 결과
+
+| 항목 | 결과 |
+|---|---|
+| `docker compose config --quiet` | PASS |
+| `pytest backend/tests -q` | 26/26 PASS + 4 SKIP |
+| `pytest agents/tests -q` | 15/15 PASS + 1 SKIP |
+| `pytest tests/smoke/test_pipeline.py test_persistence.py -q` | 2/2 PASS |
+| `pytest backend/tests/test_milvus_wrapper.py -q` (RUN_MILVUS_INTEGRATION=1) | 3/3 PASS |
+| `pytest tests/smoke/test_vector_search.py -q` (RUN_MILVUS_INTEGRATION=1) | 1/1 PASS |
+| `/health` milvus | "ok" (실 ping) |
+| upsert_card → Milvus insert | 동작 확인 |
+| retrieve_past_context → backend API → Milvus search | 동작 확인 |
+
 ## STEP 005.5 LLMClient E2E 안정화 — 추가 기록
 
 날짜: 2026-05-23 | 검증 환경: Windows 11 / PowerShell 5.1 / Docker Desktop 27.4.0

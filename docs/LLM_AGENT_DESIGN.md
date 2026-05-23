@@ -323,7 +323,25 @@ graph.add_edge("retrieve_past_context", "analyze_impact")
 
 ---
 
-## 8. LangChain / Runnable 정책
+## 8. retrieve_past_context 연결 방식 (STEP 006)
+
+`retrieve_past_context` 노드는 Backend API 경유로 Milvus dense vector search를 수행한다.
+
+```
+agents/nodes/retrieve_context.py
+  → agents/tools/vector_search.search_similar(text, top_k=5, exclude_event_id)
+  → httpx.post(BACKEND_INTERNAL_URL + "/api/internal/search-similar")
+  → backend embed + Milvus search + Postgres lookup
+  → state.past_context: list[str]   (str 요약, 기존 하위호환 유지)
+  → state.retrieved_context: list[dict]  (신규: score/title/summary/theme 포함)
+```
+
+실패 시 `["[fallback-context]"]` + `llm_errors` 누적.  
+`deduplicate_event` 노드: 현재 hash pass-through 유지. TODO(STEP-010) vector threshold dedup.
+
+---
+
+## 9. LangChain / Runnable 정책
 
 STEP 005 는 **raw openai SDK** 만 사용한다.
 

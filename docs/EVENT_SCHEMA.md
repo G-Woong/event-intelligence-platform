@@ -62,6 +62,22 @@
 
 ORM 전용 추가 컬럼: `updated_at` (TIMESTAMPTZ) — Pydantic 스키마 미포함.
 
+## Milvus Vector Schema (STEP 006)
+
+collection: `event_embeddings`, dim: 1536, index: IVF_FLAT / COSINE / nlist=128
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| pk | INT64, auto_id, primary | Milvus 내부 PK |
+| event_id | VARCHAR(64) | FinalEventCard.id |
+| card_id | VARCHAR(64) | 현재 event_id 동일; 향후 분리 대비 |
+| text_hash | VARCHAR(64) | sha256(title+summary)[:32] |
+| theme | VARCHAR(64) | 단일 string |
+| source_type | VARCHAR(32) | 현재 "agent" 고정 |
+| created_at | INT64 | unix timestamp |
+| metadata_json | VARCHAR(2048) | sectors/entities JSON |
+| embedding | FLOAT_VECTOR(1536) | cosine 검색 벡터 |
+
 ```json
 {
   "id": "x9y8z7w6-...",

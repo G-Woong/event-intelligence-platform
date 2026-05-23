@@ -1,4 +1,4 @@
-# Technical Requirements Document — STEP 005
+# Technical Requirements Document — STEP 006
 
 ## 런타임 스택
 
@@ -18,9 +18,30 @@
 | pymilvus | 2.4.4 | Vector store client (`requirements/vector.txt`) |
 | langgraph | 0.2.76 | Event processing graph (`requirements/ai.txt`) |
 | langchain-core | 0.2.43 | LangGraph 의존 |
-| openai | 1.108.1 | LLM 호출 (`requirements/ai.txt`, agent-worker 한정) |
+| openai | 1.108.1 | LLM 호출 + Embedding opt-in (`requirements/ai.txt`) |
 | tenacity | 8.5.0 | OpenAI retry (`requirements/base.txt`) |
 | httpx | 0.28.1 | agent-worker → backend HTTP 호출 |
+
+## STEP 006 신규 컴포넌트
+
+| 컴포넌트 | 경로 | 역할 |
+|---|---|---|
+| EmbeddingClient | `backend/app/services/embedding_client.py` | Mock/OpenAI 임베딩 client (LLMClient 미러) |
+| vector_index_service | `backend/app/services/vector_index_service.py` | upsert_card 후 embed + Milvus insert orchestrator |
+| `/api/internal/search-similar` | `backend/app/api/internal.py` | query_text embed → Milvus search → Postgres lookup |
+| vector.py schema | `backend/app/schemas/vector.py` | SimilarEventQuery / SimilarEventHit / SimilarEventResponse |
+| vector_search tool | `agents/tools/vector_search.py` | retrieve_past_context용 httpx thin wrapper |
+
+## STEP 006 환경 변수 추가
+
+| 키 | 기본값 | 비고 |
+|---|---|---|
+| EMBEDDING_PROVIDER | "mock" | "mock" \| "openai" |
+| EMBEDDING_MODEL | "text-embedding-3-small" | OpenAI 모델명 |
+| EMBEDDING_DIM | 1536 | vector 차원 (고정) |
+| EMBEDDING_TIMEOUT_SEC | 30.0 | OpenAI 호출 timeout |
+| MILVUS_COLLECTION | "event_embeddings" | Milvus collection명 |
+| BACKEND_INTERNAL_URL | "http://backend:8000" | agent-worker → backend 내부 URL |
 
 ## 인프라
 

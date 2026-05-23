@@ -31,6 +31,26 @@
 [backend (FastAPI)]
   event_service.upsert_card(session, card)
      │ SQLAlchemy INSERT ... ON CONFLICT DO UPDATE
+     ├─ await session.commit()
+     │
+     ▼ (STEP 006 추가)
+  vector_index_service.try_index_card(card)
+     │ EmbeddingClient.embed_text(title + summary)
+     │ milvus.insert_event_embedding(event_id, embedding, ...)
+     ▼
+[Milvus 2.4.10]   collection: event_embeddings (dim=1536)
+     │
+     ▼ (retrieve_past_context 경로)
+[agent-worker retrieve_past_context]
+     │ vector_search.search_similar(text, top_k=5)
+     │ POST /api/internal/search-similar
+     ▼
+  milvus.search_similar_events(embedding, top_k)
+     │ Postgres lookup (event_id → title/summary)
+     ▼
+  state.past_context: list[str]
+  state.retrieved_context: list[dict]
+     │
      ▼
 [PostgreSQL 17]
   event_cards / comments 테이블
