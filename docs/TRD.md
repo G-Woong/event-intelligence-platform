@@ -107,3 +107,37 @@ Migration: `alembic upgrade head` (backend/entrypoint.sh에서 자동 실행).
 - `.env` 실값 로그 금지 (`OPENAI_API_KEY` 부분 마스킹도 금지, 길이만 logger.debug)
 - Pydantic 검증 실패 시 fallback 반환, pipeline 전체 차단 없음
 - `restart: on-failure`로 비정상 종료 시 자동 재시작
+
+## STEP 007 신규 컴포넌트
+
+| 컴포넌트 | 경로 | 역할 |
+|---|---|---|
+| RawEventORM | `backend/app/models/raw_event.py` | raw_events 테이블 ORM |
+| RawEventCreate/Record | `backend/app/schemas/raw_events.py` | 입력/DB row/응답 스키마 |
+| raw_event_service | `backend/app/services/raw_event_service.py` | idempotent insert + XADD |
+| POST /api/admin/raw-events | `backend/app/api/admin.py` | collector write boundary |
+| POST /api/admin/collect-rss-once | `backend/app/api/admin.py` | in-process RSS 트리거 |
+| rss_collector | `workers/collectors/rss_collector.py` | feedparser one-shot run() |
+| sources | `workers/collectors/sources.py` | DEFAULT_SOURCES + get_sources() |
+| 0002_raw_events | `backend/alembic/versions/0002_raw_events.py` | raw_events migration |
+
+## STEP 007 환경변수
+
+| 키 | 기본값 | 비고 |
+|---|---|---|
+| `RSS_COLLECTOR_FETCH_TIMEOUT_SEC` | `15` | feedparser socket timeout |
+| `RSS_SOURCES_CONFIG_PATH` | `""` | stub. 비어있으면 DEFAULT_SOURCES 사용 |
+| `RSS_COLLECTOR_USER_AGENT` | `"event-intelligence/0.7 (+ei)"` | HTTP User-Agent |
+| `RUN_RSS_LIVE_SMOKE` | `""` | `"1"` 이면 live smoke 실행 |
+
+## STEP 007 DB 구성
+
+| 테이블 | 인덱스/제약 | 비고 |
+|---|---|---|
+| `raw_events` | PK(id), UNIQUE(content_hash), partial UNIQUE(source_type, external_id), ix_collected_at, ix_status, ix_source_type, ix_published_at, GIN(raw_metadata) | Alembic revision b2c3d4e5f6a7 |
+
+## STEP 007 인프라 변경
+
+- `requirements/collector.txt` 신규: `feedparser==6.0.11`
+- `workers/Dockerfile`: `collector.txt` 설치 추가
+- `backend/Dockerfile`: `collector.txt` + `workers/` COPY 추가 (`/collect-rss-once` 지원)

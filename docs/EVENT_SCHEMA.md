@@ -94,6 +94,32 @@ collection: `event_embeddings`, dim: 1536, index: IVF_FLAT / COSINE / nlist=128
 }
 ```
 
+## raw_events Table (STEP 007)
+
+| 컬럼 | 타입 | NULL | 기본값 | 비고 |
+|---|---|---|---|---|
+| id | UUID | NO | uuid.uuid4 | PK |
+| source_type | VARCHAR(32) | NO | — | "rss" / 미래: dart/sec/web |
+| source_name | VARCHAR(128) | NO | — | feed 식별자 (e.g. bbc_world) |
+| external_id | VARCHAR(512) | YES | NULL | RSS guid/link fallback |
+| url | VARCHAR(2048) | NO | — | canonical link |
+| title | VARCHAR(1024) | YES | NULL | RSS title |
+| raw_text | TEXT | NO | '' | HTML 제거된 summary — 본문 저장 금지 |
+| published_at | TIMESTAMPTZ | YES | NULL | UTC 변환 |
+| collected_at | TIMESTAMPTZ | NO | now() | |
+| content_hash | VARCHAR(64) | NO | — | sha256(dedup key) |
+| theme_hint | VARCHAR(64) | YES | NULL | sources config에서 주입 |
+| status | VARCHAR(16) | NO | 'collected' | collected→enqueued (STEP 007), processed/failed (STEP 008) |
+| enqueued_msg_id | VARCHAR(64) | YES | NULL | Redis XADD msg id |
+| error_reason | VARCHAR(512) | YES | NULL | failed status 시 |
+| raw_metadata | JSONB | NO | '{}' | RSS tags/feed metadata |
+| created_at | TIMESTAMPTZ | NO | now() | |
+| updated_at | TIMESTAMPTZ | NO | now() | |
+
+**UNIQUE 제약**: `content_hash` + partial `(source_type, external_id) WHERE external_id IS NOT NULL`
+
+**인덱스**: collected_at DESC, status, source_type, published_at DESC NULLS LAST, raw_metadata GIN
+
 ## Comment
 
 | 필드 | 타입 | 설명 | PG 컬럼 타입 |

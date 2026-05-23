@@ -1,9 +1,18 @@
-# Architecture — Event Intelligence (STEP 005)
+# Architecture — Event Intelligence (STEP 007)
 
 ## 컴포넌트 다이어그램
 
 ```
-[외부 소스]
+[RSS feed (feedparser)]                       ← IMPLEMENTED (STEP 007)
+  feedparser.parse(url)
+     │ workers/collectors/rss_collector.py
+     ▼
+POST /api/admin/raw-events
+     │ raw_event_service.create_raw_event()
+     │   pg_insert ON CONFLICT DO NOTHING (content_hash)
+     │   asyncio.to_thread(enqueue_raw_event)
+     ▼
+[raw_events 테이블]  status: collected → enqueued
      │
      ▼
 [producer.py]
@@ -81,7 +90,7 @@ agent-worker
 | 서비스 | 이미지 | 포트 | 역할 |
 |---|---|---|---|
 | redis | redis:7.4-alpine | 6379 | Stream broker |
-| postgres | postgres:17-alpine | 5432 | 영속 스토리지 (event_cards, comments) |
+| postgres | postgres:17-alpine | 5432 | 영속 스토리지 (event_cards, comments, raw_events) |
 | milvus-standalone | milvusdb/milvus:v2.4.10 | 19530, 9091 | Vector store (STEP 006 활성화) |
 | backend | ./backend/Dockerfile | 8000 | FastAPI API 서버 |
 | worker | ./workers/Dockerfile | - | Stream ingest consumer |
@@ -140,14 +149,14 @@ agent-worker
 
 | 컴포넌트 | 현황 | 목표 STEP |
 |---|---|---|
-| crawler collector | `requirements/crawler.txt` pin만 존재 | STEP 007 |
+| crawler collector (RSS) | `workers/collectors/rss_collector.py` | **DONE (STEP 007)** |
 | OpenSearch | 코드·문서에 자리 없음 | 먼 STEP |
 | Next.js frontend | `frontend/` 디렉터리 없음 | 먼 STEP |
 
 ## 다음 STEP 순서
 
-1. **STEP 006** — Milvus insert/search 실호출 + `retrieve_past_context`/`deduplicate` 실연결
-2. **STEP 007** — RSS crawler 1종 + `raw_events` 테이블 + Alembic migration
-3. **STEP 008** — agent-worker async 전환 + LangSmith tracing 실연결 + OpenAI 비용 가드
-4. **STEP 009** — Next.js `/events` 목록 UI (read-only, public API)
-5. **STEP 010** — entity_linking, theme_sector_mapping, evidence_check 3개 노드 LLM 전환
+1. ~~**STEP 006**~~ — Milvus insert/search 실호출 (완료)
+2. ~~**STEP 007**~~ — RSS collector + raw_events + Alembic migration (완료)
+3. **STEP 008** — agent-worker async + raw_event_id stream linkage + processed/failed status + LangSmith tracing
+4. **STEP 009** — Next.js `/events` 목록 UI + admin raw-events GET + collector_sources 테이블
+5. **STEP 010** — DART/SEC collector + vector dedup + entity linking LLM 전환

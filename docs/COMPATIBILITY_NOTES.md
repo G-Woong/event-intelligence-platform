@@ -306,3 +306,46 @@ pytest agents/tests/test_openai_smoke.py -q
 ```
 
 키 값 출력 금지. 실행 시 응답 길이/모델명만 보고.
+
+## STEP 007 RSS Collector — 추가 기록
+
+날짜: 2026-05-23
+
+### feedparser 6.0.11 동작 노트
+
+- `feedparser.parse(url, agent=UA, request_headers={...})` — `agent` 파라미터가 HTTP User-Agent 헤더를 설정.
+- `entry.published_parsed` → `time.struct_time (9-tuple)` → `datetime(*parsed[:6], tzinfo=timezone.utc)` 로 UTC 변환 필수.
+- `entry.id` 또는 `entry.guidislink` 가 없는 경우 `entry.link`를 external_id fallback으로 사용.
+- `<guid isPermaLink="true">` (기본) 인 경우 feedparser가 `entry.link`에 guid 값을 복사함. `isPermaLink="false"` 인 경우 `entry.link`는 null.
+- `bozo=1` 인 경우 feed parse는 진행되며 `bozo_exception`으로 오류 내용 확인 가능.
+- feedparser는 기본적으로 socket timeout을 설정하지 않음. `socket.setdefaulttimeout(N)` 으로 설정 필요 (thread-safe 주의: 이전 값 저장 후 복원).
+- 한국어(YNA) 피드: UTF-8 명시하면 정상 파싱. 인코딩 mismatch는 `bozo=1` 발생하나 콘텐츠는 살림.
+
+### raw_event_service asyncio 주의
+
+- `enqueue_raw_event()` 는 동기 Redis 클라이언트 사용.
+- FastAPI async 핸들러에서 직접 호출 시 이벤트 루프를 블록 → uvicorn 전체 hang.
+- 해결: `await asyncio.to_thread(enqueue_raw_event, raw_event)`.
+
+### `/collect-rss-once` self-call 패턴
+
+- backend가 자신의 `/api/admin/raw-events`를 호출하는 self-call 구조.
+- `asyncio.to_thread(rss_collector.run)` 로 블로킹 피드 fetch + 동기 httpx 호출을 스레드에 격리.
+- backend 내부에서 `BACKEND_INTERNAL_URL = http://backend:8000` → Docker 내에서 자기 자신 호출.
+- 이 패턴은 uvicorn이 추가 커넥션을 수락할 수 있는 한 (asyncio.to_thread 사용 시) 정상 동작.
+
+### STEP 007 검증 결과
+
+| 항목 | 결과 |
+|---|---|
+| `pytest workers/tests/test_rss_collector.py -v` | 16/16 PASS |
+| `pytest backend/tests/test_raw_events_api.py -v` | 5/5 PASS |
+| `pytest tests/smoke/test_rss_collector_fixture.py -v` | 3/3 PASS |
+| alembic upgrade head (0001→0002) | PASS |
+| alembic downgrade -1 + upgrade head roundtrip | PASS |
+| raw_events 테이블 + 2 UNIQUE + 5 index | 확인 |
+| event_cards 기존 13개 데이터 보존 | PASS |
+| `POST /api/admin/raw-events` 중복 is_duplicate=true | PASS |
+| `POST /api/admin/collect-rss-once` summary 반환 | PASS (sources=3, items_seen=152) |
+| `RawEvent` schema 무변경 | git diff 0 hunks |
+| 컨테이너 8개 Up/healthy | PASS |

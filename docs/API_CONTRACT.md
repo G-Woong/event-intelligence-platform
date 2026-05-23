@@ -148,3 +148,61 @@ Internal endpoint. Used by agent-worker to publish FinalEventCard. STEP 004: per
 // Request Body: FinalEventCard
 // Response 200: FinalEventCard
 ```
+
+### POST /api/admin/raw-events (STEP 007)
+
+Idempotent insert of a raw event from collector. Deduplicates by `content_hash`. On new insert, enqueues to Redis Stream `stream:raw_events`.
+
+TODO STEP 008: admin token authentication.
+
+```json
+// Request Body (RawEventCreate):
+{
+  "source_type": "rss",
+  "source_name": "bbc_world",
+  "external_id": "guid-123",
+  "url": "https://example.com/article/1",
+  "title": "Article title",
+  "raw_text": "Summary text",
+  "published_at": "2026-05-23T08:00:00Z",
+  "content_hash": "sha256hex64chars...",
+  "theme_hint": "geopolitics",
+  "raw_metadata": {"rss": {"feed_title": "BBC", "guid": "guid-123", "tags": []}}
+}
+
+// Response 200 (RawEventCreateResponse):
+{
+  "record": { /* RawEventRecord — all raw_events columns */ },
+  "is_duplicate": false,
+  "enqueued_msg_id": "1779000000000-0"
+}
+
+// Duplicate case:
+{
+  "record": { /* existing row */ },
+  "is_duplicate": true,
+  "enqueued_msg_id": null
+}
+```
+
+### POST /api/admin/collect-rss-once (STEP 007)
+
+Triggers RSS collector run in-process via `asyncio.to_thread`. Fetches all enabled DEFAULT_SOURCES and inserts to `raw_events`. Returns summary JSON.
+
+TODO STEP 008: admin token authentication.
+
+```json
+// Response 200:
+{
+  "sources": 3,
+  "items_seen": 152,
+  "items_enqueued": 5,
+  "duplicates": 145,
+  "errors": 2,
+  "per_source": [
+    { "source": "bbc_world", "items_seen": 32, "items_enqueued": 0, "duplicates": 30, "errors": 2 },
+    { "source": "reuters_business", "items_seen": 0, "items_enqueued": 0, "duplicates": 0, "errors": 0 },
+    { "source": "yna_economy", "items_seen": 120, "items_enqueued": 5, "duplicates": 115, "errors": 0 }
+  ]
+}
+```

@@ -1,344 +1,411 @@
-# STEP 006 — Milvus Embedding Insert/Search Skeleton
+# STEP 007 — RSS Collector + raw_events Persistence + Alembic Migration Skeleton
 
 ## Context
 
-STEP 003~005.5에서 LangGraph + LLMClient + Postgres + Docker e2e 흐름이 완성됐지만,
-Milvus는 여전히 stub 상태(`backend/app/db/milvus.py:33-42` 모든 함수가 `pass`/`return []`).
-`retrieve_past_context` 노드는 `["[mock-context-1]"]`만 반환하고
-(`agents/nodes/retrieve_context.py:6-7`), `deduplicate_event`는 sha256 hash pass-through만 수행
-(`agents/nodes/deduplicate.py:6-9`).
+STEP 003~006에서 LangGraph + LLMClient + Postgres + Milvus + Docker e2e가 완성됐지만,
+파이프라인은 항상 **외부에서 enqueue된 RawEvent**를 가정한다. 실제 외부 소스에서 사건을
+가져오는 입구(crawler/collector)는 부재 상태 — `docs/ARCHITECTURE.md:142-144`도
+"crawler collector → MISSING → STEP 007"로 명시.
 
-본 STEP 006의 목표는 **Milvus 기반 Dense Vector RAG의 minimal end-to-end 경로**를 뚫는 것이다:
+STEP 007의 목표는 **외부 정보 수집의 첫 입구를 RSS로 뚫는 것**:
 
 ```
-FinalEventCard
-  → backend upsert_card
-  → EmbeddingClient.embed_text(title + summary)
-  → Milvus insert (collection: event_embeddings, dim=1536)
-  → /api/internal/search-similar  (신규 endpoint)
-  → agent-worker retrieve_past_context → state.past_context/retrieved_context
-  → LangGraph 후속 노드(impact/fact_check/final_writer)에 context 입력
+RSS feed (feedparser)
+  → workers/collectors/rss_collector.py
+  → POST /api/admin/raw-events  (backend admin API)
+     ├─ raw_events 테이블 idempotent insert (content_hash UNIQUE)
+     ├─ Redis Stream XADD to stream:raw_events
+     └─ status: collected → enqueued
+  → 기존 worker → ingest_pipeline → stream:to_agent
+  → agent-worker → LangGraph → FinalEventCard → Postgres + Milvus
 ```
 
-고도화(KG-RAG, hybrid search, reranker, chunking, threshold 튜닝)는 본 단계 범위 밖.
-deduplicate는 hook/stub 연결까지만 허용.
+DART/SEC/Web/Social crawler, Playwright/Selenium, 본문 크롤링, 고급 dedup,
+OpenSearch, Next.js UI, agent 측 raw_events.status 업데이트는 모두 본 STEP 범위 외.
 
 ---
 
-## 사용자 확정 결정 (Phase 3 질의응답)
+## 사용자 확정 결정 (Q1-Q3)
 
 | 결정 항목 | 선택 |
 |---|---|
-| Search 경로 | **Backend API 경유**: `POST /api/internal/search-similar` 신설. agent-worker는 httpx로 호출. vector store 진입점을 backend로 단일화. agents/Dockerfile 무수정. |
-| Embedding 차원 | **1536 단일 통일**. EMBEDDING_DIM=1536 고정. Mock/OpenAI 모두 1536-dim 반환. Milvus collection 단일. |
-| EventState 키 | **둘 다 유지 (별칭)**. 기존 `past_context: List[str]`은 유지(하위호환), 신규 `retrieved_context: List[dict]` 추가. |
+| raw_events.status 라이프사이클 | **수집측만 업데이트**: collected → enqueued까지 collector/backend가 갱신. agent pipeline은 raw_events 미인지. stream payload(5필드) 무변경 → STEP 003-006 회귀 0건. processed/failed는 STEP 008에서 raw_event_id linkage와 함께 도입. |
+| DEFAULT_SOURCES + 라이브 fetch 정책 | **공개 피드 2-3개 + fixture-first**: BBC World, Reuters, YNA 공개 RSS 하드코딩. 기본 테스트는 모두 `tests/fixtures/*.xml` 기반(네트워크 0). 실 RSS는 `RUN_RSS_LIVE_SMOKE=1`에서만. |
+| `POST /api/admin/collect-rss-once` | **포함**: curl 한 번으로 트리거 가능. backend 이미지에도 feedparser 설치. `asyncio.to_thread`로 블로킹 회피. |
 
 ---
 
 ## 비범위 (절대 하지 않음)
 
-- crawler (STEP 007)
-- KG-RAG / hybrid search / reranker / chunking 고도화
-- deduplicate threshold 튜닝 알고리즘 (hook만)
-- OpenSearch, sparse retrieval 본격 도입
-- Next.js frontend (STEP 009)
-- agent-worker async 전환 (STEP 008)
-- LangSmith tracing 실연결
-- production-grade Milvus schema 최적화 (partition, dynamic field 등)
-- pymilvus/Milvus 메이저 업그레이드
-- 새 LLM provider
-- agent-worker에 pymilvus 추가 (backend 경유로 회피)
+- DART API / SEC EDGAR / YouTube / Reddit / X / 기타 소셜 collector
+- Playwright / Selenium / 본문 크롤링 / anti-bot / paywall 우회 / robots 우회
+- OpenSearch / Next.js UI / 검색 UI
+- 고급 vector dedup / LLM 기반 dedup
+- agent-worker 측 raw_events.status 업데이트 (STEP 008로 연기)
+- raw_event_id stream linkage (STEP 008로 연기)
+- DB-backed source 테이블 (skeleton은 하드코딩, 마이그레이션 경로만 문서화)
+- 새 LLM provider / agent graph 노드 추가
+- 새 Milvus collection / schema 변경
 
 ---
 
 ## 절대 금지 (CLAUDE.md 준수)
 
-- `Remove-Item`, `rm`, `del`, `git reset --hard`, `git clean -fdx`
-- `git push`
-- `docker volume rm`, `docker system prune -af`
+- `Remove-Item`, `rm`, `del`, `rmdir`, `git reset --hard`, `git clean -fdx`
+- `git push` (전 변형)
+- `docker volume rm`, `docker compose down -v`, `docker system prune -af`
 - `.env` 실값 출력. `OPENAI_API_KEY` 길이만 logger.debug
-- OpenAI 실호출 (`RUN_OPENAI_EMBED_SMOKE=1` 없으면 금지)
-- codex worktree 안의 파일을 claude에서 직접 수정
+- 실 RSS 외부 호출 (`RUN_RSS_LIVE_SMOKE=1` 미설정 시)
+- codex worktree 안의 파일을 claude에서 직접 수정 (read-only)
 
 ---
 
-## 변경/생성 파일
+## raw_events 테이블 설계
+
+### 컬럼
+
+| 컬럼 | 타입 | NULL | 기본값 | 비고 |
+|---|---|---|---|---|
+| `id` | UUID | NO | Python `uuid.uuid4` | PK |
+| `source_type` | VARCHAR(32) | NO | — | `"rss"` (미래: dart/sec/web/social) |
+| `source_name` | VARCHAR(128) | NO | — | feed 식별자 (e.g. `bbc_world`) |
+| `external_id` | VARCHAR(512) | YES | NULL | RSS `entry.id`/`guid`/`link` fallback |
+| `url` | VARCHAR(2048) | NO | — | canonical link |
+| `title` | VARCHAR(1024) | YES | NULL | RSS title (length-capped) |
+| `raw_text` | TEXT | NO | `''` | summary only — 본문 저장 금지 |
+| `published_at` | TIMESTAMPTZ | YES | NULL | `entry.published_parsed` → UTC |
+| `collected_at` | TIMESTAMPTZ | NO | `now()` | 수집 시각 |
+| `content_hash` | VARCHAR(64) | NO | — | sha256(source_type\|source_name\|external_id\|url\|title\|raw_text) |
+| `theme_hint` | VARCHAR(64) | YES | NULL | sources 설정에서 주입 |
+| `status` | VARCHAR(16) | NO | `"collected"` | `collected`/`enqueued`/`processed`/`failed` (STEP 007은 앞 2개만 사용) |
+| `enqueued_msg_id` | VARCHAR(64) | YES | NULL | Redis XADD msg id |
+| `error_reason` | VARCHAR(512) | YES | NULL | failed status 시 |
+| `raw_metadata` | JSONB | NO | `'{}'::jsonb` | RSS tags/feed metadata |
+| `created_at` | TIMESTAMPTZ | NO | `now()` | |
+| `updated_at` | TIMESTAMPTZ | NO | `now()` + onupdate | |
+
+### Unique 제약 (둘 다)
+1. `UNIQUE (content_hash)` — 전역 컨텐츠 dedup. 동일 텍스트 재수집 차단.
+2. `UNIQUE (source_type, external_id) WHERE external_id IS NOT NULL` — partial unique. 같은 GUID 재게시 차단(web/scrape NULL 대응).
+
+이유: DART/SEC는 stable external_id 강력 / web/social은 약함 → 두 축 모두 필요. 향후 collector 공통 사용 가능.
+
+### Index
+- `ix_raw_events_collected_at` DESC
+- `ix_raw_events_status`
+- `ix_raw_events_source_type`
+- `ix_raw_events_published_at` DESC NULLS LAST
+- `ix_raw_events_raw_metadata_gin` GIN jsonb_path_ops
+
+### Pydantic 분리
+- `RawEvent` (`backend/app/schemas/events.py:9-14`) **불변** — Redis Stream wire contract.
+- 신규 `backend/app/schemas/raw_events.py`:
+  - `RawEventCreate` (collector → backend 입력)
+  - `RawEventRecord` (DB row 표현)
+  - `RawEventCreateResponse` (`record + is_duplicate + enqueued_msg_id`)
+
+---
+
+## RSS Collector 설계
+
+### 모듈 구조
+```
+workers/collectors/__init__.py
+workers/collectors/__main__.py            # python -m workers.collectors entry
+workers/collectors/rss_collector.py       # run() one-shot
+workers/collectors/sources.py             # DEFAULT_SOURCES 하드코딩 리스트
+```
+
+### `DEFAULT_SOURCES` (하드코딩, 2-3개)
+```python
+DEFAULT_SOURCES = [
+    {"name": "bbc_world",        "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+     "theme_hint": "geopolitics", "enabled": True},
+    {"name": "reuters_business", "url": "https://feeds.reuters.com/reuters/businessNews",
+     "theme_hint": "macro",       "enabled": True},
+    {"name": "yna_economy",      "url": "https://www.yna.co.kr/rss/economy.xml",
+     "theme_hint": "macro_kr",    "enabled": True},
+]
+```
+
+DB-backed source 테이블은 STEP 008+로 연기. `RSS_SOURCES_CONFIG_PATH` env var는 stub.
+
+### RSS item → DB/Stream 매핑
+| 대상 | 출처 |
+|---|---|
+| `source` (stream) | `f"rss:{source_name}"` |
+| `source_type` (DB) | `"rss"` |
+| `source_name` (DB) | sources config |
+| `external_id` (DB) | `entry.id or entry.guid or entry.link` |
+| `url` (DB + stream) | `entry.link` |
+| `title` (DB) | `entry.title[:1024]` |
+| `raw_text` (DB + stream) | `entry.summary` HTML-stripped via regex (no bs4) |
+| `published_at` (DB) | `datetime(*entry.published_parsed[:6], tzinfo=timezone.utc)` |
+| `fetched_at` (stream) | `datetime.now(timezone.utc)` |
+| `content_hash` (DB) | `sha256(f"{source_type}|{source_name}|{external_id or url}|{title or ''}|{raw_text}").hexdigest()` |
+| `theme_hint` (DB) | sources config |
+| `raw_metadata` (DB + stream) | `{"rss": {"tags": [...], "feed_title": ..., "guid": ...}}` |
+
+### Error 처리
+- 네트워크 timeout (`RSS_COLLECTOR_FETCH_TIMEOUT_SEC=15`) → 해당 source 스킵, 로깅, 다음 진행
+- `feedparser.bozo=1` → 가능한 entries 살리고 진행
+- 빈 feed → info log, 0건 처리
+- `entry.link` 없음 → entry 스킵
+- backend 5xx → tenacity 1회 재시도
+- Redis enqueue fail → row는 `status="collected"` 유지, 응답 `enqueued_msg_id=None`
+
+### CLI
+```
+python -m workers.collectors                              # = python -m workers.collectors.__main__
+docker compose run --rm worker python -m workers.collectors.rss_collector
+```
+one-shot. 종합 로그 1줄: `{sources, items_seen, items_enqueued, duplicates, errors}`. always-on loop 없음.
+
+---
+
+## Storage Write Path (Backend Admin API)
+
+### 결정: backend `/api/admin/raw-events` 단일 write boundary
+- worker는 backend API 호출만. `publish_pipeline.publish_card`와 대칭.
+- worker Dockerfile은 `backend/app/models/`/`services/`를 복사하지 않음 → 직접 DB write 불가.
+- 단일 제약 위반 처리, 향후 hook 확장 용이.
+
+### 흐름 (backend 측)
+```
+POST /api/admin/raw-events  (body: RawEventCreate)
+  1) pg_insert(RawEventORM).values(...).on_conflict_do_nothing(index_elements=["content_hash"])
+  2) commit
+  3) SELECT ... WHERE content_hash=:h  → 기존 row인지 신규 row인지 판정
+  4) is_duplicate=True 면: response 200, enqueued_msg_id=None, XADD 미실행
+     is_duplicate=False 면:
+       a) enqueue_raw_event(RawEvent(stream 5필드))  ← 기존 producer 재사용
+       b) UPDATE raw_events SET status='enqueued', enqueued_msg_id=:id WHERE id=:row_id
+       c) response 200 with record + is_duplicate=False + enqueued_msg_id
+  5) XADD 실패시: status='collected' 유지, enqueued_msg_id=None 반환 (rollback 안 함 — dedup 재시도 안전)
+```
+
+### Response
+```json
+{
+  "record": { /* RawEventRecord */ },
+  "is_duplicate": false,
+  "enqueued_msg_id": "1700000000000-0"
+}
+```
+
+---
+
+## API 신규 endpoint
+
+| Endpoint | 용도 |
+|---|---|
+| `POST /api/admin/raw-events` | RawEventCreate idempotent insert + XADD |
+| `POST /api/admin/collect-rss-once` | collector run() in-process 트리거 (`asyncio.to_thread`). summary dict 반환. |
+
+`GET /api/admin/raw-events` 는 STEP 008로 연기 (skeleton 최소화).
+인증은 STEP 007 범위 외 — `/api/admin` prefix만으로 internal-only 명시 + STEP 008 token 도입 TODO.
+
+---
+
+## Alembic Migration
+
+### `backend/alembic/versions/0002_raw_events.py`
+- `revision = "b2c3d4e5f6a7"`, `down_revision = "a1b2c3d4e5f6"`
+- `upgrade()`:
+  - `op.create_table("raw_events", ...)` 위 컬럼 전부, `PrimaryKeyConstraint("id")`, `UniqueConstraint("content_hash", name="uq_raw_events_content_hash")`
+  - `op.execute("CREATE UNIQUE INDEX uq_raw_events_source_external ON raw_events (source_type, external_id) WHERE external_id IS NOT NULL")`
+  - `op.execute("CREATE INDEX ix_raw_events_collected_at ON raw_events (collected_at DESC)")`
+  - `op.create_index("ix_raw_events_status", ...)`, `ix_raw_events_source_type`
+  - `op.execute("CREATE INDEX ix_raw_events_published_at ON raw_events (published_at DESC NULLS LAST)")`
+  - `op.execute("CREATE INDEX ix_raw_events_raw_metadata_gin ON raw_events USING gin (raw_metadata jsonb_path_ops)")`
+- `downgrade()` 역순.
+
+env.py L19 `from backend.app import models`가 자동 등록 — `backend/app/models/__init__.py`에 `RawEventORM` re-export 필요.
+
+---
+
+## Docker / requirements
+
+### 신규: `requirements/collector.txt`
+```
+-r base.txt
+feedparser==6.0.11
+```
+Playwright/Selenium 포함된 `crawler.txt`는 미사용(범위 외).
+
+### Dockerfile 변경
+- `workers/Dockerfile`: `collector.txt` install 추가
+- `backend/Dockerfile`: `collector.txt` install 추가 (in-process `/collect-rss-once` 위해)
+
+### 컴포즈 신규 서비스 — **없음**
+one-shot CLI / API 트리거 모델. cron/scheduler는 STEP 008로 연기.
+
+---
+
+## 신규/수정 파일
 
 ### 신규 파일
 
 | 경로 | 목적 |
 |---|---|
-| `backend/app/services/embedding_client.py` | BaseEmbeddingClient + MockEmbeddingClient + OpenAIEmbeddingClient + factory + cache (LLMClient 패턴 미러) |
-| `backend/app/services/vector_index_service.py` | upsert_card 직후 호출되는 thin orchestrator (embed → Milvus insert). 실패해도 Postgres write 안 깨지게 try/except. |
-| `backend/app/api/internal.py` | router. `POST /api/internal/search-similar` (query_text 받아 embed + Milvus search → 결과 반환) |
-| `backend/app/schemas/vector.py` | `SimilarEventQuery`/`SimilarEventHit` pydantic schema (event_id/card_id/score/title/summary 등) |
-| `backend/tests/test_embedding_client.py` | Mock deterministic + OpenAI 키 누락 시 ValueError + 키 비노출 |
-| `backend/tests/test_milvus_wrapper.py` | ensure_collection / insert / search 단위 (Milvus 컨테이너 가정, fixture로 collection 격리) |
-| `backend/tests/test_vector_index_service.py` | upsert_card → insert 호출 검증, Milvus 실패 시 PG write 유지 |
-| `backend/tests/test_internal_api.py` | `/api/internal/search-similar` 응답 schema |
-| `agents/tools/vector_search.py` | retrieve_past_context가 사용하는 thin httpx wrapper (backend internal API 호출) |
-| `agents/tests/test_retrieve_context.py` | mock vector_search 주입 → state.past_context/retrieved_context 검증, 실패 fallback |
-| `tests/smoke/test_vector_search.py` | Docker e2e: upsert → insert → search → top1 == upserted id 확인 |
-| `docs/RAG_VECTOR_DESIGN.md` | collection schema, embedding 정책, insert/search 흐름, dedup TODO |
-| `plans/006_MILVUS_VECTOR_SKELETON_PLAN.md` | 본 plan의 영구 사본 |
-| `plans/006_MILVUS_VECTOR_SKELETON_REPORT.md` | STEP 006 실행 보고 |
+| `backend/app/models/raw_event.py` | `RawEventORM` |
+| `backend/app/schemas/raw_events.py` | `RawEventCreate` / `RawEventRecord` / `RawEventCreateResponse` |
+| `backend/app/services/raw_event_service.py` | `create_raw_event(session, payload) → RawEventCreateResponse` (pg_insert + on_conflict_do_nothing + XADD + status patch) |
+| `backend/alembic/versions/0002_raw_events.py` | 마이그레이션 |
+| `workers/collectors/__init__.py` | |
+| `workers/collectors/__main__.py` | CLI entry |
+| `workers/collectors/rss_collector.py` | `run() → summary dict` |
+| `workers/collectors/sources.py` | `DEFAULT_SOURCES`, `get_sources()` |
+| `workers/tests/__init__.py` | |
+| `workers/tests/test_rss_collector.py` | fixture 기반 unit |
+| `tests/fixtures/rss_bbc_min.xml` | 2 entry sample |
+| `tests/fixtures/rss_empty.xml` | empty feed |
+| `tests/fixtures/rss_malformed.xml` | bozo |
+| `tests/fixtures/rss_no_link.xml` | missing link |
+| `tests/smoke/test_rss_collector_fixture.py` | file:// fixture → backend → DB/stream → 기존 pipeline 흐름 |
+| `tests/smoke/test_rss_collector_live.py` | gated `RUN_RSS_LIVE_SMOKE=1` |
+| `requirements/collector.txt` | feedparser 단독 |
+| `backend/tests/test_raw_events_api.py` | admin endpoint unit |
+| `docs/COLLECTOR_DESIGN.md` | RSS 설계 + 향후 collector 확장 패턴 |
+| `docs/DATA_POLICY.md` | 저장 정책 / 저작권 경계 |
+| `docs/COMPLIANCE_BOUNDARY.md` | anti-bot/paywall/본문 금지 |
+| `plans/007_RSS_COLLECTOR_RAW_EVENTS_PLAN.md` | 본 plan 영구 사본 |
+| `plans/007_RSS_COLLECTOR_RAW_EVENTS_REPORT.md` | 실행 보고 |
 
 ### 수정 파일
 
 | 경로 | 변경 |
 |---|---|
-| `backend/app/db/milvus.py` | `ensure_event_embeddings_collection(dim)`, `insert_event_embedding(...)`, `search_similar_events(...)` 실구현. `is_connected()`를 `utility.get_server_version()` 기반 ping으로 교체 (W4 해소). 기존 module 플래그는 lazy connect 캐시로만 사용. |
-| `backend/app/api/health.py` | milvus 판정을 try/except + `utility.get_server_version()` 또는 `connections.has_connection` 기반으로 교체. |
-| `backend/app/core/config.py` | `EMBEDDING_PROVIDER: Literal["mock","openai"]="mock"`, `EMBEDDING_MODEL: str = "text-embedding-3-small"`, `EMBEDDING_DIM: int = 1536`, `EMBEDDING_TIMEOUT_SEC: float = 30.0`, `MILVUS_COLLECTION: str = "event_embeddings"` 추가. `redacted_env_status()` 갱신. |
-| `.env.example` | 위 5개 키 빈값 추가. |
-| `docker-compose.dev.yml` | `worker`/`agent-worker` environment에 MILVUS_HOST/PORT 명시(기본값 fallback). `backend` env에 EMBEDDING_*, BACKEND_INTERNAL_URL 추가. |
-| `backend/app/services/event_service.py` | `upsert_card` 마지막에 `vector_index_service.try_index_card(card)` 호출 (await 또는 동기, 실패 swallow + logger.warning). |
-| `backend/app/api/router.py` (또는 main.py include) | `internal` router 등록 (prefix `/api/internal`). |
-| `agents/state/event_state.py` | `retrieved_context: List[dict]` 추가 (past_context는 유지). |
-| `agents/nodes/retrieve_context.py` | `vector_search.search_similar(text, top_k=5)` 호출 → 결과를 `past_context`(요약 str 리스트)와 `retrieved_context`(dict 리스트) 양쪽에 채움. 실패 시 mock fallback + `llm_errors`에 기록. |
-| `agents/nodes/deduplicate.py` | TODO 주석으로 vector-based dedup hook 자리 표시(기존 hash 로직 유지). 본 STEP에선 동작 변경 없음. |
-| `agents/Dockerfile` | **수정 없음** (backend 경유로 pymilvus 회피). |
-| `docs/ARCHITECTURE.md` | Milvus 경로 추가 (insert/search 흐름도). |
-| `docs/TRD.md` | EmbeddingClient + vector_index_service + /api/internal/search-similar 명세. |
-| `docs/EVENT_SCHEMA.md` (없으면 신규) | Milvus collection 필드 정의. |
-| `docs/LLM_AGENT_DESIGN.md` | retrieve_past_context 연결 방식 추가. |
-| `docs/COMPATIBILITY_NOTES.md` | STEP 006 섹션 + W4 해소 기록 + pymilvus 2.4.4 API 사용 노트. |
+| `backend/app/models/__init__.py` | `from .raw_event import RawEventORM`, `__all__` 갱신 |
+| `backend/app/api/admin.py` | `POST /raw-events`, `POST /collect-rss-once` 추가 |
+| `backend/app/core/config.py` | `RSS_COLLECTOR_FETCH_TIMEOUT_SEC=15`, `RSS_SOURCES_CONFIG_PATH=""`, `RSS_COLLECTOR_USER_AGENT="event-intelligence/0.7 (+ei)"` 추가. `redacted_env_status()` fields 갱신. |
+| `.env.example` | STEP 007 블록 추가 (3개 키 + 안전 기본값) |
+| `workers/Dockerfile` | `collector.txt` install |
+| `backend/Dockerfile` | `collector.txt` install |
+| `docs/EVENT_SCHEMA.md` | `## raw_events Table (STEP 007)` 섹션 추가 |
+| `docs/TRD.md` | STEP 007 신규 컴포넌트/환경변수/DB 구성/인프라 섹션 추가 |
+| `docs/API_CONTRACT.md` | `/api/admin/raw-events`, `/api/admin/collect-rss-once` 추가 |
+| `docs/ARCHITECTURE.md` | L142-144 "MISSING → STEP 007" → "RSS collector → IMPLEMENTED (STEP 007)" + 흐름도 갱신 |
+| `docs/COMPATIBILITY_NOTES.md` | STEP 007 섹션 (feedparser 6.0.11, published_parsed UTC 변환, bozo 처리, KR 인코딩) |
 
 ---
 
-## Milvus Collection 설계
+## 환경 변수
 
-**collection name**: `event_embeddings` (환경변수 `MILVUS_COLLECTION`).
-
-**dim**: 1536 (`EMBEDDING_DIM`).
-
-**fields** (pymilvus 2.4.4 호환):
-
-| 필드 | 타입 | 비고 |
+| 키 | 기본값 | 비고 |
 |---|---|---|
-| `pk` | INT64, auto_id=True, is_primary=True | Milvus 내부 PK |
-| `event_id` | VARCHAR(64) | FinalEventCard.id (UUID 문자열) |
-| `card_id` | VARCHAR(64) | 동일 (현재 schema에선 event_id == card_id, 향후 분리 대비) |
-| `text_hash` | VARCHAR(64) | sha256(title+summary)[:32], 중복 insert 방지용 |
-| `theme` | VARCHAR(64) | 단일 string |
-| `source_type` | VARCHAR(32) | 향후 확장용 (현재는 "agent") |
-| `created_at` | INT64 | unix timestamp |
-| `metadata_json` | VARCHAR(2048) | sectors/entities 등 JSON 직렬화 (filter 본격 도입은 후속 STEP) |
-| `embedding` | FLOAT_VECTOR(dim=1536) | |
+| `RSS_COLLECTOR_FETCH_TIMEOUT_SEC` | `15` | per-source feedparser fetch timeout |
+| `RSS_SOURCES_CONFIG_PATH` | `""` | stub. 비어있으면 `DEFAULT_SOURCES` 사용 |
+| `RSS_COLLECTOR_USER_AGENT` | `"event-intelligence/0.7 (+ei)"` | 정중한 UA |
+| `RUN_RSS_LIVE_SMOKE` | `""` | 테스트 전용 — `"1"` 이면 live smoke 실행 |
 
-**index**: `IVF_FLAT`, `metric_type=COSINE`, `nlist=128` (skeleton 기본값).
-
-**search params**: `metric_type=COSINE`, `params={"nprobe": 8}`, `limit=5`.
-
-**선택 이유**: JSON 필드는 pymilvus 2.4.4에서 가능하지만 dynamic field 의존성이 있어 skeleton에선 VARCHAR JSON으로 단순화. 후속 STEP에서 JSON 필드 + partition으로 migration TODO를 docs에 명시.
+`.env.example`에 STEP 007 블록 추가. `redacted_env_status()` fields 리스트에 추가 (값 출력 금지, 길이만).
 
 ---
 
-## EmbeddingClient 설계 (LLMClient 미러)
+## 테스트 전략
 
-```
-BaseEmbeddingClient(ABC):
-  embed_text(text: str) -> list[float]
-  embed_texts(texts: list[str]) -> list[list[float]]
+### Backend unit (`backend/tests/test_raw_events_api.py`)
+- `app.dependency_overrides[get_session] = lambda: mock_session` + `patch("backend.app.api.admin.<entry>")` 패턴
+- 케이스: insert+XADD / 중복 content_hash → is_duplicate=True+XADD 미실행 / XADD 실패 → enqueued_msg_id=None / minimal payload (external_id NULL) / `collect-rss-once`가 `workers.collectors.rss_collector.run` 호출
 
-MockEmbeddingClient:
-  # deterministic: sha256(text)를 seed로 numpy.random.default_rng → dim float 정규화
-  # 같은 text → 같은 vector. dim 일치 (EMBEDDING_DIM).
+### Collector unit (`workers/tests/test_rss_collector.py`)
+- fixture XML 파싱 (`feedparser.parse(open(path).read())`)
+- 케이스: valid 2 entries / empty / malformed (bozo) / entry no link skip / content_hash 결정성 / summary 변경 시 hash 다름 / `published_parsed=None` → `published_at=None` / `httpx.post` mock으로 payload shape 검증 / `is_duplicate=True` 응답시 재시도 안 함 / 1개 source network 실패가 전체 run 죽이지 않음
 
-OpenAIEmbeddingClient:
-  __init__: OPENAI_API_KEY 없으면 ValueError("OPENAI_API_KEY is not set (len=0)")
-  embed_text/embed_texts: openai.embeddings.create(model=..., input=...)
-  tenacity retry: 2회, RateLimitError/APITimeoutError만
+### Smoke fixture-mode (네트워크 0)
+- `tests/smoke/test_rss_collector_fixture.py`: `monkeypatch`로 `DEFAULT_SOURCES`를 `file://` URI로 치환 → collector 실행 → DB row 확인 → 12s 후 `GET /api/events` 신규 카드 확인
 
-create_embedding_client(provider, model) -> BaseEmbeddingClient
-get_embedding_client() -> singleton
-reset_embedding_client_cache()
-```
+### Smoke live (gated)
+- `RUN_RSS_LIVE_SMOKE=1`일 때만 BBC World 1개 source fetch → items_seen ≥ 1 → 1 row insert 확인. 총 wall-clock < 60s.
 
-**Mock deterministic 구현 (참고)**:
-```python
-import hashlib, numpy as np
-seed = int.from_bytes(hashlib.sha256(text.encode()).digest()[:8], "big")
-rng = np.random.default_rng(seed)
-v = rng.normal(0, 1, dim).astype(np.float32)
-v /= (np.linalg.norm(v) + 1e-12)  # normalize → cosine 친화
-return v.tolist()
-```
-
-numpy가 base.txt에 없을 경우 hash bytes를 직접 float로 변환하는 stdlib-only 구현으로 대체.
-
----
-
-## API: `/api/internal/search-similar`
-
-```
-POST /api/internal/search-similar
-Body: { "query_text": str, "top_k": int = 5, "exclude_event_id": str | None }
-Response: {
-  "hits": [
-    { "event_id": str, "card_id": str, "score": float, "title": str, "summary": str, "theme": str }
-  ]
-}
-```
-
-- backend가 embed → Milvus search → 결과의 event_id로 Postgres `event_cards` lookup하여 title/summary 채움
-- `exclude_event_id`로 본인 카드 제외 (retrieve 호출 시 자기 자신 회수 방지)
-- 인증은 STEP 006 범위 밖: prefix `/api/internal`만 사용, 향후 internal-only middleware 도입 TODO
-
----
-
-## Insert 시점
-
-`backend/app/services/event_service.py:upsert_card`의 마지막 `await session.commit()` 직후:
-
-```python
-try:
-    await vector_index_service.try_index_card(card)
-except Exception as exc:
-    logger.warning("vector index failed for card=%s: %s", card.id, exc)
-    # PG write는 유지, /health는 milvus error로 자연 노출
-```
-
-- `vector_index_service.try_index_card`는 backend 내부 함수 (HTTP 호출 아님)
-- `text_hash`로 동일 텍스트 재upsert 시 무시(또는 같은 PK upsert) — pymilvus 2.4.4에서 auto_id 사용 시 deletion 후 insert 패턴 사용. skeleton에선 매번 새 insert 허용 + 중복 허용으로 단순화. 중복 정책은 docs TODO.
-
----
-
-## retrieve_past_context 연결
-
-```python
-# agents/nodes/retrieve_context.py
-def retrieve_past_context(state: EventState) -> EventState:
-    normalized = state.get("normalized")
-    if not normalized:
-        return {**state, "past_context": [], "retrieved_context": []}
-
-    text = f"{normalized.title}\n{normalized.body[:500]}"
-    try:
-        hits = vector_search.search_similar(
-            text, top_k=5, exclude_event_id=normalized.id
-        )
-        past = [f"{h['title']}: {h['summary'][:200]}" for h in hits]
-        return {**state, "past_context": past, "retrieved_context": hits}
-    except Exception as exc:
-        errors = list(state.get("llm_errors") or [])
-        errors.append(f"retrieve_past_context: {exc}")
-        return {
-            **state,
-            "past_context": ["[fallback-context]"],
-            "retrieved_context": [],
-            "llm_errors": errors,
-        }
-```
-
-`vector_search.search_similar`은 `agents/tools/vector_search.py`에 정의된 thin httpx 함수 — `os.getenv("BACKEND_INTERNAL_URL", "http://backend:8000")` 기준 POST `/api/internal/search-similar` 호출.
+### 회귀 게이트 (필수 PASS)
+- `pytest tests/smoke/test_pipeline.py tests/smoke/test_persistence.py tests/smoke/test_vector_search.py -v`
+- `RawEvent` Pydantic schema `git diff a1b2c3d4e5f6 -- backend/app/schemas/events.py` 0 hunks
 
 ---
 
 ## 실행 순서
 
 ### Phase 1 — 정적 점검
-
 ```powershell
-docker compose -f docker-compose.dev.yml config --quiet
 git status
 git log --oneline -5
 git worktree list
-```
-
-### Phase 2 — Config/.env/Compose 변경
-
-1. `backend/app/core/config.py`에 EMBEDDING_*, MILVUS_COLLECTION 추가
-2. `.env.example`에 5개 키 추가
-3. `docker-compose.dev.yml`의 worker/agent-worker env에 MILVUS_HOST/PORT, BACKEND_INTERNAL_URL 추가
-4. `docker compose config --quiet` 재확인
-
-### Phase 3 — EmbeddingClient 구현
-
-1. `backend/app/services/embedding_client.py` 작성 (Mock + OpenAI)
-2. `backend/tests/test_embedding_client.py` 작성
-3. `$env:PYTHONPATH=...; pytest backend/tests/test_embedding_client.py -q` PASS
-
-### Phase 4 — Milvus wrapper 실구현 + W4 해소
-
-1. `backend/app/db/milvus.py` 확장 (ensure/insert/search + 실 ping)
-2. `backend/app/api/health.py` milvus 판정 교체
-3. `backend/tests/test_milvus_wrapper.py` 작성 (Milvus 컨테이너 가정 — 환경변수 `RUN_MILVUS_INTEGRATION=1`일 때만 실행하도록 skip)
-
-### Phase 5 — vector_index_service + internal API
-
-1. `backend/app/services/vector_index_service.py` 신규
-2. `backend/app/api/internal.py` 신규
-3. `backend/app/schemas/vector.py` 신규
-4. `event_service.upsert_card`에 hook 삽입
-5. router include
-6. `backend/tests/test_vector_index_service.py`, `test_internal_api.py` 작성
-
-### Phase 6 — Agent 노드 연결
-
-1. `agents/state/event_state.py`에 `retrieved_context` 추가
-2. `agents/tools/vector_search.py` 신규
-3. `agents/nodes/retrieve_context.py` 교체
-4. `agents/nodes/deduplicate.py`에 TODO 주석만 추가 (동작 무변경)
-5. `agents/tests/test_retrieve_context.py` 작성 (mock httpx 주입)
-
-### Phase 7 — Docker 재빌드 + 회귀 게이트
-
-```powershell
-docker compose -f docker-compose.dev.yml build backend worker agent-worker
-docker compose -f docker-compose.dev.yml up -d
 docker compose -f docker-compose.dev.yml ps
-curl -s http://localhost:8000/health
+docker compose -f docker-compose.dev.yml config --quiet
 ```
 
+### Phase 2 — Schemas + Model
+1. `backend/app/schemas/raw_events.py` 작성
+2. `backend/app/models/raw_event.py` 작성 (`RawEventORM`)
+3. `backend/app/models/__init__.py` re-export 갱신
+4. Smoke: `python -c "from backend.app.models import RawEventORM; print('ok')"`
+
+### Phase 3 — Alembic migration
+1. `backend/alembic/versions/0002_raw_events.py` 작성
+2. `docker compose run --rm backend alembic upgrade head` → Running upgrade a1b2c3d4e5f6 -> b2c3d4e5f6a7
+3. `docker compose exec postgres psql -U event_user -d event_intel -c "\d raw_events"` 확인
+4. `docker compose run --rm backend alembic downgrade -1 && alembic upgrade head` 라운드트립
+5. `event_cards`/`comments` 데이터 보존 확인
+
+(volume 삭제 없음 — additive migration만 수행)
+
+### Phase 4 — Backend service + API
+1. `backend/app/services/raw_event_service.py`
+2. `backend/app/api/admin.py` 라우트 추가
+3. `backend/app/core/config.py` env vars + `redacted_env_status` 갱신
+4. `.env.example` STEP 007 블록 추가
+5. `backend/tests/test_raw_events_api.py` 작성
+6. `$env:PYTHONPATH=...; pytest backend/tests/test_raw_events_api.py -v` PASS
+
+### Phase 5 — requirements + Dockerfile
+1. `requirements/collector.txt` 작성
+2. `workers/Dockerfile` / `backend/Dockerfile` install 추가
+3. `docker compose build worker backend`
+4. `docker compose up -d` 7컨테이너 healthy
+5. `curl http://localhost:8000/health` 확인
+
+### Phase 6 — Collector module
+1. `workers/collectors/sources.py`
+2. `workers/collectors/rss_collector.py`
+3. `workers/collectors/__main__.py`
+4. `tests/fixtures/rss_*.xml` 4개
+5. `workers/tests/test_rss_collector.py`
+6. `pytest workers/tests -v` PASS
+7. fixture 기반 one-shot 실행: `docker compose run --rm worker python -m workers.collectors.rss_collector` (sources를 file:// 치환한 환경에서)
+
+### Phase 7 — Smoke + 회귀 게이트
+1. `tests/smoke/test_rss_collector_fixture.py` 작성 → PASS
+2. **회귀 게이트**: `pytest tests/smoke/test_pipeline.py tests/smoke/test_persistence.py tests/smoke/test_vector_search.py -v` PASS
+3. `tests/smoke/test_rss_collector_live.py` 작성 (skipif gated)
+4. (옵션) `RUN_RSS_LIVE_SMOKE=1 pytest tests/smoke/test_rss_collector_live.py -v`
+
+### Phase 8 — `/collect-rss-once` 검증
 ```powershell
-$env:PYTHONPATH = "C:\Users\computer\Desktop\business\claude"
-pytest backend/tests -q
-pytest agents/tests -q
-pytest tests/smoke/test_pipeline.py tests/smoke/test_persistence.py -q
+curl -X POST http://localhost:8000/api/admin/collect-rss-once
+# summary JSON 확인
+curl http://localhost:8000/api/admin/jobs   # stream length 증가 확인
 ```
 
-기대: 기존 smoke 2 + 신규 unit 모두 PASS.
+### Phase 9 — 문서 + plan/report
+1. `docs/COLLECTOR_DESIGN.md`, `DATA_POLICY.md`, `COMPLIANCE_BOUNDARY.md` 신규
+2. `docs/EVENT_SCHEMA.md`, `TRD.md`, `API_CONTRACT.md`, `ARCHITECTURE.md`, `COMPATIBILITY_NOTES.md` 갱신
+3. `plans/007_RSS_COLLECTOR_RAW_EVENTS_PLAN.md` 신규
+4. `plans/007_RSS_COLLECTOR_RAW_EVENTS_REPORT.md` 신규
 
-### Phase 8 — Milvus integration smoke
+### Phase 10 — Commit
+- **Commit A**: `feat(step-007): add rss collector and raw events persistence skeleton`
+- **Commit B**: `docs(step-007): collector design + data policy + plan/report snapshot`
 
-```powershell
-$env:RUN_MILVUS_INTEGRATION = "1"
-pytest backend/tests/test_milvus_wrapper.py -q
-pytest tests/smoke/test_vector_search.py -q
-```
+`.env`, `.venv`, `node_modules` 포함 금지. `git push` 미실행.
 
-smoke 흐름: enqueue raw_event → sleep 15s → `GET /api/events` → 최근 카드 id 추출 → `POST /api/internal/search-similar { query_text: ..., exclude_event_id: <other>}` → top1.event_id == 추출 id 확인.
-
-### Phase 9 — OpenAI embedding opt-in (미실행)
-
-```powershell
-# 사용자 명시 시에만:
-$env:RUN_OPENAI_EMBED_SMOKE = "1"
-pytest backend/tests/test_embedding_client.py::test_openai_smoke -q
-```
-
-응답 길이/차원/모델명만 보고. 키 값 출력 금지.
-
-### Phase 10 — 문서 + Commit
-
-1. `docs/RAG_VECTOR_DESIGN.md` 신규
-2. `docs/ARCHITECTURE.md`, `docs/TRD.md`, `docs/EVENT_SCHEMA.md`, `docs/LLM_AGENT_DESIGN.md`, `docs/COMPATIBILITY_NOTES.md` 갱신
-3. `plans/006_MILVUS_VECTOR_SKELETON_PLAN.md` 영구 사본
-4. `plans/006_MILVUS_VECTOR_SKELETON_REPORT.md` 실행 보고
-
-**Commit A**: `feat(step-006): add milvus vector skeleton for event retrieval`
-**Commit B**: `docs(step-006): rag vector design + plan/report snapshot`
-
-`git push` 미실행.
-
-### Phase 11 — Codex Sync
-
+### Phase 11 — Codex sync
 ```powershell
 git -C C:/Users/computer/Desktop/business/codex status --short
 git -C C:/Users/computer/Desktop/business/codex fetch
 git -C C:/Users/computer/Desktop/business/codex merge --ff-only main
-# 실패 시 --no-ff merge (충돌 없을 때만)
+# ff-only 실패 시 --no-ff merge (충돌 시 abort + 사용자 보고)
 ```
 
 ---
@@ -346,27 +413,29 @@ git -C C:/Users/computer/Desktop/business/codex merge --ff-only main
 ## 검증 체크리스트
 
 - [ ] `docker compose config --quiet` PASS
-- [ ] config.py EMBEDDING_*, MILVUS_COLLECTION 5필드 추가
-- [ ] `.env.example` 5키 추가
-- [ ] EmbeddingClient Mock deterministic test PASS
-- [ ] OpenAI 키 누락 시 ValueError + 키 비노출 test PASS
-- [ ] Milvus wrapper ensure/insert/search 실구현 + integration test PASS (RUN_MILVUS_INTEGRATION=1)
-- [ ] `/health`의 milvus 판정이 실 ping 기반으로 교체됨 (W4 해소)
-- [ ] `POST /api/internal/search-similar` 응답 schema test PASS
-- [ ] upsert_card → Milvus insert hook 동작, 실패 시 PG write 유지
-- [ ] retrieve_past_context가 backend API 경유로 search → past_context + retrieved_context 채움
-- [ ] retrieve 실패 시 fallback + llm_errors 누적
-- [ ] `pytest backend/tests -q` 전체 PASS
-- [ ] `pytest agents/tests -q` 전체 PASS (+ OpenAI smoke SKIP)
-- [ ] `pytest tests/smoke/test_pipeline.py test_persistence.py -q` 기존 e2e 회귀 PASS
-- [ ] `pytest tests/smoke/test_vector_search.py -q` 신규 vector smoke PASS
+- [ ] `backend/app/models/__init__.py`에서 `RawEventORM` re-export
+- [ ] `alembic upgrade head` 0001 → 0002 clean
+- [ ] `alembic downgrade -1 && upgrade head` roundtrip clean
+- [ ] `raw_events` 테이블 + 2개 UNIQUE 제약 + 5개 index 확인
+- [ ] `event_cards`/`comments` 기존 데이터 보존
+- [ ] `POST /api/admin/raw-events` 중복시 `is_duplicate=true` + XADD 미실행
+- [ ] `POST /api/admin/raw-events` XADD 실패시 `enqueued_msg_id=null` + status='collected' 유지
+- [ ] `POST /api/admin/collect-rss-once` summary 반환 + 이벤트 루프 블록 안 함
+- [ ] `python -m workers.collectors.rss_collector` exit 0 + summary log
+- [ ] fixture 기반 collector unit test 전부 PASS
+- [ ] `backend/tests/test_raw_events_api.py` PASS
+- [ ] `tests/smoke/test_rss_collector_fixture.py` PASS
+- [ ] **회귀**: `test_pipeline.py` / `test_persistence.py` / `test_vector_search.py` 0 diff PASS
+- [ ] `RawEvent` Pydantic 무변경 (git diff 0 hunks)
+- [ ] feedparser는 worker + backend 이미지에만, Playwright/Selenium 미설치
 - [ ] 7개 컨테이너 모두 Up/healthy
-- [ ] docs 6개 갱신 + RAG_VECTOR_DESIGN.md 신규
-- [ ] Commit A/B 성공, `.env`/`.venv` 미포함
+- [ ] `.env` 실값 미출력
+- [ ] 9개 문서 갱신/신규 + plan/report 작성
+- [ ] Commit A/B 성공, `.env`/`.venv`/`node_modules` 미포함
 - [ ] `git push` 미실행
-- [ ] codex sync 완료 (ff-only 또는 --no-ff)
-- [ ] WARNING/BLOCKED/UNKNOWN 명시
-- [ ] STEP 007 제안 포함
+- [ ] codex sync 완료
+- [ ] WARNING / BLOCKED / UNKNOWN 명시
+- [ ] STEP 008 제안 포함
 
 ---
 
@@ -374,22 +443,26 @@ git -C C:/Users/computer/Desktop/business/codex merge --ff-only main
 
 | # | 항목 | 영향 | 완화 |
 |---|---|---|---|
-| R1 | pymilvus 2.4.4 + Milvus 2.4.10 API 시그니처 (CollectionSchema/FieldSchema/Collection.create_index/load 흐름) | 중간 | 실 호출로 검증. 실패 시 docs/COMPATIBILITY_NOTES.md에 기록 후 최소 우회 |
-| R2 | Milvus collection 첫 생성 시 health timing — backend 기동 직후 ensure_collection이 너무 일찍 호출되면 실패 | 중간 | `ensure_event_embeddings_collection`을 lazy(첫 insert/search 시) 호출 + retry 2회 |
-| R3 | upsert_card → Milvus insert 동기 호출이 응답 시간을 늘림 | 낮음 | mock 환경에선 무시 가능. 실 OpenAI embedding 시 응답 영향 가능 → background task로 빼는 안은 STEP 008로 미룸 |
-| R4 | retrieve_past_context HTTP hop latency | 낮음 | skeleton 단계 허용. 후속 STEP에서 internal RPC 또는 in-proc 호출 검토 |
-| R5 | text_hash 충돌(다른 카드인데 같은 hash) | 매우 낮음 | sha256[:32]로 충돌 확률 무시 가능. 충돌 시 insert 중복으로 처리 |
-| R6 | Milvus 재시작 시 collection 유실 | 낮음 | volume 마운트 확인 (compose에서 milvus volume). 첫 호출 시 ensure로 재생성 |
-| R7 | OpenAI embedding 비용 | 낮음 | 기본 mock 유지, opt-in만 |
-| R8 | numpy 의존 (Mock에서 사용 시) | 낮음 | `requirements/base.txt`에 이미 있는지 확인. 없으면 hash 기반 deterministic으로 numpy 없이 구현 가능 |
-| U1 | dedup vector threshold 정책 — 본 STEP에선 미결 | 명시적으로 STEP 010 이후로 연기, docs TODO |
+| R1 | feedparser 6.0.11 Windows path quirks (file://) | 낮음 | `pathlib.Path(...).as_uri()` 사용. 본 환경은 Linux container 우선 |
+| R2 | `content_hash` 충돌: RSS item이 수정 재게시 → 동일 GUID, 다른 본문 → 새 hash | 중간 | `(source_type, external_id)` partial UNIQUE가 catch. 진짜 edit는 새 row(skeleton 허용). STEP 008에서 resolver |
+| R3 | `published_parsed=None` 또는 naive | 높음 | `entry.get("published_parsed")` 가드 + `tzinfo=timezone.utc` 강제 |
+| R4 | Redis stream payload regression (raw_metadata json.dumps 누락) | 높음 | backend endpoint 내부에서 기존 `enqueue_raw_event()` 함수 재사용 — wire shape 변경 0 |
+| R5 | STEP 003-006 smoke 회귀 | 높음 | `RawEvent` Pydantic 동결 + 회귀 게이트 필수 PASS |
+| R6 | DB insert 성공 + XADD 실패 split-brain | 중간 | row는 `status='collected'` 잔존. dedup이 재시도 안전. rollback 안 함 |
+| R7 | feedparser blocking call이 FastAPI event loop 블록 | 중간 | `/collect-rss-once`는 `await asyncio.to_thread(rss_collector.run)` |
+| R8 | URL length > 2048 (rare) | 낮음 | insert 직전 length-cap + warn 로그 |
+| R9 | backend 이미지 크기 증가 (feedparser ~150KB) | 낮음 | 허용 |
+| R10 | 라이브 RSS 외부 의존 (실패 변동성) | 중간 | 기본 테스트는 fixture-only. live는 `RUN_RSS_LIVE_SMOKE=1` opt-in만 |
+| U1 | DB-backed sources 설계 (collector_sources 테이블 스키마) | — | STEP 008+로 연기. `docs/COLLECTOR_DESIGN.md`에 마이그레이션 경로 문서화 |
+| U2 | raw_events retention policy (TTL/archival) | — | STEP 008+로 연기 |
+| U3 | admin endpoint 인증 (network policy → token) | — | STEP 008+로 연기. TODO 명시 |
 
 ---
 
 ## 다음 STEP 순서
 
-1. **STEP 007** — RSS crawler 1종 + `raw_events` 테이블 + Alembic migration.
-2. **STEP 008** — agent-worker async 전환 + Milvus insert를 background task로 분리 + LangSmith tracing 실연결.
-3. **STEP 009** — Next.js `/events` 목록 UI + 검색 UI (vector search 결과 노출).
-4. **STEP 010** — `entity_linking`/`theme_sector_mapping`/`evidence_check` LLM 전환 + vector dedup threshold 정책.
-5. **STEP 011** — KG-RAG / hybrid search (sparse + dense) 도입.
+1. **STEP 008** — agent-worker async 전환 + raw_event_id stream linkage + `raw_events.status` processed/failed 업데이트 + Milvus insert background task + LangSmith tracing 실연결.
+2. **STEP 009** — Next.js `/events` 목록 UI + 검색 UI + admin `/api/admin/raw-events` GET + collector_sources 테이블.
+3. **STEP 010** — DART API / SEC EDGAR collector 추가 + vector dedup threshold + entity linking LLM 전환.
+4. **STEP 011** — Web crawler (Playwright optional) + 본문 처리 (저작권 준수) + 광역 collector 통합.
+5. **STEP 012** — KG-RAG / hybrid search (sparse + dense) 도입.
