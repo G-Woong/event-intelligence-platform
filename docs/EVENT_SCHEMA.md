@@ -1,0 +1,77 @@
+# Event Schema
+
+## RawEvent
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| source | str | 수집 소스 식별자 (e.g. "reuters-rss") |
+| url | str | 원본 URL |
+| fetched_at | datetime | 수집 시각 (UTC) |
+| raw_text | str | 원문 텍스트 |
+| raw_metadata | dict | 소스별 추가 메타데이터 |
+
+```json
+{
+  "source": "reuters-rss",
+  "url": "https://example.com/news/1",
+  "fetched_at": "2026-05-23T10:00:00Z",
+  "raw_text": "Tensions rise in the Strait of Hormuz as...",
+  "raw_metadata": {"category": "world"}
+}
+```
+
+## NormalizedEvent
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| id | str (uuid4) | 고유 식별자 |
+| source | str | 소스 식별자 |
+| title | str | 정규화된 제목 |
+| body | str | 본문 |
+| occurred_at | datetime | 사건 발생 시각 |
+| language | str | 언어 코드 (기본 "en") |
+| hash | str | 중복 탐지용 SHA-256 prefix (16자) |
+
+```json
+{
+  "id": "a1b2c3d4-...",
+  "source": "reuters-rss",
+  "title": "Tensions rise in the Strait of Hormuz",
+  "body": "...",
+  "occurred_at": "2026-05-23T09:55:00Z",
+  "language": "en",
+  "hash": "a3f1e9d2c7b4..."
+}
+```
+
+## FinalEventCard
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| id | str (uuid4) | 고유 식별자 |
+| title | str | 최종 제목 |
+| summary | str | 요약문 |
+| theme | str | 주제 (geopolitics/economics/technology/climate/health) |
+| sectors | list[str] | 관련 섹터 목록 |
+| entities | list[str] | 주요 엔티티 목록 |
+| impact_path | str | 영향 경로 설명 |
+| evidence | list[str] | 근거 출처 목록 |
+| confidence_score | float (0–1) | 신뢰도 점수 |
+| status | "published"\|"hold" | 게시 상태 |
+| created_at | datetime | 생성 시각 |
+
+```json
+{
+  "id": "x9y8z7w6-...",
+  "title": "Tensions rise in the Strait of Hormuz",
+  "summary": "Military vessels from multiple nations...",
+  "theme": "geopolitics",
+  "sectors": ["energy", "defense"],
+  "entities": ["Iran", "US Navy", "Strait of Hormuz"],
+  "impact_path": "medium-term oil supply disruption risk",
+  "evidence": ["reuters.com/...", "bbc.com/..."],
+  "confidence_score": 0.82,
+  "status": "published",
+  "created_at": "2026-05-23T10:01:00Z"
+}
+```

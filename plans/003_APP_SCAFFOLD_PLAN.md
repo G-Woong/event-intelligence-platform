@@ -1,4 +1,5 @@
 # STEP 003 — 앱 Scaffold 실행 계획
+> **superseded by `plans/repo-sunny-barto.md` (STEP 003 expanded)**
 
 ## 목적
 

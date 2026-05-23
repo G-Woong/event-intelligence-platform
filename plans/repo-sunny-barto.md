@@ -1,233 +1,285 @@
-# STEP 002.6 — codex worktree 실행환경 실검증/복구
+# STEP 003 — App Scaffold (Backend MVP Pipeline)
 
 ## Context
 
-STEP 002.5(orchestration 정리)는 main worktree 기준으로 완료했지만, codex worktree는 아직 "껍데기"만 있는 상태다. 본 단계의 목적은 **codex가 단순 폴더/브랜치가 아니라 실제로 atomic task를 수행할 수 있는 독립 실행 환경**임을 검증하고 부족분을 보강하는 것이다.
+STEP 002.7에서 worktree 격리 PASS, STEP 002.6에서 codex .venv + shared infra(Redis/Milvus healthy) PASS가 확인됐다. 환경은 준비됐다.
 
-### 사전 점검 결과 (read-only)
+본 step의 목적은 **풀 서비스 구현이 아니라 backend MVP scaffold + end-to-end mock pipeline**이다. 검증 골든 패스:
 
-| 항목 | 상태 |
+> 샘플 raw_event → Redis Stream → worker(consumer) → agent-worker(LangGraph mock) → final_event_card → FastAPI `GET /api/events`로 조회.
+
+본 plan은 기존 `plans/003_APP_SCAFFOLD_PLAN.md`를 사용자 새 요구사항으로 확장한 실행 plan이며, 이전 `repo-sunny-barto.md`(STEP 002.7) 내용은 본 파일에서 대체된다.
+
+## 핵심 결정 (사용자 확정)
+
+| 항목 | 결정 |
 |---|---|
-| `git worktree list` | ✅ claude=main(`c93695f`), codex=codex(`511c944`) — 정상 worktree로 인식 |
-| codex 브랜치 head | `511c944 chore: untrack .claude/ and CLAUDE.md (mirror main)` |
-| codex `.env` | ✅ 8개 키 모두 PRESENT (실값 미노출) |
-| codex `.venv` | ❌ **없음** — Python 환경 미구성 |
-| codex `AGENTS.md` | ❌ 없음 |
-| codex `.codex/config.toml` | ❌ 없음 |
-| codex `requirements/vector.txt` | ⚠️ main과 어긋남 (lancedb==0.29.2/pylance==2.0.0이 남아있음) |
-| codex `pyproject.toml` | main에 없는 파일. codex `.gitignore`에 추적 제외로 추가됨 |
-| codex `.gitignore` modified | 사용자가 IDE에서 `pyproject.toml` 라인 추가한 상태 |
-| Docker (claude 측) | ✅ 4개 서비스 healthy (ei-redis, ei-milvus, ei-milvus-etcd, ei-milvus-minio) |
-| `uv` PATH | ⚠️ 현 PowerShell 세션에서 인식 안 됨 (재시작 또는 풀 경로 필요) |
-| `py -3.11` | ✅ Python 3.11.9 사용 가능 |
+| Redis Queue 방식 | **Redis Stream** (XADD/XREADGROUP, consumer group) |
+| worker vs agent-worker | **책임 분리** — worker=Stream I/O+ingest, agent-worker=LangGraph 실행 |
+| LLM 호출 | **전부 mock** — `OPENAI_API_KEY` 길이/존재만 확인, 실제 호출 0회 |
+| Postgres | **placeholder만** — 컨테이너 없음, 향후 추가 |
+| Docker network | 기존 `event-intelligence-dev` compose에 backend/worker/agent-worker 추가 → 동일 default network 공유 |
+| host에서 패키지 설치 | **수행 안 함** — 기존 venv 사용. Dockerfile 안에서는 `pip install -r requirements/...` (uv 경로 의존 회피) |
 
-### 사용자 결정 (본 단계에 반영)
+## 비범위 (STEP 003에서 하지 않음)
 
-1. **codex 동기화**: main → codex **merge** (vector.txt 정리, `.gitignore` 통일, `graph_optional.txt`, docs/plans 동기)
-2. **pyproject.toml**: 현재 상태 유지. codex `.gitignore`의 추적 제외 라인 유지, main에는 추가하지 않음
-3. **uv fallback**: 풀 경로(`%USERPROFILE%\.local\bin\uv.exe` 등) 탐색 후 사용
+Next.js UI, 실제 crawler/Playwright/Selenium, torch/transformers/Gemma 로컬, KG-RAG 고도화, production deploy, 도메인 연결, pymilvus 2.6.x 업그레이드, LanceDB, Postgres 컨테이너/migration, 실제 OpenAI 호출, Celery (사용 안 함 — Stream worker만).
 
-## 실행 순서
+## 진행 순서 (atomic phase 분해)
 
-### 1. codex `.gitignore` 검토 (modified 상태 처리)
-- codex `.gitignore`의 현재 modified 변경(=`pyproject.toml` 라인 추가)을 **그대로 살린다**.
-- 단, main의 `.gitignore`와 비교해 누락 섹션(`.codex_premerge_backup/`, Codex 섹션 정리 등)이 있으면 동일 형식으로 조정한다.
-- main과 동일하게 깔끔하게 재정렬하되, `pyproject.toml` 라인은 보존.
+### Phase A. Runtime Environment 문서화 (commit 대상 아님)
 
-### 2. main → codex merge
-codex worktree에서:
+`CLAUDE.md`와 `AGENTS.md`는 모두 `.gitignore` 처리되어 있음 → 로컬 운영 문서. commit/push 하지 않는 정책 유지.
+
+- `C:\Users\computer\Desktop\business\claude\CLAUDE.md` 최상단에 `## Runtime Environment` 섹션 신규 추가
+  - OS: Windows 11 / PowerShell 5.1
+  - Path: `C:\Users\computer\Desktop\business\claude`
+  - Branch: `main`
+  - venv: `.venv` (Python 3.11.9, uv venv)
+  - Shared infra: `docker-compose.dev.yml` (event-intelligence-dev compose, default network)
+  - Role: **main orchestrator**. PLAN/리뷰/통합 담당. atomic task는 codex worktree에 위임.
+
+- `C:\Users\computer\Desktop\business\codex\AGENTS.md` 최상단에 동일 `## Runtime Environment` 섹션 신규 추가
+  - Path: `C:\Users\computer\Desktop\business\codex`
+  - Branch: `codex`
+  - venv: `.venv` (Python 3.11.9)
+  - Shared infra: claude의 `docker-compose.dev.yml` 참조 (`.codex/config.toml` `shared_compose`)
+  - Role: **sub-agent execution worktree**. atomic task만 수행. main 직접 merge/push 금지. 완료 후 diff/report 작성 → Claude 검토.
+
+`.gitignore` 추적 상태 재확인만 수행 (commit 시도 금지).
+
+### Phase B. 디렉토리 / 공통 schema 생성
+
 ```
-git -C C:\Users\computer\Desktop\business\codex fetch  # 필요시
-git -C C:\Users\computer\Desktop\business\codex merge main
-```
-- 충돌 가능 지점: `requirements/vector.txt`, `.gitignore` → 사용자 결정 기준으로 해결
-  - `requirements/vector.txt`: main 버전 채택 (LanceDB 제거)
-  - `.gitignore`: main 형식 채택 + codex의 `pyproject.toml` 라인 유지
-- `pyproject.toml`은 codex 전용 파일이므로 merge로 인해 사라지지 않는다. (main에 없음 + .gitignore에 추적 제외 라인 유지)
-- merge commit 메시지: `chore: sync codex with main (step 002.5)`
+backend/
+  app/
+    __init__.py
+    main.py
+    core/__init__.py, config.py, logging.py
+    api/__init__.py, events.py, themes.py, sectors.py, comments.py, ai_replies.py, admin.py, health.py
+    services/__init__.py, event_service.py, comment_service.py, llm_client.py
+    db/__init__.py, redis.py, milvus.py, postgres.py
+    schemas/__init__.py, events.py, comments.py
+    models/README.md
+  Dockerfile
+  tests/__init__.py, test_health.py
 
-### 3. codex `.venv` 생성
-PowerShell에서 uv 풀 경로를 먼저 탐색한다:
-- 후보 경로: `$env:USERPROFILE\.local\bin\uv.exe`, `$env:LOCALAPPDATA\Microsoft\WinGet\Links\uv.exe`, `$env:LOCALAPPDATA\Programs\uv\uv.exe`
-- `Get-Command uv -ErrorAction SilentlyContinue` 1차 시도
-- 둘 다 안 되면 `winget show astral-sh.uv` 정보로 설치 경로 추론
+agents/
+  __init__.py
+  graphs/__init__.py, event_processing_graph.py
+  state/__init__.py, event_state.py
+  nodes/__init__.py, parse_source.py, deduplicate.py, entity_linking.py,
+              sector_mapping.py, retrieve_context.py, impact_analysis.py,
+              evidence_check.py, fact_check.py, final_writer.py,
+              publish_or_hold.py, normalize_event.py
+  Dockerfile
+  README.md
 
-uv 발견 시:
-```
-& <uv full path> venv "C:\Users\computer\Desktop\business\codex\.venv" --python 3.11
-```
+workers/
+  __init__.py
+  queue/__init__.py, producer.py, consumer.py
+  pipelines/__init__.py, ingest_pipeline.py, publish_pipeline.py
+  Dockerfile
+  README.md
 
-검증:
-```
-C:\Users\computer\Desktop\business\codex\.venv\Scripts\python.exe --version
-```
-→ `Python 3.11.9` 기대.
-
-### 4. requirements 설치 (codex .venv)
-설치 범위 (지정된 5+1 레이어):
-- `requirements/base.txt`
-- `requirements/serve.txt`
-- `requirements/worker.txt`
-- `requirements/ai.txt`
-- `requirements/vector.txt`
-- `requirements/dev.txt`
-
-**설치 금지**:
-- `requirements/ml.txt`
-- `requirements/crawler.txt`
-- `requirements/graph_optional.txt`
-
-명령(uv pip):
-```
-& <uv path> pip install --python C:\Users\computer\Desktop\business\codex\.venv\Scripts\python.exe -r requirements\serve.txt
-... (worker, ai, vector, dev 순으로 반복; base는 -r 체이닝으로 자동 포함)
+tests/  (repo root)
+  smoke/test_pipeline.py
 ```
 
-각 단계 후 exit code 확인. 실패 시 BLOCKED로 보고하고 진행 중단.
+#### 핵심 schema (Phase 전체에서 재사용)
 
-### 5. codex `AGENTS.md` 생성
-파일: `C:\Users\computer\Desktop\business\codex\AGENTS.md`
-(`.gitignore`에 의해 추적 제외, 디스크에만 존재)
+`backend/app/schemas/events.py`:
+- `RawEvent` — source, url, fetched_at, raw_text, raw_metadata
+- `NormalizedEvent` — id, source, title, body, occurred_at, language, hash
+- `FinalEventCard` — title, summary, theme, sectors[], entities[], impact_path, evidence[], confidence_score (0–1), status ("published"|"hold")
 
-내용(간결):
-```
-# AGENTS.md — Codex sub-agent execution worktree
+`backend/app/schemas/comments.py`:
+- `Comment` — id, event_id, author, body, created_at
+- `AIReplyRequest` — event_id, prompt_hint
 
-- Codex는 sub-agent execution worktree다.
-- main 브랜치에 직접 merge/push 금지.
-- atomic task만 수행. 완료 후 diff/report 작성.
-- Claude main orchestrator가 수용 여부 판단.
-- `.env` 실값 출력/로그/외부 전송 금지.
-- destructive command(rm/Remove-Item/git reset --hard 등) 실행 금지.
-- 본 worktree는 별도 .venv를 가지며, Docker infra는 claude의 docker-compose.dev.yml을 공유한다.
-```
+`agents/state/event_state.py` (`TypedDict` 또는 pydantic):
+- raw, normalized, dedupe_key, entities, theme, sectors, past_context, impact, evidence, fact_check, final_card, status
 
-### 6. codex `.codex/config.toml` 생성
-경로: `C:\Users\computer\Desktop\business\codex\.codex\config.toml`
-(`.gitignore`에 의해 추적 제외)
+### Phase C. DB / Service / LLM wrapper
 
-내용(최소):
-```toml
-# .codex/config.toml — Codex worktree 로컬 실행 환경
-# 본 파일은 .gitignore 대상이며 commit되지 않는다.
+| 파일 | 내용 |
+|---|---|
+| `backend/app/core/config.py` | `pydantic-settings.BaseSettings` — `.env` 8개 키 로드. **값 출력 금지**: `redacted_env_status()` 헬퍼는 길이/존재만 반환 |
+| `backend/app/core/logging.py` | stdlib logging configure (JSON 또는 plain). secret 마스킹 필터 |
+| `backend/app/db/redis.py` | `get_redis()` (sync + async 둘 다 가능), `ping()`, `xadd(stream, payload)`, `xreadgroup(stream, group, consumer)`, `ensure_group(stream, group)` |
+| `backend/app/db/milvus.py` | `connect()`, `ensure_collection(name, dim)` (stub), `insert_embedding()` (stub), `search_similar_events()` (stub) — pymilvus 2.4.4 |
+| `backend/app/db/postgres.py` | `# placeholder` + `get_conn()` raise `NotImplementedError("postgres not provisioned in STEP 003")` |
+| `backend/app/services/llm_client.py` | `LLMClient(provider="mock")` 기본. `provider="openai"`도 인터페이스만. `complete(prompt, **kw)` → mock은 deterministic 문자열 반환. 실제 호출 0회 |
+| `backend/app/services/event_service.py` | in-memory `dict[event_id, FinalEventCard]` 저장소 + `list_events()`, `get_event(id)`, `upsert_card(card)`. 향후 DB 교체 가능하도록 interface |
+| `backend/app/services/comment_service.py` | in-memory `list[Comment]` + `add_comment()`, `list_by_event()` |
 
-[worktree]
-role = "sub-agent-execution"
-python_venv = ".venv"
-python_version = "3.11"
+### Phase D. FastAPI endpoint 12종
 
-[infra]
-shared_compose = "../claude/docker-compose.dev.yml"
-redis_url = "redis://localhost:6379/0"
-milvus_host = "localhost"
-milvus_port = 19530
+`backend/app/main.py`:
+- FastAPI app, `lifespan` 안에서 Redis ping → log only, Milvus connect → log only (실패해도 startup은 진행, `/health`에서 상태 노출)
+- 라우터: `health`, `events`, `themes`, `sectors`, `comments`, `ai_replies`, `admin`
 
-[policy]
-allow_push = false
-allow_destructive = false
-allow_main_merge = false
-```
-
-`.codex/tasks/`, `.codex/reports/`, `.codex/local/`은 본 단계에서는 디렉토리 생성만 하지 않고 필요 시점에 생성한다.
-
-### 7. Docker shared infra 연결 검증 (codex .venv 기준)
-- Docker daemon 상태: `docker ps`로 확인
-- compose 상태: `docker compose -f C:\Users\computer\Desktop\business\claude\docker-compose.dev.yml ps`
-- codex .venv Python으로 다음 import 및 smoke:
-  ```
-  python -c "import fastapi, redis, pymilvus, langgraph, langchain, openai, pydantic, pytest; print('imports ok')"
-  python -c "import redis; r=redis.from_url('redis://localhost:6379/0'); print('redis ping:', r.ping())"
-  python -c "from pymilvus import connections; connections.connect(host='localhost', port='19530'); print('milvus connect ok')"
-  ```
-- LangSmith / OpenAI 키는 `os.getenv` 존재 여부만 확인 (실값 출력 금지)
-
-### 8. 문서 업데이트
-`docs/AGENT_WORKFLOW.md`에 다음 내용을 추가/보강:
-- claude worktree = orchestration / review / merge gate
-- codex worktree = isolated execution / test / atomic implementation
-- **codex는 별도 `.venv`를 가진다**
-- **Docker infra는 기본적으로 claude의 docker-compose.dev.yml을 공유한다** (codex localhost로 접근)
-- 추후 필요 시 `COMPOSE_PROJECT_NAME`으로 codex 독립 infra를 띄울 수 있다는 가능성만 한 줄로 명시
-- 현재 단계 default는 shared infra
-
-### 9. 보고서 생성
-`plans/002_6_CODEX_ENV_RECOVERY_REPORT.md` 신규 작성. 다음 항목을 포함:
-- codex worktree 정상 인식 여부
-- codex 브랜치 / 최근 commit
-- main → codex merge 결과 (commit hash, 충돌 처리 내역)
-- codex `.venv` 생성 결과 (Python 버전 확인 출력)
-- requirements 설치 결과 (5+1 레이어, 각 단계 exit code)
-- codex `.env` 키 점검 (masked)
-- `AGENTS.md`, `.codex/config.toml` 생성 여부
-- Docker shared infra 연결 결과 (Redis ping, Milvus connect)
-- 핵심 패키지 import smoke 결과
-- 남은 WARNING / BLOCKED / UNKNOWN
-- STEP 003 진입 가능 여부
-
-### 10. commit (main worktree)
-- 메시지 후보: `docs: document codex worktree env recovery (step 002.6)`
-- 포함 변경:
-  - `docs/AGENT_WORKFLOW.md` 보강
-  - `plans/002_6_CODEX_ENV_RECOVERY_REPORT.md` 신규
-  - `plans/repo-sunny-barto.md` 본 plan (참고용)
-- **push 금지**
-
-codex worktree commit:
-- main merge commit (step 2)
-- `.gitignore` 정리 commit (필요 시)
-- **codex 측 commit 메시지는 모두 prefix `chore(codex):` 사용**
-
-## 수정·생성 대상 파일 정리
-
-| 경로 | worktree | 작업 |
+| Method | Path | 구현 메모 |
 |---|---|---|
-| `codex/.gitignore` | codex | 정리 (pyproject.toml 라인 유지, main 형식 정렬) |
-| `codex/requirements/vector.txt` | codex | merge 시 main 버전 채택 |
-| `codex/.venv/` | codex | 신규 (uv venv) |
-| `codex/AGENTS.md` | codex | 신규 (gitignore 대상) |
-| `codex/.codex/config.toml` | codex | 신규 (gitignore 대상) |
-| `claude/docs/AGENT_WORKFLOW.md` | main | 보강 (venv/shared infra 명시) |
-| `claude/plans/002_6_CODEX_ENV_RECOVERY_REPORT.md` | main | 신규 |
-| `claude/plans/repo-sunny-barto.md` | main | 본 plan |
+| GET | `/health` | redis/milvus 상태 dict 반환 |
+| GET | `/api/events` | `event_service.list_events()` |
+| GET | `/api/events/{event_id}` | 404 처리 |
+| GET | `/api/themes` | hardcoded mock theme 목록 |
+| GET | `/api/themes/{theme_id}/events` | theme 필터 |
+| GET | `/api/sectors` | hardcoded mock sector 목록 |
+| GET | `/api/sectors/{sector_id}/events` | sector 필터 |
+| POST | `/api/comments` | `comment_service.add_comment()` |
+| GET | `/api/events/{event_id}/comments` | `comment_service.list_by_event()` |
+| POST | `/api/ai-replies/request` | mock LLM 응답 즉시 반환 (큐잉 없음, STEP 003 단순화) |
+| GET | `/api/admin/jobs` | Redis Stream pending/length 등 통계 |
 
-## 검증 (최종 보고에 포함)
+### Phase E. LangGraph EventProcessingGraph
 
-- [ ] `git worktree list` claude=main, codex=codex 정상
-- [ ] `git -C codex status` clean (merge 후)
-- [ ] `git -C codex log --oneline -3`에 main 동기 commit 표시
-- [ ] `codex/.venv/Scripts/python.exe --version` → Python 3.11.x
-- [ ] codex `.venv`에서 fastapi/redis/pymilvus/langgraph/langchain/openai/pydantic/pytest import 성공
-- [ ] codex `.venv`에서 Redis ping = True
-- [ ] codex `.venv`에서 Milvus connect 성공
-- [ ] codex `.env` 8개 키 PRESENT (masked)
-- [ ] codex `AGENTS.md`, `.codex/config.toml` 디스크 존재 + git ls-files에서 empty (추적 제외 확인)
-- [ ] `docs/AGENT_WORKFLOW.md`에 venv/shared infra 문구 추가됨
-- [ ] `plans/002_6_CODEX_ENV_RECOVERY_REPORT.md` 신규 존재
-- [ ] Docker 4개 서비스 healthy 유지
+`agents/graphs/event_processing_graph.py`:
+- `langgraph.StateGraph(EventState)`
+- 노드 11개 (모두 mock — 입력 받아 state 업데이트 후 다음 단계로):
+  1. `source_parse` (= `parse_source` + `normalize_event` 통합)
+  2. `normalize_event` (raw → normalized)
+  3. `deduplicate_event`
+  4. `entity_linking`
+  5. `theme_sector_mapping` (= `sector_mapping`)
+  6. `retrieve_past_context` (= `retrieve_context`)
+  7. `impact_analysis`
+  8. `evidence_check`
+  9. `fact_check`
+  10. `final_card_writer` (= `final_writer`)
+  11. `publish_or_hold`
+- 그래프 컴파일 후 `run(raw_event) -> FinalEventCard` 함수 export
+- 모든 mock은 deterministic + 길이/형식만 채움 (의미 있는 NLP는 STEP 004 이후)
 
-## 금지 사항 (재확인)
+### Phase F. Worker / Agent-worker
 
-- ❌ `Remove-Item`, `rm`, `del`, `rmdir` (deny 정책)
-- ❌ `git push` (사용자 명시 요청 전까지)
-- ❌ `git reset --hard`, `git clean -fdx`
-- ❌ FastAPI / Next.js / LangGraph 앱 scaffold 코드 (STEP 003에서 진행)
-- ❌ `requirements/ml.txt`, `requirements/crawler.txt`, `requirements/graph_optional.txt` 설치
-- ❌ pymilvus / Milvus 버전 업그레이드
-- ❌ Docker 컨테이너 down/stop (running 유지)
-- ❌ `.env` 실값 출력/로그/외부 전송
-- ❌ codex 측 commit을 main으로 자동 merge/push
+**worker (`workers/`):**
+- `workers/queue/producer.py` — `enqueue_raw_event(raw_event)` → `XADD stream:raw_events`
+- `workers/queue/consumer.py` — Stream consumer group 구성. `XREADGROUP group:ingest consumer:worker-1 BLOCK 5000` → ingest_pipeline 호출
+- `workers/pipelines/ingest_pipeline.py` — raw_event 검증, 정규화 준비 후 `stream:to_agent` 로 forward
+- 실행: `python -m workers.queue.consumer`
 
-## BLOCKED 처리 기준
+**agent-worker (`agents/`):**
+- `agents/agent_worker.py` (신규) — `stream:to_agent` 소비 group, raw → `EventProcessingGraph.run()` → 결과 `FinalEventCard`
+- `workers/pipelines/publish_pipeline.py` — final_card 받아 backend `event_service.upsert_card()` 호출 — STEP 003에서는 같은 Redis Stream `stream:final_cards`에 publish + backend가 별도 background task로 drain. **단순화**: agent-worker가 backend의 `event_service`를 직접 import해서 호출 (모두 같은 codebase). docker network에서는 backend가 다른 컨테이너이므로 **HTTP `POST /api/admin/upsert-event`** 로 전송하는 방향이 더 클린 — 본 step에서는 후자 채택. admin endpoint는 internal-only로 표시.
 
-다음 상황이 발생하면 즉시 BLOCKED로 보고하고 사용자 결정을 요청한다:
-- main → codex merge 충돌이 사용자 결정(vector.txt=main, .gitignore=main+pyproject 라인) 범위를 넘는 경우
-- uv 풀 경로를 어떤 후보에서도 찾지 못함 → 사용자에게 설치 경로 문의
-- requirements 설치 단계 중 어느 한 레이어가 실패
-- Redis ping 또는 Milvus connect 실패
+**Stream 이름 정리:**
+- `stream:raw_events` — producer → worker
+- `stream:to_agent` — worker → agent-worker
+- (선택) `stream:final_cards` — 관측용 mirror
 
-## STEP 003 진입 조건 (본 단계 완료 후)
+**선택 이유**: Stream은 consumer group으로 메시지 ack/replay가 명확하다. STEP 003 시점에 List 대비 추가 비용은 consumer group 1줄 init 정도. 향후 DLQ/관측 확장에 유리. → `docs/ARCHITECTURE.md`에 기록.
 
-1. 본 plan의 검증 항목 모두 PASS
-2. codex `.venv`에서 핵심 라이브러리 import 및 shared infra 연결 OK
-3. `plans/002_6_CODEX_ENV_RECOVERY_REPORT.md` 작성 완료
-4. 사용자가 STEP 003 시작 승인
+### Phase G. Docker 확장
+
+`docker-compose.dev.yml`에 3개 서비스 추가:
+- `backend` — build: `./backend`, port `8000:8000`, env `REDIS_URL=redis://redis:6379/0`, `MILVUS_HOST=milvus-standalone`, `MILVUS_PORT=19530`, depends_on redis/milvus-standalone (healthy)
+- `worker` — build: `./workers`, command: `python -m workers.queue.consumer`, depends_on redis/backend
+- `agent-worker` — build: `./agents`, command: `python -m agents.agent_worker`, depends_on redis/backend
+
+각 Dockerfile (모두 `python:3.11-slim` 기반):
+- backend: `requirements/base.txt` + `requirements/serve.txt`, copy `backend/`
+- worker: `requirements/base.txt` + `requirements/worker.txt`, copy `workers/`, `backend/app/db`, `backend/app/schemas` (필요 모듈만)
+- agent-worker: `requirements/base.txt` + `requirements/ai.txt` + `requirements/worker.txt`, copy `agents/`, `backend/app/schemas`, `backend/app/services/llm_client.py`
+
+**대안**: 단일 monorepo image — 모든 코드를 같은 image에 넣고 service별 command만 다르게. STEP 003 단순화 측면에서 **monorepo image 1개 + command 분기**가 더 빠를 수 있음 → 본 plan에서는 service별 Dockerfile로 가되, requirements 레이어 caching을 위해 base requirements 먼저 install.
+
+### Phase H. 문서
+
+| 파일 | 내용 |
+|---|---|
+| `docs/EVENT_SCHEMA.md` | RawEvent / NormalizedEvent / FinalEventCard 필드 표 + JSON 예시 |
+| `docs/API_CONTRACT.md` | 12개 endpoint request/response 예시 |
+| `docs/ARCHITECTURE.md` | 컴포넌트 다이어그램(text), Stream 선택 이유, mock 영역 명시 |
+| `docs/TRD.md` | 기술 요구사항 정리 (Python 3.11, Redis Stream, Milvus 2.4.10, FastAPI, LangGraph, mock LLM) |
+| `plans/003_APP_SCAFFOLD_EXECUTION_REPORT.md` | 최종 실행 보고 (구현/검증/실패&수정/STEP 004 제안) |
+
+### Phase I. 검증 (모두 PowerShell에서)
+
+순차 실행, 실패 시 원인 기록 → 수정 → 재검증.
+
+1. **Import smoke (host venv)**
+   - `.\.venv\Scripts\python.exe -c "import backend.app.main"`
+   - `.\.venv\Scripts\python.exe -c "import agents.graphs.event_processing_graph"`
+   - `.\.venv\Scripts\python.exe -c "import workers.queue.consumer"`
+2. **Unit smoke**
+   - `.\.venv\Scripts\python.exe -m pytest backend/tests -q`
+3. **Compose config**
+   - `docker compose -f docker-compose.dev.yml config --quiet`
+4. **Build**
+   - `docker compose -f docker-compose.dev.yml build backend worker agent-worker`
+5. **Up**
+   - `docker compose -f docker-compose.dev.yml up -d backend worker agent-worker`
+   - `docker compose -f docker-compose.dev.yml ps`
+6. **Health**
+   - `curl http://localhost:8000/health` (또는 `Invoke-RestMethod`)
+7. **End-to-end smoke**
+   - `python tests/smoke/test_pipeline.py` — sample raw_event enqueue → 5–10s 대기 → `GET /api/events` 에 final_card 노출 확인
+8. **관측**
+   - `docker compose logs --tail=50 worker agent-worker backend`
+
+### Phase J. BLOCKED / WARNING 처리
+
+| 시나리오 | 처리 |
+|---|---|
+| build 실패 (의존성 충돌) | requirements pin 조사 → 보고서에 기록 → 수정 후 재빌드 |
+| backend → redis/milvus 연결 실패 | service name(`redis`, `milvus-standalone`) vs container name(`ei-redis`, `ei-milvus`) 차이 확인. compose service name으로 정정 |
+| pymilvus pkg_resources warning | 알려진 이슈(STEP 002.6에서 기록). WARNING으로만 보고 |
+| stream consumer가 메시지 못 받음 | group 생성 누락 가능. `ensure_group()` 호출 위치 점검 |
+| 격리 테스트 파일 잔존 발견 | 자동 삭제 금지. 사용자에게 보고만 |
+
+## 수정·생성 대상 파일 요약
+
+| 경로 | worktree | 작업 | commit 대상 |
+|---|---|---|---|
+| `CLAUDE.md` | claude | Runtime Environment 섹션 추가 | ❌ (gitignored) |
+| `codex/AGENTS.md` | codex | Runtime Environment 섹션 추가 | ❌ (gitignored) |
+| `backend/**` | claude | 신규 scaffold | ✅ |
+| `agents/**` | claude | 신규 scaffold | ✅ |
+| `workers/**` | claude | 신규 scaffold | ✅ |
+| `tests/smoke/test_pipeline.py` | claude | 신규 | ✅ |
+| `docker-compose.dev.yml` | claude | 3개 서비스 추가 | ✅ |
+| `docs/EVENT_SCHEMA.md`, `docs/API_CONTRACT.md`, `docs/ARCHITECTURE.md`, `docs/TRD.md` | claude | 신규 | ✅ |
+| `plans/003_APP_SCAFFOLD_EXECUTION_REPORT.md` | claude | 신규 보고서 | ✅ |
+| `plans/repo-sunny-barto.md` | claude | 본 plan | ✅ |
+| `plans/003_APP_SCAFFOLD_PLAN.md` | claude | 기존 plan은 outdated → header에 "superseded by repo-sunny-barto.md (STEP 003 expanded)" 한 줄 추가 | ✅ |
+
+codex worktree에는 본 step에서 atomic task를 위임하지 않음. 모두 claude worktree에서 진행. codex AGENTS.md만 갱신.
+
+## 절대 금지 (재확인)
+
+- `Remove-Item`, `rm`, `del`, `erase`, `rmdir` (어떤 형태든)
+- `git push`, `git reset --hard`, `git clean -fdx`
+- `.env` 실값 출력 (길이/존재만)
+- 실제 OpenAI/외부 API 호출
+- production deploy
+- pyproject.toml dependencies 직접 추가 (requirements 분리 정책 유지)
+- `__CLAUDE_ONLY_TEST.txt`, `__CODEX_ONLY_TEST.txt` 재생성 또는 임의 삭제 (이미 사용자가 정리함)
+
+## 검증 체크리스트 (보고서에 반영)
+
+- [ ] CLAUDE.md / AGENTS.md에 Runtime Environment 섹션 추가 + gitignored 유지
+- [ ] backend/agents/workers 디렉토리 생성 + `__init__.py` 배치
+- [ ] schemas (events, comments) + EventState 정의
+- [ ] DB wrapper 3종 (redis/milvus/postgres) — redis는 실동작, milvus는 connect까지, postgres는 placeholder
+- [ ] llm_client mock-only 동작
+- [ ] FastAPI 12개 endpoint 라우팅 (`/health` 포함)
+- [ ] LangGraph 11개 노드 + run() 실행 가능
+- [ ] worker consumer + agent-worker consumer (stream group 분리)
+- [ ] Dockerfile 3종 빌드 성공
+- [ ] docker compose config → build → up → ps 모두 PASS
+- [ ] `curl /health` 200 + redis/milvus 상태 노출
+- [ ] sample raw_event enqueue → final_card published → `GET /api/events`에 반영
+- [ ] docs 4종 + execution report 작성
+- [ ] PASS / WARNING / BLOCKED / UNKNOWN 명시
+
+## STEP 004 후보 (보고서 말미에 제안)
+
+- 실제 crawler 1종 (RSS 또는 단일 sitemap)
+- normalize_event / deduplicate 실제 로직
+- Milvus embedding insert/search 실제 호출
+- LangSmith tracing 연동
+- OpenAI provider 활성화 + 비용 가드
+- Postgres 도입 + comment/event 영속화
+- 기초 Next.js page 1개 (`/events` 목록 조회)

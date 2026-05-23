@@ -86,6 +86,63 @@ services:
       timeout: 5s
       retries: 5
 
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ei-backend
+    ports:
+      - "8000:8000"
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      MILVUS_HOST: milvus-standalone
+      MILVUS_PORT: 19530
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      milvus-standalone:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: workers/Dockerfile
+    container_name: ei-worker
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: on-failure
+
+  agent-worker:
+    build:
+      context: .
+      dockerfile: agents/Dockerfile
+    container_name: ei-agent-worker
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      BACKEND_URL: http://backend:8000
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: on-failure
+
 volumes:
   etcd_data:
   minio_data:
