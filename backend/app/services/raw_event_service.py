@@ -170,11 +170,60 @@ async def get_raw_event(session: AsyncSession, raw_event_id: str) -> RawEventRec
     return _orm_to_record(row)
 
 
+async def requeue_raw_event(
+    session: AsyncSession,
+    raw_event_id: str,
+    force: bool = False,
+) -> tuple[RawEventRecord, str, int]:
+    result = await session.execute(select(RawEventORM).where(RawEventORM.id == raw_event_id))
+    row = result.scalar_one_or_none()
+    if row is None:
+        raise NoResultFound(f"raw_event_id={raw_event_id} not found")
+
+    if row.status == "processed" and not force:
+        raise ValueError("requeue refused: row already processed; pass force=true to override")
+
+    now = datetime.now(timezone.utc)
+    raw_event = RawEvent(
+        source=f"{row.source_type}:{row.source_name}",
+        url=row.url,
+        fetched_at=now,
+        raw_text=row.raw_text or "",
+        raw_metadata=row.raw_metadata or {},
+        raw_event_id=str(row.id),
+    )
+    msg_id = await asyncio.to_thread(enqueue_raw_event, raw_event)
+
+    metadata = dict(row.raw_metadata or {})
+    requeue_count = int(metadata.get("requeue_count", 0)) + 1
+    metadata["requeue_count"] = requeue_count
+
+    await session.execute(
+        update(RawEventORM)
+        .where(RawEventORM.id == row.id)
+        .values(
+            status="enqueued",
+            enqueued_msg_id=msg_id,
+            error_reason=None,
+            processed_at=None,
+            raw_metadata=metadata,
+            updated_at=now,
+        )
+    )
+    await session.commit()
+
+    refreshed = (await session.execute(select(RawEventORM).where(RawEventORM.id == row.id))).scalar_one()
+    return _orm_to_record(refreshed), msg_id, requeue_count
+
+
 async def list_by_status_older_than(
     session: AsyncSession,
     status: Optional[str] = None,
     before_seconds: Optional[int] = None,
     limit: int = 50,
+    source_type: Optional[str] = None,
+    offset: int = 0,
+    order: str = "asc",
 ) -> list[RawEventRecord]:
     stmt = select(RawEventORM)
     if status is not None:
@@ -182,6 +231,10 @@ async def list_by_status_older_than(
     if before_seconds is not None:
         threshold = datetime.now(timezone.utc) - timedelta(seconds=before_seconds)
         stmt = stmt.where(RawEventORM.updated_at < threshold)
-    stmt = stmt.order_by(RawEventORM.updated_at.asc()).limit(limit)
+    if source_type is not None:
+        stmt = stmt.where(RawEventORM.source_type == source_type)
+    col = RawEventORM.updated_at
+    stmt = stmt.order_by(col.desc() if order == "desc" else col.asc())
+    stmt = stmt.offset(offset).limit(limit)
     result = await session.execute(stmt)
     return [_orm_to_record(r) for r in result.scalars().all()]

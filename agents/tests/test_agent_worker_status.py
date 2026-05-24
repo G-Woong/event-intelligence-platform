@@ -69,7 +69,7 @@ def test_patch_status_retries_on_transport_error_then_succeeds():
     mock_resp.raise_for_status = MagicMock()
     call_count = [0]
 
-    def side_effect(url, json, timeout):
+    def side_effect(url, json=None, headers=None, timeout=None):
         call_count[0] += 1
         if call_count[0] < 3:
             raise httpx.TransportError("connection reset")

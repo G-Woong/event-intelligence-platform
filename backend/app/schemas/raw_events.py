@@ -67,3 +67,13 @@ class ReconcileStuckResponse(BaseModel):
     marked_failed: int
     dry_run: bool
     items: list[RawEventRecord]
+
+
+class RequeueRequest(BaseModel):
+    force: bool = False
+
+
+class RequeueResponse(BaseModel):
+    record: RawEventRecord
+    enqueued_msg_id: str
+    requeue_count: int

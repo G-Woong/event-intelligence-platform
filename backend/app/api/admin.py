@@ -17,6 +17,8 @@ from backend.app.schemas.raw_events import (
     RawEventStatusUpdate,
     ReconcileStuckRequest,
     ReconcileStuckResponse,
+    RequeueRequest,
+    RequeueResponse,
 )
 from backend.app.services import event_service
 from backend.app.services import raw_event_service
@@ -86,10 +88,19 @@ async def list_raw_events(
     status: str | None = None,
     before_seconds: int | None = None,
     limit: int = 50,
+    source_type: str | None = None,
+    offset: int = 0,
+    order: str = "asc",
     session: AsyncSession = Depends(get_session),
 ) -> list[RawEventRecord]:
     return await raw_event_service.list_by_status_older_than(
-        session, status=status, before_seconds=before_seconds, limit=limit
+        session,
+        status=status,
+        before_seconds=before_seconds,
+        limit=limit,
+        source_type=source_type,
+        offset=offset,
+        order=order,
     )
 
 
@@ -102,6 +113,23 @@ async def get_raw_event(
         return await raw_event_service.get_raw_event(session, raw_event_id)
     except NoResultFound:
         raise HTTPException(status_code=404, detail=f"raw_event_id={raw_event_id} not found")
+
+
+@router.post("/raw-events/{raw_event_id}/requeue", response_model=RequeueResponse)
+async def requeue_raw_event(
+    raw_event_id: str,
+    body: RequeueRequest,
+    session: AsyncSession = Depends(get_session),
+) -> RequeueResponse:
+    try:
+        record, msg_id, requeue_count = await raw_event_service.requeue_raw_event(
+            session, raw_event_id, force=body.force
+        )
+        return RequeueResponse(record=record, enqueued_msg_id=msg_id, requeue_count=requeue_count)
+    except NoResultFound:
+        raise HTTPException(status_code=404, detail=f"raw_event_id={raw_event_id} not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @router.patch("/raw-events/{raw_event_id}/status", response_model=RawEventRecord)

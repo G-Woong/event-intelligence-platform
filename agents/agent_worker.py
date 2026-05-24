@@ -27,8 +27,8 @@ _CONSUMER = "agent-worker-1"
     wait=wait_exponential(multiplier=1, min=1, max=3),
     retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)),
 )
-def _patch_status(url: str, payload: dict) -> None:
-    resp = httpx.patch(url, json=payload, timeout=10)
+def _patch_status(url: str, payload: dict, headers: dict | None = None) -> None:
+    resp = httpx.patch(url, json=payload, headers=headers or {}, timeout=10)
     resp.raise_for_status()
 
 
@@ -43,8 +43,11 @@ def _notify_status(
         return
     url = f"{settings.BACKEND_INTERNAL_URL}/api/admin/raw-events/{raw_event_id}/status"
     payload = {"status": status, "error_reason": error_reason, "event_card_id": event_card_id}
+    headers: dict[str, str] = {}
+    if settings.ADMIN_API_TOKEN:
+        headers["X-Admin-Token"] = settings.ADMIN_API_TOKEN
     try:
-        _patch_status(url, payload)
+        _patch_status(url, payload, headers)
     except Exception as exc:
         logger.warning(
             "raw_event status update failed after retries id=%s reason=%s",

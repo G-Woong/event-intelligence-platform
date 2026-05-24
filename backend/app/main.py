@@ -3,10 +3,12 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
+from backend.app.core.config import settings
 from backend.app.core.logging import configure_logging
 from backend.app.core.observability import setup_langsmith
+from backend.app.core.security import require_admin_token
 from backend.app.db import redis as redis_db, milvus as milvus_db, postgres as postgres_db  # noqa: F401
 from backend.app.api import health, events, themes, sectors, comments, ai_replies, admin, internal
 
@@ -17,6 +19,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_langsmith()
+
+    if not settings.ADMIN_API_TOKEN:
+        logger.warning("ADMIN_API_TOKEN unset — admin endpoints unauthenticated (dev only)")
 
     if redis_db.ping():
         logger.info("Redis: connected")
@@ -39,5 +44,5 @@ app.include_router(themes.router)
 app.include_router(sectors.router)
 app.include_router(comments.router)
 app.include_router(ai_replies.router)
-app.include_router(admin.router)
-app.include_router(internal.router, prefix="/api/internal")
+app.include_router(admin.router, dependencies=[Depends(require_admin_token)])
+app.include_router(internal.router, prefix="/api/internal", dependencies=[Depends(require_admin_token)])

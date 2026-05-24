@@ -21,6 +21,8 @@ _TIMEOUT_SEC = int(os.getenv("RSS_COLLECTOR_FETCH_TIMEOUT_SEC", "15"))
 _USER_AGENT = os.getenv("RSS_COLLECTOR_USER_AGENT", "event-intelligence/0.7 (+ei)")
 _MAX_URL_LEN = 2048
 
+_ADMIN_TOKEN = os.getenv("ADMIN_API_TOKEN", "")
+
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
@@ -113,7 +115,8 @@ def _process_source(source: dict, client: httpx.Client) -> dict:
         }
 
         try:
-            resp = client.post(f"{_BACKEND_URL}/api/admin/raw-events", json=payload, timeout=10)
+            hdrs: dict[str, str] = {"X-Admin-Token": _ADMIN_TOKEN} if _ADMIN_TOKEN else {}
+            resp = client.post(f"{_BACKEND_URL}/api/admin/raw-events", json=payload, headers=hdrs, timeout=10)
             resp.raise_for_status()
             data = resp.json()
             if data.get("is_duplicate"):

@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.exc import NoResultFound
 
 from backend.app.main import app
+from backend.app.core.security import require_admin_token
 from backend.app.db.postgres import get_session
 from backend.app.schemas.raw_events import RawEventRecord
 
@@ -46,6 +47,7 @@ def client():
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=False)
     app.dependency_overrides[get_session] = lambda: mock_session
+    app.dependency_overrides[require_admin_token] = lambda: None
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()

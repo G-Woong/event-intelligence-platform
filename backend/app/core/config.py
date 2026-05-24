@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     MILVUS_COLLECTION: str = "event_embeddings"
 
     BACKEND_INTERNAL_URL: str = "http://backend:8000"
+    ADMIN_API_TOKEN: str = ""
 
     RSS_COLLECTOR_FETCH_TIMEOUT_SEC: int = 15
     RSS_SOURCES_CONFIG_PATH: str = ""
@@ -43,7 +44,7 @@ class Settings(BaseSettings):
             "MILVUS_PORT", "REDIS_URL", "DATABASE_URL",
             "LLM_PROVIDER", "LLM_MODEL",
             "EMBEDDING_PROVIDER", "EMBEDDING_MODEL", "EMBEDDING_DIM",
-            "MILVUS_COLLECTION", "BACKEND_INTERNAL_URL",
+            "MILVUS_COLLECTION", "BACKEND_INTERNAL_URL", "ADMIN_API_TOKEN",
             "RSS_COLLECTOR_FETCH_TIMEOUT_SEC", "RSS_SOURCES_CONFIG_PATH",
             "RSS_COLLECTOR_USER_AGENT",
         ]
