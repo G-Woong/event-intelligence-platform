@@ -186,7 +186,7 @@ agent-worker
 | 컴포넌트 | 현황 | 목표 STEP |
 |---|---|---|
 | crawler collector (RSS) | `workers/collectors/rss_collector.py` | **DONE (STEP 007)** |
-| OpenSearch | 코드·문서에 자리 없음 | 먼 STEP |
+| OpenSearch | `backend/app/db/opensearch.py` + `opensearch_index_service` + `search_service` | **DONE (STEP 009)** |
 | Next.js frontend | `frontend/` 디렉터리 없음 | 먼 STEP |
 
 ## 다음 STEP 순서

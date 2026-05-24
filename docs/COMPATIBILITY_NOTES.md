@@ -17,6 +17,16 @@
 | `env.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | **UNKNOWN** | 공식 환경변수 목록 미등재. 동작/효과 미확인. |
 | `Skill(update-config)` 권한 문법 | **UNKNOWN** | Skill 권한 문법은 공식 예시에 부재. 실제 invocation 시 prompt 발생 여부 관찰 필요. |
 
+## STEP 009 — OpenSearch (STEP 009 추가 사항)
+
+| 항목 | 상태 | 비고 |
+|---|---|---|
+| 한국어 nori analyzer | TODO STEP 010+ | standard analyzer만 사용. 한국어 어절 단위 검색 품질 낮음 |
+| Hybrid search (BM25 + Milvus reranking) | TODO STEP 011+ | 현재 OpenSearch/Milvus 역할 완전 분리 |
+| raw_events 색인 통합 | TODO STEP 010+ | 현재 event_cards만 색인 |
+| OpenSearch security plugin (인증) | TODO prod 진입 시 | 현재 `plugins.security.disabled=true` |
+| Bulk reindex API 최적화 | TODO 대량 데이터 시 | 현재 document 단건 loop |
+
 ## 권한 규칙 문법 (확인됨)
 - `Bash(git push *)`, `Bash(git push)`
 - `PowerShell(Remove-Item *)`, `PowerShell(rm *)`

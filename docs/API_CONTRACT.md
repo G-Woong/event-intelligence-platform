@@ -315,6 +315,59 @@ status + age 기반 raw_event 목록 조회. Query params:
 ]
 ```
 
+### GET /api/events/search (STEP 009, 무인증)
+
+키워드 기반 event_cards 검색. OpenSearch `multi_match` + bool filter.
+
+Query params:
+
+| 파라미터 | 타입 | 필수 | 기본값 | 설명 |
+|---|---|---|---|---|
+| `q` | str | ✓ | — | 검색어 (1-200자). 빈 값 → 422 |
+| `theme` | str | — | null | keyword filter |
+| `sector` | str | — | null | keyword filter (sectors 배열 내 포함 여부) |
+| `status` | str | — | null | keyword filter (`published`/`hold`) |
+| `limit` | int | — | 20 | 최대 반환 수 (1-100) |
+| `offset` | int | — | 0 | 페이지 오프셋 |
+
+```json
+// Response 200 (EventSearchResponse):
+{
+  "total": 2,
+  "hits": [
+    {
+      "card_id": "uuid",
+      "title": "Iran Sanctions Update",
+      "summary": "...",
+      "theme": "geopolitics",
+      "sectors": ["energy", "finance"],
+      "status": "published",
+      "score": 1.234,
+      "created_at": "2026-05-24T00:00:00+00:00"
+    }
+  ]
+}
+
+// Response 422: q 누락 또는 길이 초과
+// Response 503: OpenSearch 다운 ({ "detail": "search unavailable" })
+```
+
+`title^2` 가중치 부스트. `text_all`(title+summary+entities+sectors 합산 필드) 포함 검색.
+
+### POST /api/admin/search/reindex (STEP 009, auth 필요)
+
+Postgres event_cards를 OpenSearch에 bulk reindex.
+
+```json
+// Request Body (ReindexRequest):
+{ "limit": 1000, "dry_run": false }
+
+// Response 200 (ReindexResponse):
+{ "indexed": 42, "dry_run": false }
+```
+
+`dry_run=true`이면 count만 반환, 실제 색인 없음.
+
 ### POST /api/admin/collect-rss-once (STEP 007, auth: STEP 008C)
 
 Triggers RSS collector run in-process via `asyncio.to_thread`. Fetches all enabled DEFAULT_SOURCES and inserts to `raw_events`. Returns summary JSON.

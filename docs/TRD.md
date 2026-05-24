@@ -1,3 +1,29 @@
+# Technical Requirements Document — STEP 009
+
+## STEP 009 신규 컴포넌트
+
+| 컴포넌트 | 경로 | 역할 |
+|---|---|---|
+| opensearch wrapper | `backend/app/db/opensearch.py` | singleton client, connect/is_connected |
+| opensearch_index_service | `backend/app/services/opensearch_index_service.py` | try_index_card, ensure_event_cards_index, _card_to_doc |
+| search_service | `backend/app/services/search_service.py` | search_event_cards (multi_match + filters) |
+| GET /api/events/search | `backend/app/api/events.py` | 공개 키워드 검색 endpoint |
+| POST /api/admin/search/reindex | `backend/app/api/admin.py` | bulk reindex endpoint |
+| reindex_opensearch_once.py | `scripts/` | cron/CI용 1회 HTTP 호출 스크립트 |
+| opensearch container | `docker-compose.dev.yml` | single-node dev mode, security disabled |
+
+## STEP 009 환경 변수
+
+| 키 | 기본값 | 비고 |
+|---|---|---|
+| `OPENSEARCH_HOST` | `opensearch` (docker) / `localhost` (local) | OpenSearch 호스트 |
+| `OPENSEARCH_PORT` | `9200` | HTTP API 포트 |
+| `OPENSEARCH_EVENT_INDEX` | `event_cards` | 색인 이름 |
+| `REINDEX_LIMIT` | `1000` | reindex script 처리 상한 |
+| `REINDEX_DRY_RUN` | `true` | true = count only |
+
+---
+
 # Technical Requirements Document — STEP 008B
 
 ## STEP 008B 신규 컴포넌트

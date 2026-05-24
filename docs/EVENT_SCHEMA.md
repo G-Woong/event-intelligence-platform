@@ -123,6 +123,26 @@ collection: `event_embeddings`, dim: 1536, index: IVF_FLAT / COSINE / nlist=128
 
 **인덱스**: collected_at DESC, status, source_type, published_at DESC NULLS LAST, raw_metadata GIN, event_card_id, processed_at
 
+## OpenSearch Document: `event_cards` (STEP 009)
+
+OpenSearch에 색인되는 document 구조 (source of truth는 Postgres).
+
+| 필드 | OpenSearch 타입 | 내용 |
+|---|---|---|
+| `card_id` | keyword | FinalEventCard.id (UUID string) |
+| `title` | text + keyword subfield | 제목 |
+| `summary` | text | 요약 |
+| `text_all` | text | title + summary + entities + sectors 합산 (검색 전용) |
+| `theme` | keyword | 테마 (e.g. geopolitics) |
+| `status` | keyword | published / hold |
+| `sectors` | keyword[] | 섹터 배열 |
+| `entities` | keyword[] | 엔티티 배열 |
+| `confidence_score` | float | 신뢰도 0.0-1.0 |
+| `created_at` | date | ISO 8601 |
+
+인덱스 이름: `event_cards` (설정: `OPENSEARCH_EVENT_INDEX`).
+Analyzer: standard (기본). 한국어 nori는 STEP 010+ TODO.
+
 ## Comment
 
 | 필드 | 타입 | 설명 | PG 컬럼 타입 |

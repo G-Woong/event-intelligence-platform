@@ -61,7 +61,23 @@ pytest tests/smoke/ -k langsmith -v
 - `status == "enqueued"` AND `updated_at < now() - before_seconds`
 - 기본 `before_seconds=600` (10분). 운영 환경 권장값: 600~1800.
 
+## OpenSearch 색인 / reindex 로그 패턴 (STEP 009)
+
+| 이벤트 | 레벨 | 위치 | 메시지 패턴 |
+|---|---|---|---|
+| OpenSearch 연결 성공 | INFO | main.py lifespan | `OpenSearch: connected and index ensured` |
+| OpenSearch 연결 실패 (non-fatal) | WARNING | main.py lifespan | `OpenSearch: not reachable at startup (non-fatal)` |
+| startup 오류 | WARNING | main.py lifespan | `OpenSearch startup error: <exc>` |
+| 인덱스 생성 | INFO | opensearch_index_service | `OpenSearch index created: event_cards` |
+| 단건 색인 실패 | WARNING | opensearch_index_service | `opensearch index failed for card=<id>: <exc>` |
+| upsert hook 실패 | WARNING | event_service | `opensearch hook failed: <exc>` |
+| 검색 클라이언트 불가 | WARNING | search_service | `opensearch client unavailable: <exc>` |
+| 검색 실패 | WARNING | search_service | `opensearch search failed: <exc>` |
+
+OpenSearch 장애 시 Postgres upsert/response는 정상 유지 — 색인 실패는 warning 레벨로만 출력.
+
 ## 다음 단계
 
 - STEP 008C: reconciler cron 자동 실행 + span 커스텀 메타데이터 + `raw_event_id` 태깅
+- STEP 009: OpenSearch reindex script cron 등록
 - STEP 010: LLM 호출 비용/레이턴시 대시보드 연동
