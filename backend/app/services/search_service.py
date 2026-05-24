@@ -14,14 +14,17 @@ class OpenSearchUnavailable(Exception):
 
 def _hit_to_dict(hit: dict) -> dict:
     src = hit.get("_source", {})
+    card_id = src.get("card_id", hit.get("_id", ""))
     return {
-        "card_id": src.get("card_id", hit.get("_id", "")),
+        "card_id": card_id,
+        "id": card_id,
         "title": src.get("title", ""),
         "summary": src.get("summary"),
         "theme": src.get("theme"),
         "sectors": src.get("sectors", []),
         "status": src.get("status"),
         "score": hit.get("_score", 0.0),
+        "confidence_score": src.get("confidence_score"),
         "created_at": src.get("created_at"),
     }
 

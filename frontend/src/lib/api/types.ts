@@ -14,13 +14,15 @@ export interface FinalEventCard {
 
 export interface EventSearchHit {
   id: string;
+  card_id?: string;
   title: string;
-  summary: string;
-  theme: string;
+  summary: string | null;
+  theme: string | null;
   sectors: string[];
-  confidence_score: number;
-  created_at: string;
-  score?: number;
+  status?: string | null;
+  confidence_score: number | null;
+  score: number;
+  created_at: string | null;
 }
 
 export interface EventSearchResponse {
@@ -31,6 +33,7 @@ export interface EventSearchResponse {
 export interface Theme {
   id: string;
   name: string;
+  label?: string;
   description?: string;
   event_count?: number;
 }
@@ -38,14 +41,18 @@ export interface Theme {
 export interface Sector {
   id: string;
   name: string;
+  label?: string;
   description?: string;
   event_count?: number;
 }
 
 export interface HealthResponse {
   status: string;
-  components?: Record<string, string>;
   version?: string;
+  components?: { redis?: string; milvus?: string; postgres?: string; opensearch?: string };
+  redis?: string;
+  milvus?: string;
+  postgres?: string;
 }
 
 export interface JobStatus {

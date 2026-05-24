@@ -10,17 +10,26 @@ from backend.app.services import event_service
 router = APIRouter(prefix="/api/themes", tags=["themes"])
 
 _THEMES = [
-    {"id": "geopolitics", "label": "Geopolitics"},
-    {"id": "economics", "label": "Economics"},
-    {"id": "technology", "label": "Technology"},
-    {"id": "climate", "label": "Climate"},
-    {"id": "health", "label": "Health"},
+    {"id": "geopolitics", "name": "Geopolitics", "label": "Geopolitics",
+     "description": "국가/외교/안보 관련 이벤트"},
+    {"id": "economics", "name": "Economics", "label": "Economics",
+     "description": "경제/금융/무역 관련 이벤트"},
+    {"id": "technology", "name": "Technology", "label": "Technology",
+     "description": "기술/사이버/혁신 관련 이벤트"},
+    {"id": "climate", "name": "Climate", "label": "Climate",
+     "description": "기후/환경/자연재해 관련 이벤트"},
+    {"id": "health", "name": "Health", "label": "Health",
+     "description": "보건/의료/전염병 관련 이벤트"},
 ]
 
 
 @router.get("")
-async def list_themes():
-    return _THEMES
+async def list_themes(session: AsyncSession = Depends(get_session)):
+    try:
+        counts = await event_service.count_by_theme(session)
+    except Exception:
+        counts = {}
+    return [{**t, "event_count": counts.get(t["id"], 0)} for t in _THEMES]
 
 
 @router.get("/{theme_id}/events", response_model=list[FinalEventCard])

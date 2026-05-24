@@ -30,12 +30,14 @@ _SEARCH_RESULT = {
     "hits": [
         {
             "card_id": "id-1",
+            "id": "id-1",
             "title": "Iran Sanctions",
             "summary": "Details.",
             "theme": "geopolitics",
             "sectors": ["energy"],
             "status": "published",
             "score": 0.9,
+            "confidence_score": 0.85,
             "created_at": None,
         }
     ],
@@ -53,6 +55,8 @@ def test_search_returns_200_with_hits(client):
     data = resp.json()
     assert data["total"] == 1
     assert data["hits"][0]["card_id"] == "id-1"
+    assert data["hits"][0]["id"] == "id-1"
+    assert data["hits"][0]["confidence_score"] == 0.85
 
 
 def test_search_missing_q_returns_422(client):

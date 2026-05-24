@@ -37,5 +37,12 @@ def connect() -> bool:
         return False
 
 
+def ping() -> bool:
+    try:
+        return get_client().ping()
+    except Exception:
+        return False
+
+
 def is_connected() -> bool:
     return _connected

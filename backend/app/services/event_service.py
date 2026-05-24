@@ -128,3 +128,19 @@ async def list_by_sector(session: AsyncSession, sector: str) -> list[FinalEventC
     )
     result = await session.execute(stmt)
     return [_orm_to_card(row) for row in result.scalars()]
+
+
+async def count_by_theme(session: AsyncSession) -> dict[str, int]:
+    stmt = select(EventCardORM.theme, func.count().label("cnt")).group_by(EventCardORM.theme)
+    result = await session.execute(stmt)
+    return {row.theme: int(row.cnt) for row in result if row.theme is not None}
+
+
+async def count_by_sector(session: AsyncSession) -> dict[str, int]:
+    from sqlalchemy import text as sa_text
+    stmt = sa_text(
+        "SELECT s.sector, count(*) AS cnt FROM event_cards,"
+        " jsonb_array_elements_text(sectors) AS s(sector) GROUP BY s.sector"
+    )
+    result = await session.execute(stmt)
+    return {row.sector: int(row.cnt) for row in result if row.sector is not None}

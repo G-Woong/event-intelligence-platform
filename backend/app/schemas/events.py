@@ -41,12 +41,14 @@ class FinalEventCard(BaseModel):
 
 class EventSearchHit(BaseModel):
     card_id: str
+    id: str
     title: str
     summary: str | None = None
     theme: str | None = None
     sectors: list[str] = []
     status: str | None = None
     score: float
+    confidence_score: float | None = None
     created_at: datetime | None = None
 
 

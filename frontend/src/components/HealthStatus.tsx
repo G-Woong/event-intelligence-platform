@@ -10,6 +10,13 @@ function StatusDot({ status }: { status: string }) {
 }
 
 export default function HealthStatus({ health }: { health: HealthResponse }) {
+  const components: Record<string, string> = health.components
+    ? { ...health.components }
+    : {
+        ...(health.redis != null ? { redis: health.redis } : {}),
+        ...(health.milvus != null ? { milvus: health.milvus } : {}),
+        ...(health.postgres != null ? { postgres: health.postgres } : {}),
+      };
   return (
     <div className="rounded-lg border border-gray-800 bg-gray-900 p-4">
       <div className="mb-3 flex items-center gap-2">
@@ -21,9 +28,9 @@ export default function HealthStatus({ health }: { health: HealthResponse }) {
           <span className="ml-auto text-xs text-gray-500">v{health.version}</span>
         )}
       </div>
-      {health.components && (
+      {Object.keys(components).length > 0 && (
         <dl className="grid grid-cols-2 gap-2">
-          {Object.entries(health.components).map(([name, status]) => (
+          {Object.entries(components).map(([name, status]) => (
             <div key={name} className="flex items-center gap-2">
               <StatusDot status={status} />
               <dt className="text-xs text-gray-400 capitalize">{name}</dt>
