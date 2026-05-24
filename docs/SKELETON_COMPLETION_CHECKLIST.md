@@ -1,5 +1,7 @@
 # Skeleton Completion Checklist — STEP 011
 
+> 전체 구현 명세서 위치: [`docs/system_overview/00_INDEX.md`](./system_overview/00_INDEX.md)
+
 > 13단계 관통 흐름 완료 상태 (2026-05-24 기준)
 
 ## 13단계 파이프라인 관통 흐름
