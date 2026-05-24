@@ -8,6 +8,7 @@
 RSS feed (feedparser)
   → workers/collectors/rss_collector.py  (one-shot run())
   → POST /api/admin/raw-events           (backend admin API)
+     │  헤더: X-Admin-Token (ADMIN_API_TOKEN env, STEP 008C)
      ├─ raw_events 테이블 idempotent insert (content_hash UNIQUE)
      ├─ asyncio.to_thread(enqueue_raw_event(...))  → stream:raw_events
      │    payload에 raw_event_id 포함 (STEP 008A)
@@ -20,6 +21,7 @@ RSS feed (feedparser)
   → agent-worker → LangGraph (EventState.raw_event_id 주입)
        → FinalEventCard → Postgres + Milvus
        → PATCH /api/admin/raw-events/{id}/status
+       │    헤더: X-Admin-Token (settings.ADMIN_API_TOKEN, STEP 008C)
             ├─ 성공: status="processed", event_card_id=card.id (STEP 008A)
             └─ 실패: status="failed", error_reason=<snippet> (STEP 008A)
 ```

@@ -122,6 +122,29 @@
    `CACHEBUST=0` (default)이면 일반 빌드에서 캐시 그대로 사용 — 추가 비용 없음.
    신규 revision 추가 시에만 위 명령 사용.
 
+## STEP 008C Admin Auth — 추가 기록
+
+날짜: 2026-05-24
+
+### Dev-mode unauthenticated fallback 정책
+
+- `ADMIN_API_TOKEN` 이 비어 있으면(기본) → startup 시 `WARNING: ADMIN_API_TOKEN unset — admin endpoints unauthenticated (dev only)` 출력 후 모든 admin/internal 호출 허용.
+- `ADMIN_API_TOKEN` 설정 시 → `X-Admin-Token: <token>` 헤더 없음 또는 불일치 → **401** 즉시.
+- 비교: `secrets.compare_digest` (timing-safe). 헤더 누락 시 early exit.
+
+### 향후 RBAC TODO
+
+- 현재는 단일 token (전체 admin 허용 또는 거부). per-endpoint scope 없음.
+- STEP 010+ 에서 OAuth2 / RBAC 진입 시 이 의존성(`require_admin_token`)을 교체 포인트로 사용.
+- `scripts/reconcile_stuck_once.py`도 `ADMIN_API_TOKEN` env로 헤더 삽입 — token 교체 시 env만 갱신하면 됨.
+
+### Prod 체크리스트
+
+1. `.env`에 `ADMIN_API_TOKEN=<strong-random-string>` 설정 (길이 ≥ 32 권장).
+2. backend startup log에서 `ADMIN_API_TOKEN unset` 경고 미출력 확인.
+3. `X-Admin-Token` 헤더 없이 `/api/admin/jobs` → 401 확인.
+4. collector/worker/agent-worker의 `ADMIN_API_TOKEN` env도 동일 값으로 설정.
+
 ## 미검증 / 다음 단계에서 다룰 항목
 - LangSmith 실제 연결 검증 (호출 안 함)
 - Celery + Redis 동작 검증

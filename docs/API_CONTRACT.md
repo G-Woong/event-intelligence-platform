@@ -2,6 +2,23 @@
 
 Base URL: `http://localhost:8000`
 
+## 인증 (STEP 008C)
+
+`/api/admin/*` 전체와 `/api/internal/*` 엔드포인트는 `X-Admin-Token` 헤더로 보호된다.
+
+| 환경 | `ADMIN_API_TOKEN` 설정 여부 | 동작 |
+|---|---|---|
+| Dev | 미설정 (기본) | 모든 admin 호출 허용 (startup WARNING 출력) |
+| Prod | 설정 필수 | 헤더 없음 또는 불일치 → **401** |
+
+헤더 예:
+```
+X-Admin-Token: <your-secret-token>
+```
+
+비교는 `secrets.compare_digest`로 timing-safe 처리.
+`/health`, `/api/events|themes|sectors|comments|ai-replies`는 인증 불필요.
+
 ## Health
 
 ### GET /health
@@ -149,11 +166,9 @@ Internal endpoint. Used by agent-worker to publish FinalEventCard. STEP 004: per
 // Response 200: FinalEventCard
 ```
 
-### POST /api/admin/raw-events (STEP 007)
+### POST /api/admin/raw-events (STEP 007, auth: STEP 008C)
 
 Idempotent insert of a raw event from collector. Deduplicates by `content_hash`. On new insert, enqueues to Redis Stream `stream:raw_events`.
-
-TODO STEP 008: admin token authentication.
 
 ```json
 // Request Body (RawEventCreate):
@@ -221,9 +236,7 @@ Request body (`RawEventStatusUpdate`):
 // Response 404: raw_event_id 미존재 시
 ```
 
-TODO STEP 008C: admin token authentication.
-
-### POST /api/admin/raw-events/reconcile-stuck (STEP 008B)
+### POST /api/admin/raw-events/reconcile-stuck (STEP 008B, auth: STEP 008C)
 
 stuck enqueued 상태의 raw_event를 탐지/처리. `dry_run=true`(기본)이면 조회만 하고 변경 없음.
 
@@ -249,9 +262,35 @@ Response (`ReconcileStuckResponse`):
 
 `dry_run=false`이면 `marked_failed` == `stuck_count` (빈 결과 제외).
 
-TODO STEP 008C: admin token authentication.
+### POST /api/admin/raw-events/{raw_event_id}/requeue (STEP 008C)
 
-### GET /api/admin/raw-events (STEP 008B)
+failed/stuck raw_event를 Redis Stream에 다시 넣는다. `requeue_count` 증가, `error_reason` 초기화.
+
+Request body (`RequeueRequest`):
+```json
+{ "force": false }
+```
+
+`force=false`(기본): `status=processed` 인 경우 거부 → **409**.
+`force=true`: processed 상태도 requeue 허용.
+
+Response (`RequeueResponse`):
+```json
+{
+  "record": { /* 갱신된 RawEventRecord */ },
+  "enqueued_msg_id": "1779000001-0",
+  "requeue_count": 1
+}
+```
+
+| 상태 코드 | 조건 |
+|---|---|
+| 200 | 성공 |
+| 404 | raw_event_id 미존재 |
+| 409 | status=processed 이고 force=false |
+| 401 | ADMIN_API_TOKEN 설정 + 헤더 없음/불일치 |
+
+### GET /api/admin/raw-events (STEP 008B, extended: 008C)
 
 status + age 기반 raw_event 목록 조회. Query params:
 
@@ -260,6 +299,9 @@ status + age 기반 raw_event 목록 조회. Query params:
 | `status` | str | null | 특정 status로 필터 (null이면 전체) |
 | `before_seconds` | int | null | updated_at이 N초 이전인 row만 반환 (null이면 전체) |
 | `limit` | int | 50 | 최대 반환 수 |
+| `source_type` | str | null | source_type 필터 (예: `rss`) |
+| `offset` | int | 0 | 페이지 오프셋 |
+| `order` | str | `asc` | updated_at 정렬 방향 (`asc`\|`desc`) |
 
 ```json
 // Response 200: list[RawEventRecord]
@@ -273,11 +315,9 @@ status + age 기반 raw_event 목록 조회. Query params:
 ]
 ```
 
-### POST /api/admin/collect-rss-once (STEP 007)
+### POST /api/admin/collect-rss-once (STEP 007, auth: STEP 008C)
 
 Triggers RSS collector run in-process via `asyncio.to_thread`. Fetches all enabled DEFAULT_SOURCES and inserts to `raw_events`. Returns summary JSON.
-
-TODO STEP 008C: admin token authentication.
 
 ```json
 // Response 200:
