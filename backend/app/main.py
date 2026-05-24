@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.app.core.config import settings
 from backend.app.core.logging import configure_logging
@@ -47,6 +48,15 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Event Intelligence API", version="0.1.0", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ALLOW_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Admin-Token", "Accept"],
+    max_age=600,
+)
 
 app.include_router(health.router)
 app.include_router(events.router)

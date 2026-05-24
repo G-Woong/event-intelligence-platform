@@ -2,6 +2,30 @@
 
 Base URL: `http://localhost:8000`
 
+## CORS (STEP 010)
+
+Backend에 `CORSMiddleware`가 추가됨.
+
+| 항목 | 값 |
+|---|---|
+| allow_origins | `settings.CORS_ALLOW_ORIGINS` (기본: `["http://localhost:3000"]`) |
+| allow_methods | GET, POST, PATCH, OPTIONS |
+| allow_headers | Content-Type, X-Admin-Token, Accept |
+| allow_credentials | False |
+| max_age | 600 |
+
+env `CORS_ALLOW_ORIGINS`로 쉼표 구분 origin 목록 지정 가능.
+
+## Frontend Proxy Routes (STEP 010)
+
+브라우저는 ADMIN_API_TOKEN을 모르며, frontend Route Handler를 통해 admin mutation 실행.
+
+| Proxy | Backend target |
+|---|---|
+| `POST /api/admin/reindex` | `POST http://backend:8000/api/admin/search/reindex` |
+| `POST /api/admin/reconcile` | `POST http://backend:8000/api/admin/reconcile-stuck` |
+| `POST /api/admin/requeue/{id}` | `POST http://backend:8000/api/admin/raw-events/{id}/requeue` |
+
 ## 인증 (STEP 008C)
 
 `/api/admin/*` 전체와 `/api/internal/*` 엔드포인트는 `X-Admin-Token` 헤더로 보호된다.

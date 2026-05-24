@@ -1,4 +1,4 @@
-# Architecture — Event Intelligence (STEP 007)
+# Architecture — Event Intelligence (STEP 010)
 
 ## 컴포넌트 다이어그램
 
@@ -66,6 +66,15 @@ POST /api/admin/raw-events
      │
      ▼
   GET /api/events → FinalEventCard[] (DB 조회)
+     │
+     ▼ (STEP 010 추가)
+[frontend (Next.js 15 SSR)]             ← NEW STEP 010
+  browser / SSR → NEXT_PUBLIC_API_BASE_URL (브라우저)
+                → INTERNAL_API_BASE_URL=http://backend:8000 (SSR)
+  /api/admin/* (Route Handler proxy) → ADMIN_API_TOKEN 서버측 주입
+     │
+     ▼
+[browser]  port 3000
 ```
 
 ## Reconciler 흐름 (STEP 008B)
@@ -131,6 +140,7 @@ agent-worker
 | backend | ./backend/Dockerfile | 8000 | FastAPI API 서버 |
 | worker | ./workers/Dockerfile | - | Stream ingest consumer |
 | agent-worker | ./agents/Dockerfile | - | LangGraph pipeline consumer |
+| frontend | ./frontend/Dockerfile | 3000 | Next.js 15 App Router (STEP 010) |
 
 ## 영속성 정책 (STEP 004)
 
@@ -187,12 +197,15 @@ agent-worker
 |---|---|---|
 | crawler collector (RSS) | `workers/collectors/rss_collector.py` | **DONE (STEP 007)** |
 | OpenSearch | `backend/app/db/opensearch.py` + `opensearch_index_service` + `search_service` | **DONE (STEP 009)** |
-| Next.js frontend | `frontend/` 디렉터리 없음 | 먼 STEP |
+| Next.js frontend | `frontend/` App Router skeleton | **DONE (STEP 010)** |
 
 ## 다음 STEP 순서
 
 1. ~~**STEP 006**~~ — Milvus insert/search 실호출 (완료)
 2. ~~**STEP 007**~~ — RSS collector + raw_events + Alembic migration (완료)
-3. **STEP 008** — agent-worker async + raw_event_id stream linkage + processed/failed status + LangSmith tracing
-4. **STEP 009** — Next.js `/events` 목록 UI + admin raw-events GET + collector_sources 테이블
-5. **STEP 010** — DART/SEC collector + vector dedup + entity linking LLM 전환
+3. ~~**STEP 008**~~ — admin auth, requeue, reconcile, OpenSearch 키워드 검색 (완료)
+4. ~~**STEP 009**~~ — reindex API + script + OpenSearch skeleton (완료)
+5. ~~**STEP 010**~~ — Next.js 15 App Router frontend skeleton + CORS (완료)
+6. **STEP 011** — 디자인 시스템 (shadcn/ui), 로그인/RBAC
+7. **STEP 012** — Hybrid search UI, WebSocket 실시간
+8. **STEP 013** — DART/SEC collector + 한국어 nori analyzer

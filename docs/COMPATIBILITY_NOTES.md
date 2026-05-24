@@ -22,10 +22,22 @@
 | 항목 | 상태 | 비고 |
 |---|---|---|
 | 한국어 nori analyzer | TODO STEP 010+ | standard analyzer만 사용. 한국어 어절 단위 검색 품질 낮음 |
-| Hybrid search (BM25 + Milvus reranking) | TODO STEP 011+ | 현재 OpenSearch/Milvus 역할 완전 분리 |
-| raw_events 색인 통합 | TODO STEP 010+ | 현재 event_cards만 색인 |
+| Hybrid search (BM25 + Milvus reranking) | TODO STEP 012+ | 현재 OpenSearch/Milvus 역할 완전 분리 |
+| raw_events 색인 통합 | TODO STEP 011+ | 현재 event_cards만 색인 |
 | OpenSearch security plugin (인증) | TODO prod 진입 시 | 현재 `plugins.security.disabled=true` |
 | Bulk reindex API 최적화 | TODO 대량 데이터 시 | 현재 document 단건 loop |
+
+## STEP 010 — Frontend (TODO)
+
+| 항목 | 상태 | 비고 |
+|---|---|---|
+| RBAC / 사용자 권한 모델 | TODO STEP 011+ | 현재 Admin token만 존재 (dev: 빈값) |
+| shadcn/ui 도입 | TODO STEP 011+ | 현재 자체 컴포넌트 7개만 사용 |
+| Production NEXT_PUBLIC_API_BASE_URL | TODO deploy 단계 | 빌드 시 주입 필요 |
+| Hybrid search UI | TODO STEP 012+ | 현재 OpenSearch 키워드만 노출 |
+| i18n | TODO STEP 011+ | 현재 한국어 하드코딩 |
+| WebSocket / SSE 실시간 | TODO STEP 012+ | 현재 SSR no-store만 사용 |
+| Docker healthcheck `localhost` 이슈 | RESOLVED | Alpine에서 localhost 미해석. 127.0.0.1 사용 |
 
 ## 권한 규칙 문법 (확인됨)
 - `Bash(git push *)`, `Bash(git push)`

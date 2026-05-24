@@ -1,3 +1,29 @@
+# Technical Requirements Document — STEP 010
+
+## STEP 010 신규 컴포넌트
+
+| 컴포넌트 | 경로 | 역할 |
+|---|---|---|
+| Next.js frontend | `frontend/` | App Router skeleton — events/search/themes/sectors/admin |
+| api/client.ts | `frontend/src/lib/api/client.ts` | 브라우저 fetch wrapper (ApiError, buildSearchUrl) |
+| api/server.ts | `frontend/src/lib/api/server.ts` | server-only adminFetch (token 격리) |
+| Admin proxy routes | `frontend/src/app/api/admin/*/route.ts` | reindex/reconcile/requeue POST proxy |
+| CORSMiddleware | `backend/app/main.py` | FastAPI CORS 미들웨어 추가 |
+| CORS_ALLOW_ORIGINS | `backend/app/core/config.py` | 허용 origin 목록 (env, comma-separated) |
+| frontend Docker | `frontend/Dockerfile` | multi-stage standalone |
+| frontend service | `docker-compose.dev.yml` | 10번째 컨테이너 |
+
+## STEP 010 환경 변수
+
+| 키 | 기본값 | 비고 |
+|---|---|---|
+| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:8000` | 브라우저가 호출하는 backend URL (빌드타임 inline) |
+| `INTERNAL_API_BASE_URL` | `http://localhost:8000` / `http://backend:8000` (compose) | SSR/Route Handler 내부 URL |
+| `ADMIN_API_TOKEN` | `` | frontend server-side 전용. 절대 NEXT_PUBLIC 금지 |
+| `CORS_ALLOW_ORIGINS` | `http://localhost:3000` | 쉼표 구분 복수 origin 지원 |
+
+---
+
 # Technical Requirements Document — STEP 009
 
 ## STEP 009 신규 컴포넌트

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -33,6 +34,15 @@ class Settings(BaseSettings):
     BACKEND_INTERNAL_URL: str = "http://backend:8000"
     ADMIN_API_TOKEN: str = ""
 
+    CORS_ALLOW_ORIGINS: list[str] = ["http://localhost:3000"]
+
+    @field_validator("CORS_ALLOW_ORIGINS", mode="before")
+    @classmethod
+    def _parse_cors(cls, v: object) -> list[str]:
+        if isinstance(v, str):
+            return [o.strip() for o in v.split(",") if o.strip()]
+        return v  # type: ignore[return-value]
+
     OPENSEARCH_HOST: str = "opensearch"
     OPENSEARCH_PORT: int = 9200
     OPENSEARCH_EVENT_INDEX: str = "event_cards"
@@ -60,6 +70,7 @@ class Settings(BaseSettings):
                 result[f] = f"set (len={len(val)})"
             else:
                 result[f] = "empty"
+        result["CORS_ALLOW_ORIGINS"] = f"set ({len(self.CORS_ALLOW_ORIGINS)} origins)"
         return result
 
 
