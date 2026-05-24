@@ -1,3 +1,36 @@
+# Technical Requirements Document — STEP 008B
+
+## STEP 008B 신규 컴포넌트
+
+| 컴포넌트 | 경로 | 역할 |
+|---|---|---|
+| reconciler_service | `backend/app/services/reconciler_service.py` | stuck enqueued 탐지 + mark_failed |
+| list_by_status_older_than | `backend/app/services/raw_event_service.py` | status + age 기반 bulk 조회 |
+| ReconcileStuckRequest/Response | `backend/app/schemas/raw_events.py` | reconcile endpoint I/O schema |
+| POST /reconcile-stuck | `backend/app/api/admin.py` | stuck 탐지/처리 endpoint |
+| GET /raw-events | `backend/app/api/admin.py` | status/age 필터 raw_event 목록 |
+| _patch_status (retry) | `agents/agent_worker.py` | tenacity 3회 retry PATCH |
+
+## STEP 008B 환경 변수 추가
+
+신규 환경 변수 없음. 참고용:
+
+| 키 | 기본값 | 비고 |
+|---|---|---|
+| `RAW_EVENT_STUCK_THRESHOLD_SEC` | — | (미도입) STEP 008C+ 검토. 현재 API 파라미터로 전달 |
+
+## STEP 008B 보류 항목
+
+| 항목 | 이유 | 예정 단계 |
+|---|---|---|
+| `processing` 중간 상태 | 워커 1개 + consumer group이 race 자동 방지. enqueued threshold로 충분 | STEP 008C/D |
+| event_card_id FK 제약 | publish_card 실패 가드와 함께 처리 필요 | STEP 008C+ |
+| agent-worker async 전환 | 광범위 refactor 회피 | STEP 008C/D |
+| reconciler cron 자동 실행 | 수동 endpoint로 충분한 skeleton 단계 | STEP 008C/009 |
+| re-enqueue 메커니즘 | mark_failed만 구현. re-enqueue는 별도 설계 필요 | STEP 008C+ |
+
+---
+
 # Technical Requirements Document — STEP 006
 
 ## 런타임 스택

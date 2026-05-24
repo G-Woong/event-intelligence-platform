@@ -68,6 +68,42 @@ POST /api/admin/raw-events
   GET /api/events → FinalEventCard[] (DB 조회)
 ```
 
+## Reconciler 흐름 (STEP 008B)
+
+```
+[관리자 / cron (STEP 008C+)]
+  POST /api/admin/raw-events/reconcile-stuck
+       { before_seconds: 600, limit: 100, dry_run: false }
+     │ reconciler_service.mark_stuck_as_failed()
+     │   list_by_status_older_than(status="enqueued", before_seconds=N)
+     │   UPDATE raw_events SET status="failed" WHERE id IN (...)
+     ▼
+[raw_events 테이블]  stuck enqueued → failed
+
+  GET /api/admin/raw-events?status=enqueued&before_seconds=600
+     │ raw_event_service.list_by_status_older_than()
+     ▼
+  [RawEventRecord list]
+```
+
+### stuck enqueued 발생 5가지 경로
+
+| 경로 | 원인 |
+|---|---|
+| 워커 프로세스 사망 | 메시지 ack 전 종료 → xpending 잔존 |
+| PATCH 실패 | agent-worker의 _notify_status가 3회 retry 후 실패 |
+| backend 다운 | PATCH 수신 불가 → status=enqueued 유지 |
+| graph hang | LangGraph 무한 대기 → finally xack만 실행 |
+| ingest forward 후 실패 | worker→stream:to_agent 후 agent-worker 처리 실패 |
+
+### Docker migration 정책 (STEP 008B)
+
+신규 alembic revision 추가 시:
+```
+docker compose -f docker-compose.dev.yml build --build-arg CACHEBUST=$(date +%s) backend
+```
+`ARG CACHEBUST` + `COPY backend/alembic/versions/` 분리 레이어로 stale cache 방지.
+
 ## LLM 호출 경로 (STEP 005)
 
 ```

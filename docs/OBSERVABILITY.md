@@ -46,7 +46,22 @@ pytest tests/smoke/ -k langsmith -v
 
 > `RUN_LANGSMITH_SMOKE=1` smoke 테스트는 본 STEP에서 작성되지 않았다. STEP 008B에서 추가 예정.
 
+## Reconciler 로그 패턴 (STEP 008B)
+
+`POST /api/admin/raw-events/reconcile-stuck` 호출 시 서비스 레이어에서 다음 로그가 출력된다:
+
+| 이벤트 | 레벨 | 위치 |
+|---|---|---|
+| stuck row 발견 | (없음, 결과가 response에 포함됨) | reconciler_service |
+| _patch_status retry 시작 | (tenacity 내부 — WARNING 없음) | agent_worker |
+| _patch_status 3회 모두 실패 | WARNING | agent_worker: `raw_event status update failed after retries id=... reason=...` |
+| raw_event_id 없어서 스킵 | WARNING | agent_worker: `raw_event_id absent — status update skipped status=...` |
+
+### stuck 탐지 기준
+- `status == "enqueued"` AND `updated_at < now() - before_seconds`
+- 기본 `before_seconds=600` (10분). 운영 환경 권장값: 600~1800.
+
 ## 다음 단계
 
-- STEP 008B: agent node별 span 커스텀 메타데이터, `raw_event_id` 태깅
+- STEP 008C: reconciler cron 자동 실행 + span 커스텀 메타데이터 + `raw_event_id` 태깅
 - STEP 010: LLM 호출 비용/레이턴시 대시보드 연동

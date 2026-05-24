@@ -97,6 +97,31 @@
 - Migration 실행: `backend/entrypoint.sh`에서 `alembic -c backend/alembic.ini upgrade head` 후 `exec uvicorn`.
 - `entrypoint.sh`는 LF 라인 엔딩 필수. Dockerfile에 `sed -i 's/\r$//'` 보호 추가.
 
+## STEP 008B Docker Migration 정책
+
+### 문제
+`COPY backend/ backend/` 레이어 캐시가 재사용되어 신규 alembic revision 파일이 컨테이너에 반영되지 않는 경우가 발생.
+
+### 해결
+`backend/Dockerfile`에 두 가지 안전망 추가:
+
+1. **ARG CACHEBUST + 분리 COPY 레이어**  
+   ```dockerfile
+   ARG CACHEBUST=0
+   COPY backend/alembic/versions/ backend/alembic/versions/
+   ```
+   `COPY backend/ backend/` 직후에 위치. `CACHEBUST` 값이 바뀌면 이 레이어부터 캐시 무효화.
+
+2. **빌드 절차 명시**  
+   신규 revision 추가 시 반드시 `--no-cache` 또는 `--build-arg CACHEBUST` 사용:
+   ```
+   docker compose -f docker-compose.dev.yml build --no-cache backend
+   # 또는
+   docker compose -f docker-compose.dev.yml build --build-arg CACHEBUST=$(date +%s) backend
+   ```
+   `CACHEBUST=0` (default)이면 일반 빌드에서 캐시 그대로 사용 — 추가 비용 없음.
+   신규 revision 추가 시에만 위 명령 사용.
+
 ## 미검증 / 다음 단계에서 다룰 항목
 - LangSmith 실제 연결 검증 (호출 안 함)
 - Celery + Redis 동작 검증

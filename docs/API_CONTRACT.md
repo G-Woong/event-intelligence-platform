@@ -223,6 +223,56 @@ Request body (`RawEventStatusUpdate`):
 
 TODO STEP 008C: admin token authentication.
 
+### POST /api/admin/raw-events/reconcile-stuck (STEP 008B)
+
+stuck enqueued 상태의 raw_event를 탐지/처리. `dry_run=true`(기본)이면 조회만 하고 변경 없음.
+
+Request body (`ReconcileStuckRequest`):
+```json
+{
+  "before_seconds": 600,
+  "limit": 100,
+  "dry_run": true,
+  "error_reason": "reconciler: stuck enqueued"
+}
+```
+
+Response (`ReconcileStuckResponse`):
+```json
+{
+  "stuck_count": 3,
+  "marked_failed": 0,
+  "dry_run": true,
+  "items": [ /* list[RawEventRecord] */ ]
+}
+```
+
+`dry_run=false`이면 `marked_failed` == `stuck_count` (빈 결과 제외).
+
+TODO STEP 008C: admin token authentication.
+
+### GET /api/admin/raw-events (STEP 008B)
+
+status + age 기반 raw_event 목록 조회. Query params:
+
+| 파라미터 | 타입 | 기본값 | 설명 |
+|---|---|---|---|
+| `status` | str | null | 특정 status로 필터 (null이면 전체) |
+| `before_seconds` | int | null | updated_at이 N초 이전인 row만 반환 (null이면 전체) |
+| `limit` | int | 50 | 최대 반환 수 |
+
+```json
+// Response 200: list[RawEventRecord]
+[
+  {
+    "id": "...",
+    "status": "enqueued",
+    "updated_at": "2026-05-24T01:00:00Z",
+    ...
+  }
+]
+```
+
 ### POST /api/admin/collect-rss-once (STEP 007)
 
 Triggers RSS collector run in-process via `asyncio.to_thread`. Fetches all enabled DEFAULT_SOURCES and inserts to `raw_events`. Returns summary JSON.
