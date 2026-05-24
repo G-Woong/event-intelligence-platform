@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Optional
 
 import httpx
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from backend.app.core.config import settings
 from backend.app.db import redis as redis_db
@@ -20,6 +21,17 @@ _GROUP = "group:agent"
 _CONSUMER = "agent-worker-1"
 
 
+@retry(
+    reraise=False,
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=3),
+    retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)),
+)
+def _patch_status(url: str, payload: dict) -> None:
+    resp = httpx.patch(url, json=payload, timeout=10)
+    resp.raise_for_status()
+
+
 def _notify_status(
     raw_event_id: Optional[str],
     status: str,
@@ -29,14 +41,16 @@ def _notify_status(
     if raw_event_id is None:
         logger.warning("raw_event_id absent — status update skipped status=%s", status)
         return
+    url = f"{settings.BACKEND_INTERNAL_URL}/api/admin/raw-events/{raw_event_id}/status"
+    payload = {"status": status, "error_reason": error_reason, "event_card_id": event_card_id}
     try:
-        httpx.patch(
-            f"{settings.BACKEND_INTERNAL_URL}/api/admin/raw-events/{raw_event_id}/status",
-            json={"status": status, "error_reason": error_reason, "event_card_id": event_card_id},
-            timeout=10,
-        )
+        _patch_status(url, payload)
     except Exception as exc:
-        logger.warning("raw_event status update failed id=%s reason=%s", raw_event_id, str(exc)[:200])
+        logger.warning(
+            "raw_event status update failed after retries id=%s reason=%s",
+            raw_event_id,
+            str(exc)[:200],
+        )
 
 
 def run_forever() -> None:

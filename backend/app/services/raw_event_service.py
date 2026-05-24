@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy import select, update
@@ -168,3 +168,20 @@ async def get_raw_event(session: AsyncSession, raw_event_id: str) -> RawEventRec
     if row is None:
         raise NoResultFound(f"raw_event_id={raw_event_id} not found")
     return _orm_to_record(row)
+
+
+async def list_by_status_older_than(
+    session: AsyncSession,
+    status: Optional[str] = None,
+    before_seconds: Optional[int] = None,
+    limit: int = 50,
+) -> list[RawEventRecord]:
+    stmt = select(RawEventORM)
+    if status is not None:
+        stmt = stmt.where(RawEventORM.status == status)
+    if before_seconds is not None:
+        threshold = datetime.now(timezone.utc) - timedelta(seconds=before_seconds)
+        stmt = stmt.where(RawEventORM.updated_at < threshold)
+    stmt = stmt.order_by(RawEventORM.updated_at.asc()).limit(limit)
+    result = await session.execute(stmt)
+    return [_orm_to_record(r) for r in result.scalars().all()]

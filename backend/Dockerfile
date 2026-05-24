@@ -13,6 +13,11 @@ RUN pip install --no-cache-dir -r requirements/serve.txt -r requirements/vector.
 
 COPY backend/ backend/
 COPY workers/ workers/
+
+# STEP 008B: ensure new alembic revisions invalidate cache
+ARG CACHEBUST=0
+COPY backend/alembic/versions/ backend/alembic/versions/
+
 COPY backend/entrypoint.sh /app/entrypoint.sh
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 

@@ -10,9 +10,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.app.db import redis as redis_db
 from backend.app.db.postgres import get_session
 from backend.app.schemas.events import FinalEventCard
-from backend.app.schemas.raw_events import RawEventCreate, RawEventCreateResponse, RawEventRecord, RawEventStatusUpdate
+from backend.app.schemas.raw_events import (
+    RawEventCreate,
+    RawEventCreateResponse,
+    RawEventRecord,
+    RawEventStatusUpdate,
+    ReconcileStuckRequest,
+    ReconcileStuckResponse,
+)
 from backend.app.services import event_service
 from backend.app.services import raw_event_service
+from backend.app.services import reconciler_service
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
@@ -44,6 +52,26 @@ async def upsert_event(card: FinalEventCard, session: AsyncSession = Depends(get
     return await event_service.upsert_card(session, card)
 
 
+@router.post("/raw-events/reconcile-stuck", response_model=ReconcileStuckResponse)
+async def reconcile_stuck(
+    body: ReconcileStuckRequest,
+    session: AsyncSession = Depends(get_session),
+) -> ReconcileStuckResponse:
+    items, marked = await reconciler_service.mark_stuck_as_failed(
+        session,
+        before_seconds=body.before_seconds,
+        limit=body.limit,
+        error_reason=body.error_reason,
+        dry_run=body.dry_run,
+    )
+    return ReconcileStuckResponse(
+        stuck_count=len(items),
+        marked_failed=marked,
+        dry_run=body.dry_run,
+        items=items,
+    )
+
+
 @router.post("/raw-events", response_model=RawEventCreateResponse)
 async def create_raw_event(
     payload: RawEventCreate,
@@ -51,6 +79,18 @@ async def create_raw_event(
 ) -> RawEventCreateResponse:
     # TODO STEP 008C: add admin token authentication
     return await raw_event_service.create_raw_event(session, payload)
+
+
+@router.get("/raw-events", response_model=list[RawEventRecord])
+async def list_raw_events(
+    status: str | None = None,
+    before_seconds: int | None = None,
+    limit: int = 50,
+    session: AsyncSession = Depends(get_session),
+) -> list[RawEventRecord]:
+    return await raw_event_service.list_by_status_older_than(
+        session, status=status, before_seconds=before_seconds, limit=limit
+    )
 
 
 @router.get("/raw-events/{raw_event_id}", response_model=RawEventRecord)

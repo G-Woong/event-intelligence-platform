@@ -3,12 +3,13 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
+import httpx
 import pytest
 
 from backend.app.schemas.events import FinalEventCard, RawEvent
-from agents.agent_worker import _notify_status
+from agents.agent_worker import _notify_status, _patch_status
 
 
 def _make_card() -> FinalEventCard:
@@ -60,4 +61,30 @@ def test_notify_status_none_raw_event_id_skips_patch():
 def test_notify_status_patch_failure_only_warns():
     with patch("agents.agent_worker.httpx.patch", side_effect=Exception("network error")):
         # should not raise
+        _notify_status(_RAW_EVENT_ID, "processed")
+
+
+def test_patch_status_retries_on_transport_error_then_succeeds():
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    call_count = [0]
+
+    def side_effect(url, json, timeout):
+        call_count[0] += 1
+        if call_count[0] < 3:
+            raise httpx.TransportError("connection reset")
+        return mock_resp
+
+    with patch("agents.agent_worker.httpx.patch", side_effect=side_effect):
+        _patch_status("http://backend/status", {"status": "processed"})
+
+    assert call_count[0] == 3
+
+
+def test_patch_status_all_retries_fail_swallowed_by_notify():
+    with patch(
+        "agents.agent_worker.httpx.patch",
+        side_effect=httpx.TransportError("timeout"),
+    ):
+        # _notify_status should swallow and warn, not raise
         _notify_status(_RAW_EVENT_ID, "processed")

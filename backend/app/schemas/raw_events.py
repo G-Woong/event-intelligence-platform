@@ -53,3 +53,17 @@ class RawEventStatusUpdate(BaseModel):
     status: str
     error_reason: Optional[str] = None
     event_card_id: Optional[str] = None
+
+
+class ReconcileStuckRequest(BaseModel):
+    before_seconds: int = 600
+    limit: int = 100
+    dry_run: bool = True
+    error_reason: str = "reconciler: stuck enqueued"
+
+
+class ReconcileStuckResponse(BaseModel):
+    stuck_count: int
+    marked_failed: int
+    dry_run: bool
+    items: list[RawEventRecord]
