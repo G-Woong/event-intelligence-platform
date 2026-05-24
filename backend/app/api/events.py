@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.db.postgres import get_session
-from backend.app.schemas.events import FinalEventCard
+from backend.app.schemas.events import EventSearchResponse, FinalEventCard
 from backend.app.services import event_service
+from backend.app.services.search_service import OpenSearchUnavailable, search_event_cards
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
@@ -13,6 +14,22 @@ router = APIRouter(prefix="/api/events", tags=["events"])
 @router.get("", response_model=list[FinalEventCard])
 async def list_events(session: AsyncSession = Depends(get_session)):
     return await event_service.list_events(session)
+
+
+@router.get("/search", response_model=EventSearchResponse)
+async def search_events(
+    q: str = Query(..., min_length=1, max_length=200),
+    theme: str | None = None,
+    sector: str | None = None,
+    status: str | None = None,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+) -> EventSearchResponse:
+    try:
+        result = await search_event_cards(q, theme, sector, status, limit, offset)
+        return EventSearchResponse(**result)
+    except OpenSearchUnavailable:
+        raise HTTPException(status_code=503, detail="search unavailable")
 
 
 @router.get("/{event_id}", response_model=FinalEventCard)

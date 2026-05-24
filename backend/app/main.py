@@ -9,7 +9,8 @@ from backend.app.core.config import settings
 from backend.app.core.logging import configure_logging
 from backend.app.core.observability import setup_langsmith
 from backend.app.core.security import require_admin_token
-from backend.app.db import redis as redis_db, milvus as milvus_db, postgres as postgres_db  # noqa: F401
+from backend.app.db import redis as redis_db, milvus as milvus_db, postgres as postgres_db, opensearch as opensearch_db  # noqa: F401
+from backend.app.services import opensearch_index_service
 from backend.app.api import health, events, themes, sectors, comments, ai_replies, admin, internal
 
 configure_logging()
@@ -32,6 +33,15 @@ async def lifespan(app: FastAPI):
         logger.info("Milvus: connected")
     else:
         logger.warning("Milvus: not reachable at startup (non-fatal)")
+
+    try:
+        if opensearch_db.connect():
+            opensearch_index_service.ensure_event_cards_index()
+            logger.info("OpenSearch: connected and index ensured")
+        else:
+            logger.warning("OpenSearch: not reachable at startup (non-fatal)")
+    except Exception as exc:
+        logger.warning("OpenSearch startup error: %s", exc)
 
     yield
 

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.app.db import redis as redis_db
 from backend.app.db.postgres import get_session
-from backend.app.schemas.events import FinalEventCard
+from backend.app.schemas.events import FinalEventCard, ReindexRequest, ReindexResponse
 from backend.app.schemas.raw_events import (
     RawEventCreate,
     RawEventCreateResponse,
@@ -21,6 +21,7 @@ from backend.app.schemas.raw_events import (
     RequeueResponse,
 )
 from backend.app.services import event_service
+from backend.app.services import opensearch_index_service
 from backend.app.services import raw_event_service
 from backend.app.services import reconciler_service
 
@@ -148,6 +149,19 @@ async def update_raw_event_status(
         )
     except NoResultFound:
         raise HTTPException(status_code=404, detail=f"raw_event_id={raw_event_id} not found")
+
+
+@router.post("/search/reindex", response_model=ReindexResponse)
+async def reindex_search(
+    body: ReindexRequest,
+    session: AsyncSession = Depends(get_session),
+) -> ReindexResponse:
+    cards = await event_service.list_events(session, limit=body.limit)
+    if not body.dry_run:
+        opensearch_index_service.ensure_event_cards_index()
+        for card in cards:
+            opensearch_index_service.try_index_card(card)
+    return ReindexResponse(indexed=len(cards), dry_run=body.dry_run)
 
 
 @router.post("/collect-rss-once")

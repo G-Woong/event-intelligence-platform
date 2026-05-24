@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     BACKEND_INTERNAL_URL: str = "http://backend:8000"
     ADMIN_API_TOKEN: str = ""
 
+    OPENSEARCH_HOST: str = "opensearch"
+    OPENSEARCH_PORT: int = 9200
+    OPENSEARCH_EVENT_INDEX: str = "event_cards"
+
     RSS_COLLECTOR_FETCH_TIMEOUT_SEC: int = 15
     RSS_SOURCES_CONFIG_PATH: str = ""
     RSS_COLLECTOR_USER_AGENT: str = "event-intelligence/0.7 (+ei)"
@@ -47,6 +51,7 @@ class Settings(BaseSettings):
             "MILVUS_COLLECTION", "BACKEND_INTERNAL_URL", "ADMIN_API_TOKEN",
             "RSS_COLLECTOR_FETCH_TIMEOUT_SEC", "RSS_SOURCES_CONFIG_PATH",
             "RSS_COLLECTOR_USER_AGENT",
+            "OPENSEARCH_HOST", "OPENSEARCH_PORT", "OPENSEARCH_EVENT_INDEX",
         ]
         result = {}
         for f in fields:

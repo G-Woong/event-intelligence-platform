@@ -120,6 +120,9 @@ services:
       EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}
       MILVUS_COLLECTION: ${MILVUS_COLLECTION:-event_embeddings}
       BACKEND_INTERNAL_URL: http://backend:8000
+      OPENSEARCH_HOST: opensearch
+      OPENSEARCH_PORT: 9200
+      OPENSEARCH_EVENT_INDEX: event_cards
     env_file:
       - .env
     depends_on:
@@ -128,6 +131,8 @@ services:
       milvus-standalone:
         condition: service_healthy
       postgres:
+        condition: service_healthy
+      opensearch:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -176,9 +181,35 @@ services:
         condition: service_healthy
     restart: on-failure
 
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    container_name: ei-opensearch
+    environment:
+      - discovery.type=single-node
+      - plugins.security.disabled=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
 volumes:
   etcd_data:
   minio_data:
   milvus_data:
   redis_data:
   pg_data:
+  opensearch_data:

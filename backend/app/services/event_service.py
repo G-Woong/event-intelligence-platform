@@ -55,8 +55,10 @@ def _orm_to_card(row: EventCardORM) -> FinalEventCard:
     )
 
 
-async def list_events(session: AsyncSession) -> list[FinalEventCard]:
+async def list_events(session: AsyncSession, limit: int | None = None) -> list[FinalEventCard]:
     stmt = select(EventCardORM).order_by(EventCardORM.created_at.desc())
+    if limit is not None:
+        stmt = stmt.limit(limit)
     result = await session.execute(stmt)
     return [_orm_to_card(row) for row in result.scalars()]
 
@@ -98,6 +100,12 @@ async def upsert_card(session: AsyncSession, card: FinalEventCard) -> FinalEvent
         await vector_index_service.try_index_card(card)
     except Exception as exc:
         logger.warning("vector index failed for card=%s: %s", card.id, exc)
+
+    try:
+        from backend.app.services import opensearch_index_service
+        opensearch_index_service.try_index_card(card)
+    except Exception as exc:
+        logger.warning("opensearch hook failed: %s", exc)
 
     return card
 

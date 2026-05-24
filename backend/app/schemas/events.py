@@ -37,3 +37,29 @@ class FinalEventCard(BaseModel):
     confidence_score: float = Field(default=0.0, ge=0.0, le=1.0)
     status: Literal["published", "hold"] = "published"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class EventSearchHit(BaseModel):
+    card_id: str
+    title: str
+    summary: str | None = None
+    theme: str | None = None
+    sectors: list[str] = []
+    status: str | None = None
+    score: float
+    created_at: datetime | None = None
+
+
+class EventSearchResponse(BaseModel):
+    total: int
+    hits: list[EventSearchHit]
+
+
+class ReindexRequest(BaseModel):
+    limit: int = 1000
+    dry_run: bool = False
+
+
+class ReindexResponse(BaseModel):
+    indexed: int
+    dry_run: bool
