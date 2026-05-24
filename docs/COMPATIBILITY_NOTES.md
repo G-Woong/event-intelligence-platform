@@ -31,13 +31,55 @@
 
 | 항목 | 상태 | 비고 |
 |---|---|---|
-| RBAC / 사용자 권한 모델 | TODO STEP 011+ | 현재 Admin token만 존재 (dev: 빈값) |
-| shadcn/ui 도입 | TODO STEP 011+ | 현재 자체 컴포넌트 7개만 사용 |
+| RBAC / 사용자 권한 모델 | TODO STEP 015+ | 현재 Admin token만 존재 (dev: 빈값) |
+| shadcn/ui 도입 | TODO STEP 014+ | 현재 자체 컴포넌트 7개만 사용 |
 | Production NEXT_PUBLIC_API_BASE_URL | TODO deploy 단계 | 빌드 시 주입 필요 |
 | Hybrid search UI | TODO STEP 012+ | 현재 OpenSearch 키워드만 노출 |
-| i18n | TODO STEP 011+ | 현재 한국어 하드코딩 |
+| i18n | TODO STEP 014+ | 현재 한국어 하드코딩 |
 | WebSocket / SSE 실시간 | TODO STEP 012+ | 현재 SSR no-store만 사용 |
 | Docker healthcheck `localhost` 이슈 | RESOLVED | Alpine에서 localhost 미해석. 127.0.0.1 사용 |
+| Next.js 15.0.4 CVE-2025-29927 (critical) | **RESOLVED STEP 011** | 15.5.18로 업그레이드됨. 아래 노트 참조. |
+| reconcile proxy 경로 오류 (H1) | **RESOLVED STEP 011** | `/api/admin/reconcile-stuck` → `/api/admin/raw-events/reconcile-stuck` |
+| themes/sectors `name` 필드 누락 (H2) | **RESOLVED STEP 011** | backend 응답에 name/description/event_count 추가 |
+| EventSearchHit `id` alias 누락 (H3) | **RESOLVED STEP 011** | `id` = `card_id` alias 추가, `/events/undefined` 수정 |
+| HealthStatus components 중첩 (H4) | **RESOLVED STEP 011** | backend components 중첩 추가, flat fallback 유지 |
+
+## STEP 011 — Next.js 15.5.x 업그레이드 노트
+
+날짜: 2026-05-24
+
+### CVE-2025-29927 해소
+
+- **대상**: `next@15.0.4` — middleware auth bypass (critical)
+- **조치**: `next@^15.5.18` 업그레이드 (15.5.18 실설치)
+- **검증**: `npm audit` 결과 critical 0건 (moderate 2건: postcss XSS — Next.js 내부 의존성, 외부 노출 없음)
+
+### moderate 잔여 취약점 (npm audit)
+
+| 패키지 | 취약점 | 영향 | 조치 |
+|---|---|---|---|
+| `postcss < 8.5.10` | XSS via `</style>` in CSS Stringify | Next.js 내부에서만 사용, 사용자 입력 CSS 처리 없음 | `npm audit fix --force`는 Next.js 9.x downgrade 유발 — **사용 금지** |
+
+`npm audit fix --force` 절대 사용 금지. STEP 012+ 에서 postcss 자체 버전 업그레이드 가능 여부 검토.
+
+## STEP 011 — Docker 포트 바인딩 변경
+
+| 서비스 | 이전 | 이후 |
+|---|---|---|
+| postgres | `0.0.0.0:5432:5432` | `127.0.0.1:5432:5432` |
+| redis | `0.0.0.0:6379:6379` | `127.0.0.1:6379:6379` |
+| milvus (gRPC) | `0.0.0.0:19530:19530` | `127.0.0.1:19530:19530` |
+| milvus (metrics) | `0.0.0.0:9091:9091` | `127.0.0.1:9091:9091` |
+| opensearch | `0.0.0.0:9200:9200` | `127.0.0.1:9200:9200` |
+
+backend(8000), frontend(3000)은 브라우저 접근 필요로 `0.0.0.0` 유지.
+
+## STEP 011 — worker/agent-worker healthcheck 추가
+
+- heartbeat 파일: `/tmp/worker_heartbeat`, `/tmp/agent_heartbeat`
+- 메인 루프 `xreadgroup` 호출 후 + 메시지 처리 후 `Path.touch()`
+- healthcheck: `stat -c %Y` 기반, 60초 이내 갱신 여부 확인
+- BusyBox `stat -c` 지원 확인됨 (Alpine 3.x 기본 포함)
 
 ## 권한 규칙 문법 (확인됨)
 - `Bash(git push *)`, `Bash(git push)`

@@ -23,8 +23,10 @@ env `CORS_ALLOW_ORIGINS`로 쉼표 구분 origin 목록 지정 가능.
 | Proxy | Backend target |
 |---|---|
 | `POST /api/admin/reindex` | `POST http://backend:8000/api/admin/search/reindex` |
-| `POST /api/admin/reconcile` | `POST http://backend:8000/api/admin/reconcile-stuck` |
+| `POST /api/admin/reconcile` | `POST http://backend:8000/api/admin/raw-events/reconcile-stuck` |
 | `POST /api/admin/requeue/{id}` | `POST http://backend:8000/api/admin/raw-events/{id}/requeue` |
+
+> **STEP 011 수정**: reconcile proxy 경로가 `/api/admin/reconcile-stuck` → `/api/admin/raw-events/reconcile-stuck`로 정정됨.
 
 ## 인증 (STEP 008C)
 
@@ -47,13 +49,19 @@ X-Admin-Token: <your-secret-token>
 
 ### GET /health
 
-STEP 004에서 `postgres` 필드 추가. 모든 endpoint는 `async def`로 전환됨.
-STEP 004.5에서 `milvus` 부정 값 `"error"`로 통일 (기존 `"disconnected"` 제거).
+STEP 004에서 `postgres` 필드 추가. STEP 011에서 `components` 중첩 + `opensearch` + `version` 추가 (flat 키 호환 유지).
 
 ```json
 // Response 200
 {
   "status": "ok",
+  "version": "0.1.0",
+  "components": {
+    "redis": "ok",
+    "milvus": "ok",
+    "postgres": "ok",
+    "opensearch": "ok"
+  },
   "redis": "ok",
   "milvus": "ok",
   "postgres": "ok"
@@ -65,9 +73,11 @@ STEP 004.5에서 `milvus` 부정 값 `"error"`로 통일 (기존 `"disconnected"
 | 필드 | 정상 | 장애 |
 |---|---|---|
 | `status` | `"ok"` | (항상 ok — 필드 자체 반환 실패 시 500) |
-| `redis` | `"ok"` | `"error"` |
-| `milvus` | `"ok"` | `"error"` |
-| `postgres` | `"ok"` | `"error"` |
+| `components.redis` | `"ok"` | `"error"` |
+| `components.milvus` | `"ok"` | `"error"` |
+| `components.postgres` | `"ok"` | `"error"` |
+| `components.opensearch` | `"ok"` | `"error"` |
+| `redis`, `milvus`, `postgres` | `"ok"` | `"error"` (legacy flat, 호환 유지) |
 
 ## Events
 
@@ -103,13 +113,14 @@ STEP 004.5에서 `milvus` 부정 값 `"error"`로 통일 (기존 `"disconnected"
 
 ### GET /api/themes
 
+STEP 011에서 `name`, `description`, `event_count` 필드 추가.
+
 ```json
 [
-  { "id": "geopolitics", "label": "Geopolitics" },
-  { "id": "economics", "label": "Economics" },
-  { "id": "technology", "label": "Technology" },
-  { "id": "climate", "label": "Climate" },
-  { "id": "health", "label": "Health" }
+  { "id": "geopolitics", "name": "Geopolitics", "label": "Geopolitics",
+    "description": "국가/외교/안보 관련 이벤트", "event_count": 5 },
+  { "id": "economics", "name": "Economics", "label": "Economics",
+    "description": "경제/금융/무역 관련 이벤트", "event_count": 2 }
 ]
 ```
 
@@ -123,13 +134,14 @@ STEP 004.5에서 `milvus` 부정 값 `"error"`로 통일 (기존 `"disconnected"
 
 ### GET /api/sectors
 
+STEP 011에서 `name`, `description`, `event_count` 필드 추가.
+
 ```json
 [
-  { "id": "energy", "label": "Energy" },
-  { "id": "finance", "label": "Finance" },
-  { "id": "defense", "label": "Defense" },
-  { "id": "tech", "label": "Technology" },
-  { "id": "trade", "label": "Trade" }
+  { "id": "energy", "name": "Energy", "label": "Energy",
+    "description": "에너지/석유/가스/전력 관련 이벤트", "event_count": 3 },
+  { "id": "finance", "name": "Finance", "label": "Finance",
+    "description": "금융/은행/자본시장 관련 이벤트", "event_count": 1 }
 ]
 ```
 
@@ -361,12 +373,14 @@ Query params:
   "hits": [
     {
       "card_id": "uuid",
+      "id": "uuid",
       "title": "Iran Sanctions Update",
       "summary": "...",
       "theme": "geopolitics",
       "sectors": ["energy", "finance"],
       "status": "published",
       "score": 1.234,
+      "confidence_score": 0.82,
       "created_at": "2026-05-24T00:00:00+00:00"
     }
   ]
@@ -375,6 +389,8 @@ Query params:
 // Response 422: q 누락 또는 길이 초과
 // Response 503: OpenSearch 다운 ({ "detail": "search unavailable" })
 ```
+
+> **STEP 011 추가**: `id` (= `card_id` alias, frontend link 생성용), `confidence_score` 필드 추가.
 
 `title^2` 가중치 부스트. `text_all`(title+summary+entities+sectors 합산 필드) 포함 검색.
 
@@ -391,6 +407,34 @@ Postgres event_cards를 OpenSearch에 bulk reindex.
 ```
 
 `dry_run=true`이면 count만 반환, 실제 색인 없음.
+
+### POST /api/internal/search-similar (STEP 009, auth 필요)
+
+Milvus 벡터 기반 유사 이벤트 검색. agent-worker가 호출하여 past context를 가져옴.
+
+Query params:
+
+| 파라미터 | 타입 | 필수 | 기본값 | 설명 |
+|---|---|---|---|---|
+| `query` | str | ✓ | — | 검색 텍스트 |
+| `top_k` | int | — | 5 | 반환할 유사 이벤트 수 |
+| `threshold` | float | — | 0.0 | 최소 유사도 점수 (0.0 = 필터 없음) |
+
+```json
+// Response 200:
+[
+  {
+    "card_id": "uuid",
+    "title": "...",
+    "summary": "...",
+    "theme": "geopolitics",
+    "sectors": ["energy"],
+    "similarity": 0.91
+  }
+]
+
+// Response 503: Milvus 다운
+```
 
 ### POST /api/admin/collect-rss-once (STEP 007, auth: STEP 008C)
 

@@ -49,6 +49,29 @@ frontend/src/
 | **Browser** | `lib/api/client.ts` | `NEXT_PUBLIC_API_BASE_URL` 사용, 브라우저에서 backend 직접 호출 |
 | **Proxy** | `app/api/admin/*/route.ts` | Route Handler — 브라우저에서 `/api/admin/*`만 호출, 서버가 token 주입 |
 
+## Route Handler Proxy 테스트 전략 (STEP 011)
+
+Route Handler (TypeScript + Next.js path aliases + `server-only`)는 `node --test`로 직접 import 불가.
+대신 핵심 proxy 로직(URL 경로, body 직렬화, token 헤더)을 **JS inline 재구현** 후 `globalThis.fetch` stub으로 검증.
+
+테스트 파일: `src/app/api/admin/__tests__/proxy.test.mjs`
+
+| 테스트 케이스 | 검증 항목 |
+|---|---|
+| reconcile 경로 | `/api/admin/raw-events/reconcile-stuck` (old path 아님) |
+| requeue body + Content-Type | `force` 필드 직렬화, `Content-Type: application/json` 헤더 |
+| requeue force 기본값 | body 없을 때 `force: false` |
+| token 존재 시 | `X-Admin-Token` 헤더 포함 |
+| token 빈값 시 | `X-Admin-Token` 헤더 미포함 |
+
+실행: `npm run test` (client.test.mjs와 함께 실행).
+
+### STEP 012+ 후보
+
+- Playwright e2e (UI 실제 렌더링 + 인터랙션)
+- shadcn/ui + Radix 도입 후 컴포넌트 스냅샷 테스트
+- MSW(Mock Service Worker) 기반 API stub (브라우저 환경 테스트)
+
 ## Admin Token 격리
 
 ```

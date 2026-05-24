@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -19,6 +20,7 @@ logger = logging.getLogger(__name__)
 _STREAM = "stream:to_agent"
 _GROUP = "group:agent"
 _CONSUMER = "agent-worker-1"
+_HEARTBEAT = Path("/tmp/agent_heartbeat")
 
 
 @retry(
@@ -61,6 +63,7 @@ def run_forever() -> None:
     logger.info("agent-worker started: stream=%s group=%s", _STREAM, _GROUP)
     while True:
         messages = redis_db.xreadgroup(_STREAM, _GROUP, _CONSUMER)
+        _HEARTBEAT.touch()
         for _stream_name, entries in messages:
             for msg_id, fields in entries:
                 raw_event_id = fields.get("raw_event_id") or None
