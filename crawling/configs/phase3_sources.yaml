@@ -1,0 +1,13 @@
+phase: 3
+label: "공식 데이터 소스"
+source_ids:
+  - gdelt
+  - sec_edgar
+  - bok_ecos
+  - eia
+  - worldbank
+  - imf
+  - un_news
+  - cboe
+  - finviz
+  - reuters_data

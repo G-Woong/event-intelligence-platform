@@ -55,5 +55,13 @@ Thumbs.db
 logs/
 *.pid
 
+# crawling pipeline outputs (keep .gitkeep only)
+crawling/outputs/
+crawling/logs/runs/
+crawling/logs/attempts/
+crawling/logs/errors/
+!crawling/outputs/**/.gitkeep
+!crawling/logs/**/.gitkeep
+
 # Backups
 *.bak

@@ -1,0 +1,22 @@
+max_attempts: 5
+max_strategies_per_url: 3
+
+backoff:
+  initial_delay_sec: 2.0
+  max_delay_sec: 30.0
+  exponential_base: 2.0
+
+retry_on:
+  - NETWORK_TIMEOUT
+  - NETWORK_CONNECTION_RESET
+  - HTTP_5XX
+  - JS_RENDER_FAIL
+  - LLM_TIMEOUT
+  - LLM_RATE_LIMIT
+
+no_retry_on:
+  - CAPTCHA_DETECTED
+  - LOGIN_WALL_DETECTED
+  - PAYWALL_DETECTED
+  - ROBOTS_BLOCKED
+  - HTTP_4XX

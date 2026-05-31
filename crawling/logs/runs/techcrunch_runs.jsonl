@@ -1,0 +1,31 @@
+{"ts": "", "level": "INFO", "logger": "crawling.runners.run_one_source", "msg": "=== run_one_source: techcrunch ==="}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] initialize: phase=1 run_id=20260531_183144_phase1_techcrunch"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] build_search_query"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] fetch_entry_url: https://techcrunch.com"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] extract_candidate_urls"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] fetch_target_page: strategy=httpx_direct url=https://techcrunch.com/2026/05/30/i-put-googles-24-7-ai-assistant-gemini-spark-to-work-and-its-actually-pretty-useful/"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] select_extraction_strategy: httpx_direct"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] extract_content: strategy=httpx_direct"}
+{"ts": "", "level": "WARNING", "logger": "crawling.agents.graph", "msg": "[techcrunch] error_analysis: CAPTCHA_DETECTED - blocker detected: CAPTCHA_DETECTED"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] retry_decision: status=BLOCKED attempt=0/3 exhausted=False"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] strategy_reflection: status=BLOCKED score=0.000 tried=['httpx_direct']"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] write_source_report"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] report written: C:\\Users\\computer\\Desktop\\business\\claude\\crawling\\outputs\\reports\\techcrunch_report.md"}
+{"ts": "", "level": "INFO", "logger": "crawling.runners.run_one_source", "msg": "=== DONE: techcrunch  status=BLOCKED  score=0.000 ==="}
+{"ts": "", "level": "INFO", "logger": "crawling.runners.run_one_source", "msg": "=== run_one_source: techcrunch ==="}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] initialize: phase=1 run_id=20260531_183232_phase1_techcrunch"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] build_search_query"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] fetch_entry_url: https://techcrunch.com"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] extract_candidate_urls"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] fetch_target_page: strategy=httpx_direct url=https://techcrunch.com/2026/05/30/i-put-googles-24-7-ai-assistant-gemini-spark-to-work-and-its-actually-pretty-useful/"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] select_extraction_strategy: httpx_direct"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] extract_content: strategy=httpx_direct"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] score_quality"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[PHASE1][techcrunch][attempt=0][httpx_direct] PARTIAL score=0.676"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] retry_decision: status=PARTIAL attempt=0/3 exhausted=False"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] extract_event_candidates"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] llm_quality_judge"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] strategy_reflection: status=PARTIAL score=0.676 tried=['httpx_direct']"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] write_source_report"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[techcrunch] report written: C:\\Users\\computer\\Desktop\\business\\claude\\crawling\\outputs\\reports\\techcrunch_report.md"}
+{"ts": "", "level": "INFO", "logger": "crawling.runners.run_one_source", "msg": "=== DONE: techcrunch  status=PARTIAL  score=0.676 ==="}

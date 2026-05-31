@@ -1,0 +1,13 @@
+phase: 2
+label: "커뮤니티"
+source_ids:
+  - reddit
+  - hackernews
+  - twitter_x
+  - naver_news
+  - dcinside
+  - blind
+  - ppomppu
+  - fmkorea
+  - clien
+  - bobaedream

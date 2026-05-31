@@ -1,0 +1,17 @@
+{"ts": "", "level": "INFO", "logger": "crawling.runners.run_one_source", "msg": "=== run_one_source: aljazeera ==="}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] initialize: phase=1 run_id=20260531_183642_phase1_aljazeera"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] build_search_query"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] fetch_entry_url: https://www.aljazeera.com/news"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] extract_candidate_urls"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] fetch_target_page: strategy=httpx_direct url=https://www.aljazeera.com/news/2026/5/31/israel-issues-more-displacement-orders-in-lebanon-seizes-strategic-castle"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] select_extraction_strategy: httpx_direct"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] extract_content: strategy=httpx_direct"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] score_quality"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[PHASE1][aljazeera][attempt=0][httpx_direct] SUCCESS score=0.866"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] retry_decision: status=SUCCESS attempt=0/3 exhausted=False"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] extract_event_candidates"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] llm_quality_judge"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] strategy_reflection: status=SUCCESS score=0.866 tried=['httpx_direct']"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] write_source_report"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[aljazeera] report written: C:\\Users\\computer\\Desktop\\business\\claude\\crawling\\outputs\\reports\\aljazeera_report.md"}
+{"ts": "", "level": "INFO", "logger": "crawling.runners.run_one_source", "msg": "=== DONE: aljazeera  status=SUCCESS  score=0.866 ==="}

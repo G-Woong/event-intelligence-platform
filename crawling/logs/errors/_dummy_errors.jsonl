@@ -1,0 +1,48 @@
+{"ts": "", "level": "INFO", "logger": "crawling.runners.run_one_source", "msg": "=== run_one_source: _dummy ==="}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] initialize: phase=0"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] build_search_query"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] fetch_entry_url: http://localhost"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] extract_candidate_urls"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] fetch_target_page: strategy=httpx_direct url=http://localhost/article/1"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] select_extraction_strategy: httpx_direct"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] extract_content: strategy=httpx_direct"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] score_quality"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[PHASE0][_dummy][attempt=0][httpx_direct] SUCCESS score=0.777"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] retry_decision: status=SUCCESS attempt=0/3 exhausted=False"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] extract_event_candidates"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] llm_quality_judge"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] strategy_reflection: status=SUCCESS score=0.777 tried=['httpx_direct']"}
+{"ts": "", "level": "INFO", "logger": "crawling.runners.run_one_source", "msg": "=== run_one_source: _dummy ==="}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] initialize: phase=0"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] build_search_query"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] fetch_entry_url: http://localhost"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] extract_candidate_urls"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] fetch_target_page: strategy=httpx_direct url=http://localhost/article/1"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] select_extraction_strategy: httpx_direct"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] extract_content: strategy=httpx_direct"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] score_quality"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[PHASE0][_dummy][attempt=0][httpx_direct] SUCCESS score=0.777"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] retry_decision: status=SUCCESS attempt=0/3 exhausted=False"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] extract_event_candidates"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] llm_quality_judge"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] strategy_reflection: status=SUCCESS score=0.777 tried=['httpx_direct']"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] write_source_report"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] report written: C:\\Users\\computer\\Desktop\\business\\claude\\crawling\\outputs\\reports\\_dummy_report.md"}
+{"ts": "", "level": "INFO", "logger": "crawling.runners.run_one_source", "msg": "=== DONE: _dummy  status=SUCCESS  score=0.777 ==="}
+{"ts": "", "level": "INFO", "logger": "crawling.runners.run_one_source", "msg": "=== run_one_source: _dummy ==="}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] initialize: phase=0"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] build_search_query"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] fetch_entry_url: http://localhost"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] extract_candidate_urls"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] fetch_target_page: strategy=httpx_direct url=http://localhost/article/1"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] select_extraction_strategy: httpx_direct"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] extract_content: strategy=httpx_direct"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] score_quality"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[PHASE0][_dummy][attempt=0][httpx_direct] SUCCESS score=0.777"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] retry_decision: status=SUCCESS attempt=0/3 exhausted=False"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] extract_event_candidates"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] llm_quality_judge"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] strategy_reflection: status=SUCCESS score=0.777 tried=['httpx_direct']"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] write_source_report"}
+{"ts": "", "level": "INFO", "logger": "crawling.agents.graph", "msg": "[_dummy] report written: C:\\Users\\computer\\Desktop\\business\\claude\\crawling\\outputs\\reports\\_dummy_report.md"}
+{"ts": "", "level": "INFO", "logger": "crawling.runners.run_one_source", "msg": "=== DONE: _dummy  status=SUCCESS  score=0.777 ==="}

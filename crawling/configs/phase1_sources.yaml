@@ -1,0 +1,13 @@
+phase: 1
+label: "기사형 뉴스 (Step C 확정)"
+source_ids:
+  - bbc
+  - ap_news
+  - techcrunch
+  - the_verge
+  - zdnet_korea
+  - etnews
+  - yna
+  - hankyung
+  - maekyung
+  - aljazeera
