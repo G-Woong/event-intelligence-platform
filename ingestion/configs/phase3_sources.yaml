@@ -1,0 +1,13 @@
+phase: 3
+label: "공식/데이터 소스"
+source_ids:
+  - gdelt
+  - opendart
+  - sec_edgar
+  - krx_kind
+  - bok_ecos
+  - eia
+  - federal_register
+  - eu_press_corner
+  - naver_news_search
+  - reuters

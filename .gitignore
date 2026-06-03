@@ -55,13 +55,18 @@ Thumbs.db
 logs/
 *.pid
 
-# crawling pipeline outputs (keep .gitkeep only)
-crawling/outputs/
-crawling/logs/runs/
-crawling/logs/attempts/
-crawling/logs/errors/
-!crawling/outputs/**/.gitkeep
-!crawling/logs/**/.gitkeep
+# ingestion pipeline outputs (keep .gitkeep only)
+ingestion/outputs/
+ingestion/logs/runs/
+ingestion/logs/attempts/
+ingestion/logs/errors/
+!ingestion/outputs/**/.gitkeep
+!ingestion/logs/**/.gitkeep
+
+# GCP service account keys (never commit)
+gcp-service-account-key.json
+*service-account*.json
+*-key.json
 
 # Backups
 *.bak

@@ -1,0 +1,939 @@
+version: "1.0"
+sources:
+  # ────── Phase 1: 기사형 뉴스 (10개, Step C 확정 소스) ──────
+  - id: bbc
+    name: "BBC News"
+    type: news
+    evidence_level: tier1
+    role: primary
+    phase: 1
+    layer: document_discovery
+    base_url: "https://www.bbc.com/news"
+    known_blockers: []
+    expected_fields: [title, body, published_at, author]
+    implemented: true
+
+  - id: ap_news
+    name: "AP News"
+    type: news
+    evidence_level: tier1
+    role: primary
+    phase: 1
+    layer: document_discovery
+    base_url: "https://apnews.com"
+    known_blockers: []
+    expected_fields: [title, body, published_at, author]
+    implemented: true
+
+  - id: techcrunch
+    name: "TechCrunch"
+    type: news
+    evidence_level: tier1
+    role: primary
+    phase: 1
+    layer: document_discovery
+    base_url: "https://techcrunch.com"
+    known_blockers: [consent_banner]
+    expected_fields: [title, body, published_at, author]
+    implemented: true
+
+  - id: the_verge
+    name: "The Verge"
+    type: news
+    evidence_level: tier1
+    role: primary
+    phase: 1
+    layer: document_discovery
+    base_url: "https://www.theverge.com"
+    known_blockers: [consent_banner]
+    expected_fields: [title, body, published_at, author]
+    implemented: true
+
+  - id: zdnet_korea
+    name: "ZDNet Korea"
+    type: news
+    evidence_level: tier2
+    role: primary
+    phase: 1
+    layer: document_discovery
+    base_url: "https://zdnet.co.kr"
+    known_blockers: []
+    expected_fields: [title, body, published_at, author]
+    implemented: true
+
+  - id: etnews
+    name: "전자신문 (ETNews)"
+    type: news
+    evidence_level: tier2
+    role: primary
+    phase: 1
+    layer: document_discovery
+    base_url: "https://www.etnews.com"
+    known_blockers: []
+    expected_fields: [title, body, published_at, author]
+    implemented: true
+
+  - id: yna
+    name: "연합뉴스 (Yonhap)"
+    type: news
+    evidence_level: tier1
+    role: primary
+    phase: 1
+    layer: document_discovery
+    base_url: "https://www.yna.co.kr/news"
+    known_blockers: []
+    expected_fields: [title, body, published_at, author]
+    implemented: true
+
+  - id: hankyung
+    name: "한국경제"
+    type: news
+    evidence_level: tier1
+    role: primary
+    phase: 1
+    layer: document_discovery
+    base_url: "https://www.hankyung.com/all-news"
+    known_blockers: []
+    expected_fields: [title, body, published_at, author]
+    implemented: true
+
+  - id: maekyung
+    name: "매일경제"
+    type: news
+    evidence_level: tier1
+    role: primary
+    phase: 1
+    layer: document_discovery
+    base_url: "https://www.mk.co.kr/news"
+    known_blockers: []
+    expected_fields: [title, body, published_at, author]
+    implemented: true
+
+  - id: aljazeera
+    name: "Al Jazeera"
+    type: news
+    evidence_level: tier1
+    role: primary
+    phase: 1
+    layer: document_discovery
+    base_url: "https://www.aljazeera.com/news"
+    known_blockers: []
+    expected_fields: [title, body, published_at, author]
+    implemented: true
+
+  # ────── Phase 2: 커뮤니티/소셜 (10개, 확정 목록) ──────
+  - id: reddit
+    name: "Reddit"
+    type: community
+    evidence_level: tier2
+    role: secondary
+    phase: 2
+    layer: community_signal
+    base_url: "https://www.reddit.com/r/worldnews.json?limit=5"
+    known_blockers: [rate_limit, api_restriction]
+    expected_fields: [title, body, published_at, engagement]
+    implemented: true
+
+  - id: hacker_news
+    name: "Hacker News"
+    type: community
+    evidence_level: tier2
+    role: secondary
+    phase: 2
+    layer: community_signal
+    base_url: "https://hacker-news.firebaseio.com/v0/topstories.json"
+    known_blockers: []
+    expected_fields: [title, url, published_at, engagement]
+    api_preferred: true
+    implemented: true
+
+  - id: product_hunt
+    name: "Product Hunt"
+    type: community
+    evidence_level: tier2
+    role: supplementary
+    phase: 2
+    layer: community_signal
+    base_url: "https://api.producthunt.com/v2/api/graphql"
+    known_blockers: [api_key_required]
+    expected_fields: [title, body, published_at, engagement]
+    api_preferred: true
+    implemented: true
+
+  - id: youtube
+    name: "YouTube"
+    type: community
+    evidence_level: tier2
+    role: supplementary
+    phase: 2
+    layer: community_signal
+    base_url: "https://www.googleapis.com/youtube/v3/search"
+    known_blockers: [api_key_required]
+    expected_fields: [title, body, published_at, engagement]
+    api_preferred: true
+    implemented: true
+
+  - id: dcinside
+    name: "DCinside"
+    type: community
+    evidence_level: tier3
+    role: supplementary
+    phase: 2
+    layer: community_signal
+    base_url: "https://www.dcinside.com"
+    known_blockers: [cloudflare, anti_bot]
+    expected_fields: [title, body, published_at, engagement]
+    implemented: true
+
+  - id: fmkorea
+    name: "에펨코리아"
+    type: community
+    evidence_level: tier3
+    role: supplementary
+    phase: 2
+    layer: community_signal
+    base_url: "https://www.fmkorea.com"
+    known_blockers: [cloudflare, anti_bot]
+    expected_fields: [title, body, published_at, engagement]
+    implemented: true
+
+  - id: naver_blog_search
+    name: "Naver Blog Search"
+    type: community
+    evidence_level: tier2
+    role: secondary
+    phase: 2
+    layer: search_enrichment
+    base_url: "https://openapi.naver.com/v1/search/blog"
+    known_blockers: [api_key_required]
+    expected_fields: [title, body, published_at]
+    api_preferred: true
+    implemented: true
+
+  - id: x
+    name: "X (Twitter)"
+    type: community
+    evidence_level: tier2
+    role: supplementary
+    phase: 2
+    layer: community_signal
+    base_url: "https://twitter.com"
+    known_blockers: [login_wall, api_key_required]
+    expected_fields: [title, body, published_at, engagement]
+    implemented: true
+
+  - id: cnbc
+    name: "CNBC"
+    type: news
+    evidence_level: tier1
+    role: primary
+    phase: 2
+    layer: document_discovery
+    base_url: "https://www.cnbc.com/world-news"
+    known_blockers: []
+    expected_fields: [title, body, published_at, author]
+    implemented: true
+
+  - id: blind
+    name: "Blind"
+    type: community
+    evidence_level: tier3
+    role: supplementary
+    phase: 2
+    layer: community_signal
+    base_url: "https://www.teamblind.com"
+    known_blockers: [login_wall]
+    expected_fields: [title, body, engagement]
+    implemented: true
+
+  # ────── Phase 3: 공식/데이터 소스 (10개, 확정 목록) ──────
+  - id: gdelt
+    name: "GDELT Project"
+    type: official
+    evidence_level: tier1
+    role: primary
+    phase: 3
+    layer: official_evidence
+    base_url: "https://api.gdeltproject.org/api/v2/doc/doc?query=world+news&mode=artlist&maxrecords=5&format=json"
+    known_blockers: []
+    expected_fields: [title, url, published_at, tone]
+    api_preferred: true
+    implemented: true
+
+  - id: opendart
+    name: "OpenDART (금감원 공시)"
+    type: official
+    evidence_level: tier1
+    role: primary
+    phase: 3
+    layer: official_evidence
+    base_url: "https://opendart.fss.or.kr/api/list.json"
+    known_blockers: [api_key_required]
+    expected_fields: [title, body, published_at, filing_type]
+    api_preferred: true
+    implemented: true
+
+  - id: sec_edgar
+    name: "SEC EDGAR"
+    type: official
+    evidence_level: tier1
+    role: primary
+    phase: 3
+    layer: official_evidence
+    base_url: "https://efts.sec.gov/LATEST/search-index?q=%228-K%22&forms=8-K&dateRange=custom&startdt=2025-01-01&enddt=2026-06-01"
+    known_blockers: []
+    expected_fields: [title, body, published_at, filing_type]
+    api_preferred: true
+    implemented: true
+
+  - id: krx_kind
+    name: "KRX KIND (한국거래소 공시)"
+    type: official
+    evidence_level: tier1
+    role: primary
+    phase: 3
+    layer: official_evidence
+    base_url: "https://kind.krx.co.kr/disclosure/todaydisclosure.do"
+    known_blockers: [js_heavy, dynamic_search]
+    expected_fields: [title, body, published_at, filing_type]
+    implemented: true
+
+  - id: bok_ecos
+    name: "한국은행 ECOS"
+    type: official
+    evidence_level: tier1
+    role: primary
+    phase: 3
+    layer: official_evidence
+    base_url: "https://ecos.bok.or.kr/api/StatisticSearch"
+    known_blockers: [api_key_required]
+    expected_fields: [title, body, published_at]
+    api_preferred: true
+    implemented: true
+
+  - id: eia
+    name: "EIA (Energy Information Administration)"
+    type: official
+    evidence_level: tier1
+    role: primary
+    phase: 3
+    layer: official_evidence
+    base_url: "https://api.eia.gov/v2/natural-gas/pri/sum/data/"
+    known_blockers: [api_key_required]
+    expected_fields: [title, body, published_at]
+    api_preferred: true
+    implemented: true
+
+  - id: federal_register
+    name: "Federal Register"
+    type: official
+    evidence_level: tier1
+    role: primary
+    phase: 3
+    layer: official_evidence
+    base_url: "https://www.federalregister.gov/api/v1/articles.json?per_page=5&order=newest&fields[]=title&fields[]=abstract&fields[]=publication_date&fields[]=document_number"
+    known_blockers: []
+    expected_fields: [title, body, published_at]
+    api_preferred: true
+    implemented: true
+
+  - id: eu_press_corner
+    name: "EU Press Corner"
+    type: official
+    evidence_level: tier1
+    role: primary
+    phase: 3
+    layer: official_evidence
+    base_url: "https://ec.europa.eu/commission/presscorner/home/en"
+    known_blockers: [js_heavy]
+    expected_fields: [title, body, published_at]
+    implemented: true
+
+  - id: naver_news_search
+    name: "Naver News Search"
+    type: news
+    evidence_level: tier2
+    role: secondary
+    phase: 3
+    layer: search_enrichment
+    base_url: "https://openapi.naver.com/v1/search/news"
+    known_blockers: [api_key_required]
+    expected_fields: [title, body, published_at]
+    api_preferred: true
+    implemented: true
+
+  - id: reuters
+    name: "Reuters"
+    type: news
+    evidence_level: tier1
+    role: primary
+    phase: 3
+    layer: news_verification
+    base_url: "https://www.reuters.com/news"
+    known_blockers: [bot_protection, paywall]
+    expected_fields: [title, body, published_at, author]
+    implemented: true
+
+  # ────── Internal ──────
+  - id: _dummy
+    name: "Dummy (Test Fixture)"
+    type: news
+    evidence_level: tier3
+    role: supplementary
+    phase: 0
+    layer: document_discovery
+    base_url: "http://localhost"
+    known_blockers: []
+    expected_fields: [title, body]
+    implemented: true
+
+  # ────── Phase 4: 확장 후보 (implemented: false) ──────
+  # search_enrichment
+  - id: google_programmable_search
+    name: "Google Programmable Search"
+    type: search
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: search_enrichment
+    base_url: "https://www.googleapis.com/customsearch/v1"
+    known_blockers: [api_key_required]
+    expected_fields: [title, url, published_at]
+    auth: query_param_key
+    env_keys: [GOOGLE_CUSTOM_SEARCH_API_KEY, GOOGLE_CUSTOM_SEARCH_CX]
+    evidence_type: search_result
+    mvp_priority: P1
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "100 req/day free; $5/1000 after"
+    status: MISSING_KEY
+    next_action: set_GOOGLE_CUSTOM_SEARCH_API_KEY_and_CX
+    implemented: false
+
+  - id: serper
+    name: "Serper (Google SERP API)"
+    type: search
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: search_enrichment
+    base_url: "https://google.serper.dev/search"
+    known_blockers: [api_key_required]
+    expected_fields: [title, url, published_at]
+    auth: header_x_api_key
+    env_keys: [SERPER_API_KEY]
+    evidence_type: search_result
+    mvp_priority: P1
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "2500 free (one-time); paid after"
+    status: MISSING_KEY
+    next_action: set_SERPER_API_KEY
+    implemented: false
+
+  - id: tavily
+    name: "Tavily AI Search"
+    type: search
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: search_enrichment
+    base_url: "https://api.tavily.com/search"
+    known_blockers: [api_key_required]
+    expected_fields: [title, url, content, published_at]
+    auth: bearer_token
+    env_keys: [TAVILY_API_KEY]
+    evidence_type: ai_search_result
+    mvp_priority: P1
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "1000 req/month free"
+    status: MISSING_KEY
+    next_action: set_TAVILY_API_KEY
+    implemented: false
+
+  - id: exa
+    name: "Exa Neural Search"
+    type: search
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: search_enrichment
+    base_url: "https://api.exa.ai/search"
+    known_blockers: [api_key_required]
+    expected_fields: [title, url, text, published_at]
+    auth: bearer_token
+    env_keys: [EXA_API_KEY]
+    evidence_type: neural_search_result
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "1000 req/month free"
+    status: MISSING_KEY
+    next_action: set_EXA_API_KEY
+    implemented: false
+
+  - id: newsapi
+    name: "NewsAPI"
+    type: search
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: search_enrichment
+    base_url: "https://newsapi.org/v2/top-headlines"
+    known_blockers: [api_key_required]
+    expected_fields: [title, body, published_at, source]
+    auth: query_param_apiKey
+    env_keys: [NEWSAPI_API_KEY]
+    evidence_type: news_aggregation
+    mvp_priority: P1
+    commercial_risk: medium
+    terms_risk: medium
+    rate_limit_summary: "100 req/day free; no commercial use"
+    status: MISSING_KEY
+    next_action: set_NEWSAPI_API_KEY
+    implemented: false
+
+  - id: gnews
+    name: "GNews"
+    type: search
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: search_enrichment
+    base_url: "https://gnews.io/api/v4/top-headlines"
+    known_blockers: [api_key_required]
+    expected_fields: [title, body, published_at, source]
+    auth: query_param_token
+    env_keys: [GNEWS_API_KEY]
+    evidence_type: news_aggregation
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "100 req/day, 10 articles/req free"
+    status: MISSING_KEY
+    next_action: set_GNEWS_API_KEY
+    implemented: false
+
+  - id: guardian
+    name: "The Guardian"
+    type: news
+    evidence_level: tier1
+    role: secondary
+    phase: 4
+    layer: search_enrichment
+    base_url: "https://content.guardianapis.com/search"
+    known_blockers: [api_key_required]
+    expected_fields: [title, body, published_at, author]
+    auth: query_param_api-key
+    env_keys: [GUARDIAN_API_KEY]
+    evidence_type: news_article
+    mvp_priority: P1
+    commercial_risk: medium
+    terms_risk: medium
+    rate_limit_summary: "5000 calls/day free; no commercial redistribution"
+    status: MISSING_KEY
+    next_action: set_GUARDIAN_API_KEY
+    implemented: false
+
+  - id: nyt
+    name: "New York Times"
+    type: news
+    evidence_level: tier1
+    role: secondary
+    phase: 4
+    layer: search_enrichment
+    base_url: "https://api.nytimes.com/svc/search/v2/articlesearch.json"
+    known_blockers: [api_key_required]
+    expected_fields: [title, body, published_at, author]
+    auth: query_param_api-key
+    env_keys: [NYT_API_KEY]
+    evidence_type: news_article
+    mvp_priority: P2
+    commercial_risk: high
+    terms_risk: high
+    rate_limit_summary: "500 req/day free; commercial license required"
+    status: MISSING_KEY
+    next_action: set_NYT_API_KEY
+    implemented: false
+
+  # fast_signal (external, API key 없음)
+  - id: google_trending_now
+    name: "Google Trending Now"
+    type: signal
+    evidence_level: tier3
+    role: supplementary
+    phase: 4
+    layer: fast_signal
+    base_url: "https://trends.google.com/trends/trendingsearches/daily"
+    known_blockers: [no_official_api, rate_limit]
+    expected_fields: [keyword, rank, timestamp]
+    auth: none
+    env_keys: []
+    evidence_type: trending_keyword
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: medium
+    rate_limit_summary: "No official API; unofficial only; UNKNOWN rate limit"
+    status: EXTERNAL_SIGNAL_SOURCE
+    next_action: assess_scrape_feasibility
+    implemented: false
+
+  - id: signal_bz
+    name: "Signal.bz (Korean Trending)"
+    type: signal
+    evidence_level: tier3
+    role: supplementary
+    phase: 4
+    layer: fast_signal
+    base_url: "https://www.signal.bz/"
+    known_blockers: [no_official_api]
+    expected_fields: [keyword, rank, timestamp]
+    auth: none
+    env_keys: []
+    evidence_type: trending_keyword
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: medium
+    rate_limit_summary: "No official API; HTML scrape only; UNKNOWN rate limit"
+    status: EXTERNAL_SIGNAL_SOURCE
+    next_action: assess_scrape_feasibility
+    implemented: false
+
+  - id: loword
+    name: "Loword (Korean Trending)"
+    type: signal
+    evidence_level: tier3
+    role: supplementary
+    phase: 4
+    layer: fast_signal
+    base_url: "https://loword.co.kr/"
+    known_blockers: [no_official_api]
+    expected_fields: [keyword, rank, timestamp]
+    auth: none
+    env_keys: []
+    evidence_type: trending_keyword
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "No official API; aggregates Naver+Google; UNKNOWN rate limit"
+    status: EXTERNAL_SIGNAL_SOURCE
+    next_action: assess_scrape_feasibility
+    implemented: false
+
+  # market_signal
+  - id: finnhub
+    name: "Finnhub"
+    type: market
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: market_signal
+    base_url: "https://finnhub.io/api/v1/quote"
+    known_blockers: [api_key_required]
+    expected_fields: [symbol, price, change, timestamp]
+    auth: query_param_token
+    env_keys: [FINNHUB_API_KEY]
+    evidence_type: market_quote
+    mvp_priority: P1
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "60 req/min free; real-time US stocks"
+    status: MISSING_KEY
+    next_action: set_FINNHUB_API_KEY
+    implemented: false
+
+  - id: twelve_data
+    name: "Twelve Data"
+    type: market
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: market_signal
+    base_url: "https://api.twelvedata.com/time_series"
+    known_blockers: [api_key_required]
+    expected_fields: [symbol, price, timestamp]
+    auth: query_param_apikey
+    env_keys: [TWELVE_DATA_API_KEY]
+    evidence_type: time_series
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "800 credits/day free"
+    status: MISSING_KEY
+    next_action: set_TWELVE_DATA_API_KEY
+    implemented: false
+
+  - id: alpha_vantage
+    name: "Alpha Vantage"
+    type: market
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: market_signal
+    base_url: "https://www.alphavantage.co/query"
+    known_blockers: [api_key_required]
+    expected_fields: [symbol, price, timestamp]
+    auth: query_param_apikey
+    env_keys: [ALPHA_VANTAGE_API_KEY]
+    evidence_type: stock_data
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "25 req/day free (verify current limit)"
+    status: MISSING_KEY
+    next_action: set_ALPHA_VANTAGE_API_KEY
+    implemented: false
+
+  - id: polygon
+    name: "Polygon.io"
+    type: market
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: market_signal
+    base_url: "https://api.polygon.io/v2/aggs/ticker/AAPL/prev"
+    known_blockers: [api_key_required]
+    expected_fields: [symbol, open, high, low, close, volume, timestamp]
+    auth: bearer_token
+    env_keys: [POLYGON_API_KEY]
+    evidence_type: stock_data
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "Unlimited prev-day data free; real-time requires paid"
+    status: MISSING_KEY
+    next_action: set_POLYGON_API_KEY
+    implemented: false
+
+  - id: coinbase_market
+    name: "Coinbase Market Data"
+    type: market
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: market_signal
+    base_url: "https://api.coinbase.com/api/v3/brokerage/market/products"
+    known_blockers: []
+    expected_fields: [symbol, price, volume, timestamp]
+    auth: none
+    env_keys: []
+    evidence_type: crypto_market
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "Public market data; no key required"
+    status: NO_KEY_REQUIRED
+    next_action: ready_for_live_test
+    implemented: false
+
+  - id: binance_market
+    name: "Binance Market Data"
+    type: market
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: market_signal
+    base_url: "https://api.binance.com/api/v3/ticker/price"
+    known_blockers: []
+    expected_fields: [symbol, price, timestamp]
+    auth: none
+    env_keys: []
+    evidence_type: crypto_market
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "1200 req/min weight limit; no key for public data"
+    status: NO_KEY_REQUIRED
+    next_action: ready_for_live_test
+    implemented: false
+
+  # domain_signal
+  - id: kma
+    name: "기상청 (KMA)"
+    type: domain
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: domain_signal
+    base_url: "https://apihub.kma.go.kr/api/typ01/url/kma_sfcdd.php"
+    known_blockers: [api_key_required]
+    expected_fields: [date, weather_code, temp, location]
+    auth: query_param_serviceKey
+    env_keys: [KMA_API_KEY]
+    evidence_type: weather_data
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "Free via data.go.kr; quota UNKNOWN"
+    status: MISSING_KEY
+    next_action: set_KMA_API_KEY_via_data.go.kr
+    implemented: false
+
+  - id: tour
+    name: "한국관광공사 TourAPI"
+    type: domain
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: domain_signal
+    base_url: "https://apis.data.go.kr/B551011/KorService1/areaBasedList1"
+    known_blockers: [api_key_required]
+    expected_fields: [title, address, category, mapX, mapY]
+    auth: query_param_serviceKey
+    env_keys: [TOUR_API_KEY]
+    evidence_type: tourism_data
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "Free via data.go.kr; quota UNKNOWN"
+    status: MISSING_KEY
+    next_action: set_TOUR_API_KEY_via_data.go.kr
+    implemented: false
+
+  - id: its
+    name: "국토교통부 ITS"
+    type: domain
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: domain_signal
+    base_url: "https://openapi.its.go.kr:9443/api/"
+    known_blockers: [api_key_required]
+    expected_fields: [road_name, incident_type, timestamp, location]
+    auth: query_param_apiKey
+    env_keys: [ITS_API_KEY]
+    evidence_type: traffic_data
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "Free via its.go.kr; quota UNKNOWN"
+    status: MISSING_KEY
+    next_action: set_ITS_API_KEY_via_its.go.kr
+    implemented: false
+
+  - id: kofic
+    name: "영화진흥위원회 KOBIS"
+    type: domain
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: domain_signal
+    base_url: "https://www.kobis.or.kr/kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.json"
+    known_blockers: [api_key_required]
+    expected_fields: [rank, movieNm, openDt, salesAmt, audiCnt]
+    auth: query_param_key
+    env_keys: [KOBIS_API_KEY]
+    evidence_type: box_office
+    mvp_priority: P1
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "Free; key via kobis.or.kr; quota UNKNOWN"
+    status: MISSING_KEY
+    next_action: set_KOBIS_API_KEY_via_kobis.or.kr
+    implemented: false
+
+  - id: tmdb
+    name: "TMDB (The Movie Database)"
+    type: domain
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: domain_signal
+    base_url: "https://api.themoviedb.org/3/movie/popular"
+    known_blockers: [api_key_required]
+    expected_fields: [title, overview, release_date, popularity]
+    auth: query_param_api_key
+    env_keys: [TMDB_API_KEY]
+    evidence_type: movie_data
+    mvp_priority: P1
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "~100 req/hour free; generous quota"
+    status: MISSING_KEY
+    next_action: set_TMDB_API_KEY
+    implemented: false
+
+  - id: kopis
+    name: "공연예술통합전산망 KOPIS"
+    type: domain
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: domain_signal
+    base_url: "https://kopis.or.kr/openApi/restful/pblprfr"
+    known_blockers: [api_key_required]
+    expected_fields: [mt20id, prfnm, prfpdfrom, prfpdto, genrenm]
+    auth: query_param_service
+    env_keys: [KOPIS_API_KEY]
+    evidence_type: performance_data
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "Free via kopis.or.kr; quota UNKNOWN"
+    status: MISSING_KEY
+    next_action: set_KOPIS_API_KEY_via_kopis.or.kr
+    implemented: false
+
+  - id: aladin
+    name: "알라딘 Open API"
+    type: domain
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: domain_signal
+    base_url: "https://www.aladin.co.kr/ttb/api/ItemList.aspx"
+    known_blockers: [api_key_required]
+    expected_fields: [title, author, publisher, pubDate, isbn]
+    auth: query_param_TTBKey
+    env_keys: [ALADIN_TTB_KEY]
+    evidence_type: book_data
+    mvp_priority: P2
+    commercial_risk: medium
+    terms_risk: medium
+    rate_limit_summary: "Personal use free; commercial requires agreement"
+    status: MISSING_KEY
+    next_action: set_ALADIN_TTB_KEY
+    implemented: false
+
+  - id: igdb
+    name: "IGDB (Internet Game Database)"
+    type: domain
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: domain_signal
+    base_url: "https://api.igdb.com/v4/games"
+    known_blockers: [api_key_required]
+    expected_fields: [name, summary, first_release_date, rating]
+    auth: bearer_token
+    env_keys: [IGDB_CLIENT_ID, IGDB_CLIENT_SECRET]
+    evidence_type: game_data
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "4 req/sec; unlimited total via Twitch OAuth"
+    status: MISSING_KEY
+    next_action: set_IGDB_CLIENT_ID_and_SECRET
+    implemented: false
+
+  - id: culture_info
+    name: "문화포털 (Culture Info)"
+    type: domain
+    evidence_level: tier2
+    role: secondary
+    phase: 4
+    layer: domain_signal
+    base_url: "https://www.culture.go.kr/openapi/rest/publicperformancedisplays/period"
+    known_blockers: [api_key_required]
+    expected_fields: [title, startDate, endDate, place, realmName]
+    auth: query_param_serviceKey
+    env_keys: [CULTURE_INFO_API_KEY]
+    evidence_type: cultural_event
+    mvp_priority: P2
+    commercial_risk: low
+    terms_risk: low
+    rate_limit_summary: "Free via culture.go.kr; quota UNKNOWN"
+    status: MISSING_KEY
+    next_action: set_CULTURE_INFO_API_KEY_via_culture.go.kr
+    implemented: false
