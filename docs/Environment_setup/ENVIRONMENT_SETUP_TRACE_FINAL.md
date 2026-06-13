@@ -196,12 +196,78 @@
 
 | 순서 | 작업 | 분류 |
 |------|------|------|
-| 1 | `.claude/skills/` 생성 및 skills 파일 적용 | NEXT_TURN_SKILLS |
-| 2 | hooks 설정 적용 (스키마 공식 확인 후) + settings.json 보완 | NEXT_TURN_HOOKS |
-| 3 | MCP 최소 도입/DEFER 최종 결정 | NEXT_TURN_MCP |
-| 4 | Celery/LangGraph 오케스트레이션 구현 (plans/012) | NEXT_TURN_ORCHESTRATION |
-| 5 | source-ingestion-engineer에 Bash 권한 추가 여부 재검토 | USER_DECISION_REQUIRED |
-| 6 | WebSearch/WebFetch subagent 지원 공식 확인 후 재적용 여부 결정 | USER_DECISION_REQUIRED |
+| 1 | `.claude/skills/` 생성 및 skills 파일 적용 (11번 명세서 기반) | NEXT_TURN_SKILLS_HOOKS_APPLY |
+| 2 | hooks 설정 적용 (settings.json hooks 섹션 추가) | NEXT_TURN_SKILLS_HOOKS_APPLY |
+| 3 | WebSearch/WebFetch in 4 agents 추가 여부 결정 | USER_DECISION_REQUIRED |
+| 4 | source-ingestion-engineer에 Bash 권한 추가 여부 재검토 | USER_DECISION_REQUIRED |
+| 5 | MCP 최소 도입/DEFER 최종 결정 | NEXT_TURN_MCP_REVIEW |
+| 6 | Celery/LangGraph 오케스트레이션 구현 (plans/012) | NEXT_TURN_ORCHESTRATION |
+
+---
+
+## 14. Skills / Hooks / MCP / Plugin 명세서 검토 (2026-06-13)
+
+### 이번 턴 산출물
+
+| 항목 | 결과 |
+|------|------|
+| 명세서 생성 | `docs/Environment_setup/11_SKILLS_HOOKS_MCP_PLUGIN_SPEC.md` |
+| 팀 에이전트 12개 관점 위원회 평가 | 완료 |
+| 공식 문서 조사 | Skills/Hooks/MCP/Agent Teams 공식 확인 |
+| 외부 후보 평가 | Skills 9개, Hooks 5개, MCP 10개, Plugin DEFER |
+| 위원회 최종 결정 | Phase 1 APPLY_READY_WITH_REWRITES |
+| 실제 적용 | 없음 (SPEC 문서만) |
+
+### 공식 문서 조사에서 발견된 설계 수정 사항
+
+| 항목 | 이전 가정 | 공식 확인 결과 |
+|------|---------|--------------|
+| Skills 경로 | `.claude/skills/<name>.md` (flat) | `.claude/skills/<name>/SKILL.md` (subdirectory) |
+| Skills frontmatter | `tools:` | `allowed-tools:` + `user-invocable:` + `when_to_use:` |
+| Hook 입력 방식 | `$env:CLAUDE_TOOL_INPUT` | stdin JSON 파싱 (`[Console]::In.ReadToEnd()`) |
+| WebSearch/WebFetch in agents | 공식 미확인 (제외) | **공식 지원 확인** (USER_DECISION_REQUIRED) |
+| MCP 설정 파일 | `.claude/mcp_config.json` | `.mcp.json` (프로젝트 루트) |
+
+### 위원회 평가 요약
+
+| 에이전트 | 주요 판단 | 결론 |
+|---------|---------|------|
+| security-permission-guardian | Filesystem/Browser/Code-Execution MCP BLOCK | REJECT 3개 |
+| adversarial-reality-critic | Skills 9개 → 5개로 최소화 권고 | Phase 1 축소 |
+| source-ingestion-engineer | 모든 수집 관련 MCP = 기존 runner 중복 | MCP 추가 불필요 |
+| test-validation-agent | Hook stdin 파싱 VERIFY 필요 | 조건부 적용 |
+| commercialization-strategist | test-validation, trend-fallback, source-audit HIGH value | Phase 1 우선 |
+| orchestrator-architect | Skills 5개 + Hooks 3개 Phase 1, 나머지 DEFER | 채택 |
+
+### 다음 턴 Phase 1 Apply Set
+
+**Skills (5개)**:
+- test-validation-skill
+- source-audit-skill
+- artifact-manifest-skill
+- docs-sync-skill
+- runner-contract-skill
+
+**Hooks (3개)**:
+- forbidden-command-guard (PreToolUse, 차단)
+- pre-commit-secret-scan-reminder (Stop, 알림)
+- docs-conflict-grep-check (Stop, 알림)
+
+**MCP**: 변경 없음 (Semantic Scholar KEEP)
+
+**Plugin**: DEFER
+
+### 보류/거절 항목
+
+| 항목 | 결정 | 이유 |
+|------|------|------|
+| Filesystem MCP | REJECT | 기존 Read/Write/Edit tool 충분, .env 노출 위험 |
+| Browser MCP | REJECT | playwright_probe.py 구현 완료, 보안 위험 |
+| Code Execution MCP | REJECT | CRITICAL 보안 |
+| GitHub/Postgres/Redis/Milvus/LangSmith MCP | DEFER | plans/012 이후 |
+| trend-fallback-analysis-skill | Phase 2 | Playwright 실행 포함, 안정화 후 |
+| environment/business/legal skills | Phase 2/3 | 에이전트로 대체 가능 |
+| Plugin (전체) | DEFER | skills/hooks 안정화 후 |
 
 ---
 
@@ -210,8 +276,9 @@
 | 커밋 | 내용 |
 |------|------|
 | `18f4766` | `docs: design environment setup for agent orchestration` — 12개 설계 문서 생성 |
-| 이번 턴 (commit 1) | `env: apply claude code team agents` — 15개 에이전트 파일 생성 |
-| 이번 턴 (commit 2) | `docs: consolidate environment setup agent docs` — TRACE_FINAL + stub 축약 + README 갱신 |
+| `d8325bc` | `env: apply claude code team agents` — 15개 에이전트 파일 생성 |
+| `3047938` | `docs: consolidate environment setup agent docs` — TRACE_FINAL + stub 축약 + README 갱신 |
+| 이번 턴 | `docs: specify skills hooks mcp plugin adoption plan` — 11번 명세서 + TRACE_FINAL 갱신 + README 갱신 |
 
 ---
 

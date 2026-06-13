@@ -1,7 +1,8 @@
 # docs/Environment_setup — 단일 진입점
 
-> **상태**: 팀 에이전트 실제 적용 완료 (2026-06-13).
+> **상태**: 팀 에이전트 적용 완료 + Skills/Hooks/MCP/Plugin 구현 명세서 확정 (2026-06-13).
 > 현재 읽어야 할 단일 문서: **[ENVIRONMENT_SETUP_TRACE_FINAL.md](./ENVIRONMENT_SETUP_TRACE_FINAL.md)**
+> 다음 적용 기준: **[11_SKILLS_HOOKS_MCP_PLUGIN_SPEC.md](./11_SKILLS_HOOKS_MCP_PLUGIN_SPEC.md)**
 > 00~10 번호 문서들은 적용 완료 stub이다. 재실행하지 말 것.
 
 ---
@@ -17,6 +18,7 @@
 | 문서 | 역할 |
 |------|------|
 | **[ENVIRONMENT_SETUP_TRACE_FINAL.md](./ENVIRONMENT_SETUP_TRACE_FINAL.md)** | 환경 설정 적용 흐름 단일 출처. 여기서 시작하라. |
+| **[11_SKILLS_HOOKS_MCP_PLUGIN_SPEC.md](./11_SKILLS_HOOKS_MCP_PLUGIN_SPEC.md)** | Skills/Hooks/MCP/Plugin 구현 명세서. 다음 턴 apply 기준. |
 | [README.md](./README.md) | 이 파일 — 디렉터리 안내 |
 
 ---
@@ -38,19 +40,22 @@
 
 | 항목 | 상태 | 다음 단계 |
 |------|------|---------|
-| MCP 신규 설치 | NOT_APPLIED | NEXT_TURN_MCP |
-| Skills (.claude/skills/) | NOT_APPLIED | NEXT_TURN_SKILLS |
-| Hooks (settings.json hooks 섹션) | NOT_APPLIED | NEXT_TURN_HOOKS |
-| Plugins | DEFERRED | - |
-| settings.json WebFetch 도메인 추가 | NOT_APPLIED | NEXT_TURN_HOOKS |
+| MCP 신규 설치 | NOT_APPLIED (REJECT 3 + DEFER 7) | NEXT_TURN_MCP_REVIEW |
+| Skills (.claude/skills/) | NOT_APPLIED — 명세서 확정 완료 | NEXT_TURN_SKILLS_HOOKS_APPLY |
+| Hooks (settings.json hooks 섹션) | NOT_APPLIED — 명세서 확정 완료 | NEXT_TURN_SKILLS_HOOKS_APPLY |
+| Plugins | DEFERRED (skills/hooks 안정화 후) | - |
+| WebSearch/WebFetch in 4 agents | USER_DECISION_REQUIRED (공식 지원 확인됨) | - |
 
 ---
 
 ## 다음 적용 순서
 
-1. **Skills** — `.claude/skills/` 생성 및 핵심 skills 적용 (경로 공식 확인 후)
-2. **Hooks** — `settings.json` hooks 섹션 추가 (스키마 공식 확인 후)
-3. **MCP** — 최소 도입/DEFER 최종 결정
+1. **Skills + Hooks** (Phase 1 Apply) — `11_SKILLS_HOOKS_MCP_PLUGIN_SPEC.md §14` 기반으로 적용
+   - `.claude/skills/<name>/SKILL.md` (subdirectory 형식, flat file 아님)
+   - `settings.json` hooks 섹션 추가 (stdin JSON 파싱 방식)
+   - `.gitignore` `.claude/skills/` 예외 추가
+2. **WebSearch/WebFetch in agents** — 사용자 결정 후 4개 에이전트 frontmatter 업데이트
+3. **MCP** — 신규 없음. Semantic Scholar KEEP. 나머지 DEFER/REJECT 유지.
 4. **Orchestration** — Celery/LangGraph 구현 (plans/012)
 
 ---
@@ -65,13 +70,14 @@
 | 01_CLAUDE_CODE_TEAM_AGENTS.md | stub (원본: _archive_applied/) |
 | 02_AGENT_COMMITTEE_WORKFLOWS.md | stub (원본: _archive_applied/) |
 | 03_MCP_AND_TOOLING_SURVEY.md | stub (원본: _archive_applied/) |
-| 04_SKILLS_HOOKS_PLUGINS_DESIGN.md | stub (원본: _archive_applied/) |
+| 04_SKILLS_HOOKS_PLUGINS_DESIGN.md | stub (원본: _archive_applied/) — **11번 명세서로 대체됨** |
 | 05_SECURITY_PERMISSIONS_POLICY.md | stub (원본: _archive_applied/) |
 | 06_TEST_VALIDATION_AGENTS.md | stub (원본: _archive_applied/) |
 | 07_WEB_INTELLIGENCE_PIPELINE_ENVIRONMENT.md | stub (원본: _archive_applied/) |
 | 08_IMPLEMENTATION_DIFF_BLUEPRINT.md | stub (원본: _archive_applied/) |
 | 09_ENVIRONMENT_SETUP_RUNBOOK.md | stub (원본: _archive_applied/) |
 | 10_FINAL_ENVIRONMENT_AUDIT_CHECKLIST.md | stub (원본: _archive_applied/) |
+| **11_SKILLS_HOOKS_MCP_PLUGIN_SPEC.md** | **활성 명세서 — 다음 턴 apply 기준** |
 
 **주의: stub 재실행 금지. 이미 TRACE_FINAL에 흡수됨.**
 
