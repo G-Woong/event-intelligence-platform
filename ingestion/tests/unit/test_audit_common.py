@@ -8,12 +8,15 @@ import pytest
 from ingestion.runners._audit_common import (
     AUDIT_EXCLUDED_IDS,
     evaluate_event_seed_fields,
+    extract_related_candidates,
     extract_sample_items,
     gate_check,
     load_audit_sources,
     relevance_label,
     relevance_score,
     seed_ready_label,
+    seed_ready_label_for,
+    truncate_query,
 )
 
 
@@ -238,6 +241,62 @@ def test_truncation_rules(tmp_path):
     samples = extract_sample_items("serper", path)
     assert len(samples[0]["title"]) == 120
     assert len(samples[0]["snippet"]) == 200
+
+
+# ── truncate_query (장문 query 이중 상한, RISK-Q05) ─────────────────────────
+
+def test_truncate_query_short_preserved():
+    assert truncate_query("samsung earnings") == "samsung earnings"
+
+
+def test_truncate_query_token_cap():
+    # 6 토큰 → 상한 5 토큰
+    assert truncate_query("a b c d e f", max_tokens=5) == "a b c d e"
+
+
+def test_truncate_query_char_cap_on_spaceless_long_token():
+    # 공백 없는 장문(opendart 공시명류)은 토큰 상한으로 못 막으므로 문자 상한 적용
+    out = truncate_query("X" * 200)
+    assert len(out) <= 60
+
+
+def test_truncate_query_strips_brackets_and_korean_english_mixed():
+    out = truncate_query("삼성전자 (3분기 실적) earnings report q3", max_tokens=5, max_chars=60)
+    assert "(" not in out and ")" not in out
+    assert out.split(" ")[0] == "삼성전자"
+    assert len(out.split(" ")) <= 5
+
+
+def test_truncate_query_empty_and_none():
+    assert truncate_query("") == ""
+    assert truncate_query(None) == ""
+
+
+# ── seed_ready_label_for (article seed vs numeric_signal 분기) ───────────────
+
+def test_seed_ready_label_for_article_source():
+    assert seed_ready_label_for("serper", 3, 10) == "yes"
+    assert seed_ready_label_for("serper", 2, 10) == "partial"
+    assert seed_ready_label_for("serper", 1, 10) == "no"
+
+
+def test_seed_ready_label_for_numeric_signal_ready_on_data():
+    # 수치 소스는 seed 5필드(count) 0이어도 데이터 수신(items_found>0)이면 signal_ready
+    assert seed_ready_label_for("finnhub", 0, 1) == "signal_ready"
+    assert seed_ready_label_for("bok_ecos", 0, 5) == "signal_ready"
+
+
+def test_seed_ready_label_for_numeric_no_data_is_no():
+    assert seed_ready_label_for("finnhub", 0, 0) == "no"
+
+
+# ── extract_related_candidates malformed 입력 내성 (runner 비차단) ───────────
+
+def test_extract_related_candidates_malformed_does_not_raise():
+    # None/빈 dict/필드 누락 sample이 섞여도 예외 없이 list 반환
+    bad = [None, {}, {"title": None, "snippet": None}, {"unexpected": 1}]
+    out = extract_related_candidates("seed keyword", bad)
+    assert isinstance(out, list)
 
 
 # ── gate_check (store 주입, 네트워크 없음) ──────────────────────────────────

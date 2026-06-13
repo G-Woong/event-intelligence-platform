@@ -194,6 +194,8 @@ def extract_related_candidates(
     ko_runs: dict[str, int] = {}
 
     for s in samples:
+        if not isinstance(s, dict):
+            continue  # malformed sample(None 등)이 섞여도 runner를 죽이지 않음
         title = (s.get("title") or "")
         text = f"{title} {s.get('snippet') or ''}"
         toks = [t.lower() for t in _REL_EN_TOKEN.findall(text)
