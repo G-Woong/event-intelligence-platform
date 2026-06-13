@@ -16,11 +16,16 @@ sources:
   - id: ap_news
     name: "AP News"
     type: news
-    evidence_level: tier1
+    evidence_level: tier1  # AP 콘텐츠 권위(tier1). DISCOVERY_PROXY_NOTE: 발견 경로만 Google News RSS
+                           # 프록시이며, canonical_url을 apnews.com 원본으로 정규화하므로 source identity 유지.
     role: primary
     phase: 1
     layer: document_discovery
     base_url: "https://apnews.com"
+    # 수집 경로: Google News RSS 프록시(news.google.com/rss/search?q=site:apnews.com). AP hub RSS는
+    # 폐기(홈 HTML 200), rsshub는 Cloudflare 403. item link는 news.google.com redirect URL이나,
+    # url_resolver.resolve_via_browser(Playwright 1-hop)로 원본 apnews.com 기사 URL 정규화 가능(live 3/3).
+    # 상세: docs/Implementation_Instructions/03.
     known_blockers: []
     expected_fields: [title, body, published_at, author]
     implemented: true

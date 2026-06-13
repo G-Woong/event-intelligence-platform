@@ -31,7 +31,7 @@ from ingestion.runners._audit_common import (
     gate_check,
     load_audit_sources,
     safe_print,
-    seed_ready_label,
+    seed_ready_label_for,
     utc_now_iso,
     write_audit_jsonl,
     write_audit_md,
@@ -67,8 +67,13 @@ _FREQ_BY_LAYER = {
 }
 
 
-def _evaluate_seed(source_id: str, samples: list[dict]) -> tuple[str, list[str]]:
-    """sample 중 최고 필드 충족 기준으로 seed_ready 판정."""
+def _evaluate_seed(source_id: str, samples: list[dict],
+                   items_found: int = 0) -> tuple[str, list[str]]:
+    """sample 중 최고 필드 충족 기준으로 seed_ready 판정.
+
+    수치 signal 소스(finnhub 등)는 seed 5필드 대신 signal_ready로 분류한다 —
+    flat quote(list 아님)는 sample이 0건이어도 probe items_found>0이면 데이터 수신 = signal_ready.
+    """
     best_count, best_fields = 0, []
     for s in samples:
         item = dict(s)
@@ -76,7 +81,8 @@ def _evaluate_seed(source_id: str, samples: list[dict]) -> tuple[str, list[str]]
         count, fields = evaluate_event_seed_fields(item)
         if count > best_count:
             best_count, best_fields = count, fields
-    return seed_ready_label(best_count), best_fields
+    effective_found = max(items_found, len(samples))
+    return seed_ready_label_for(source_id, best_count, effective_found), best_fields
 
 
 def audit_one_source(
@@ -123,7 +129,7 @@ def audit_one_source(
     record_call(sid, "")
 
     samples = collect_samples(result, max_items)
-    seed_ready, coverage = _evaluate_seed(sid, samples)
+    seed_ready, coverage = _evaluate_seed(sid, samples, result.items_found)
 
     items_found = result.items_found
     if samples and len(samples) > items_found:

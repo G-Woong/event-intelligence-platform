@@ -102,6 +102,7 @@ _PROBE_SPEC: dict[str, dict] = {
         "meaningful_fields": ["articles"],
         "response_format": "json",
         "query_param": "query",
+        "query_transform": "quote_phrase",
     },
     "sec_edgar": {
         "extra_params": {"q": "samsung", "dateRange": "custom", "startdt": "2026-01-01", "enddt": "2026-06-03"},
@@ -110,15 +111,24 @@ _PROBE_SPEC: dict[str, dict] = {
         "query_param": "q",
     },
     "federal_register": {
-        "extra_params": {"per_page": "3", "fields[]": "title"},
+        # fields[]를 title만 받던 것이 partial의 원인 (docs/88). httpx는 list 값을
+        # 같은 키 반복으로 직렬화한다 (fields[]=title&fields[]=html_url&...).
+        "extra_params": {
+            "per_page": "3",
+            "order": "newest",
+            "fields[]": ["title", "html_url", "publication_date", "abstract", "document_number"],
+        },
         "meaningful_fields": ["results", "count"],
         "response_format": "json",
         "query_param": "conditions[term]",
     },
     "hacker_news": {
+        # topstories.json은 정수 id 배열만 반환 — title/url은 /v0/item/{id}.json 2차 호출.
         "extra_params": {},
         "meaningful_fields": [],
         "response_format": "json",
+        "detail_endpoint_template": "https://hacker-news.firebaseio.com/v0/item/{id}.json",
+        "detail_limit": 3,
     },
     "bok_ecos": {
         "extra_params": {},
@@ -143,7 +153,9 @@ _PROBE_SPEC: dict[str, dict] = {
     },
     # RSS / XML sources (connectivity check only)
     "bbc": {"extra_params": {}, "meaningful_fields": [], "response_format": "xml"},
-    "ap_news": {"extra_params": {}, "meaningful_fields": [], "response_format": "xml"},
+    # ap_news: Google News RSS 프록시. query는 params로 전달(endpoint에 박으면 httpx가 빈 params로 덮어써 404).
+    "ap_news": {"extra_params": {"q": "site:apnews.com", "hl": "en-US", "gl": "US", "ceid": "US:en"},
+                "meaningful_fields": [], "response_format": "xml"},
     "techcrunch": {"extra_params": {}, "meaningful_fields": [], "response_format": "xml"},
     "the_verge": {"extra_params": {}, "meaningful_fields": [], "response_format": "xml"},
     "yna": {"extra_params": {}, "meaningful_fields": [], "response_format": "xml"},
@@ -199,7 +211,8 @@ _PROBE_SPEC: dict[str, dict] = {
         "query_in": "json_body",
     },
     "newsapi": {
-        "extra_params": {"country": "us", "pageSize": "3"},
+        # /v2/everything: q 필수, country 미지원(400). 기본 q는 연결성 체크용.
+        "extra_params": {"q": "news", "pageSize": "3", "sortBy": "publishedAt", "language": "en"},
         "meaningful_fields": ["articles"],
         "response_format": "json",
         "query_param": "q",
@@ -276,7 +289,7 @@ _PROBE_SPEC: dict[str, dict] = {
         "meaningful_fields": [],
         "response_format": "json",
         "method": "POST",
-        "apicalypse_body": "fields name,first_release_date,rating; where rating > 80; limit 3;",
+        "apicalypse_body": "fields name,url,first_release_date,rating; where rating > 80; limit 3;",
     },
     # P2: Korean public API specs (added this round)
     "tour": {
@@ -381,6 +394,20 @@ def _http_status_to_probe_status(http_status: int) -> str:
     return "UNKNOWN"
 
 
+def _transform_query(query: str, transform: str) -> str:
+    """spec 메타 query_transform에 따른 소스별 query 전처리.
+
+    quote_phrase: 공백 포함 다단어 query를 큰따옴표로 감싼다.
+    GDELT DOC API는 따옴표 없는 다단어 구를 오류 텍스트(HTTP 200)로 응답한다 (docs/89 §5-2).
+    """
+    if transform == "quote_phrase":
+        q = (query or "").strip().strip('"')
+        if " " in q:
+            return f'"{q}"'
+        return q
+    return query
+
+
 def _apply_query_override(probe_spec: dict, query: Optional[str]) -> dict:
     """query를 probe_spec에 주입한 **새 dict**를 반환한다 (순수 함수).
 
@@ -394,6 +421,9 @@ def _apply_query_override(probe_spec: dict, query: Optional[str]) -> dict:
         return probe_spec
     import copy
     spec = copy.deepcopy(probe_spec)
+    transform = spec.get("query_transform", "")
+    if transform:
+        query = _transform_query(query, transform)
     if spec.get("query_in", "params") == "json_body":
         body = spec.get("json_body")
         if not isinstance(body, dict):
@@ -756,7 +786,23 @@ def run_api_live_probe(
                     probe_status = "LIVE_PARTIAL"
             except Exception as exc:
                 logger.warning("JSON parse error for %s: %s", service_id, exc)
-                probe_status = "PARSE_ERROR"
+                lower_body = response_text[:500].lower()
+                if (
+                    "rate limit" in lower_body
+                    or "too many requests" in lower_body
+                    # GDELT는 soft limit을 200+평문으로 알린다 (실측: "Please limit
+                    # requests to one every 5 seconds..." — docs/89 §5-2)
+                    or "limit requests" in lower_body
+                ):
+                    probe_status = "RATE_LIMITED"
+                elif "query" in lower_body and (
+                    "too short" in lower_body or "too long" in lower_body
+                    or "too common" in lower_body or "invalid" in lower_body
+                ):
+                    # 서버가 query 형식 오류를 200+텍스트로 알린 경우 (GDELT 등)
+                    probe_status = "QUERY_ENCODING_OR_PARAM_ERROR"
+                else:
+                    probe_status = "PARSE_ERROR"
         elif fmt == "xml":
             try:
                 import xml.etree.ElementTree as ET
@@ -792,12 +838,63 @@ def run_api_live_probe(
             if not items_found:
                 probe_status = "LIVE_PARTIAL"
 
+    # detail_endpoint_template: id 목록형 응답의 상세 2차 호출 (hacker_news 등).
+    # topstories.json은 정수 id 배열만 주므로 title/url을 detail에서 가져온다.
+    detail_tpl = probe_spec.get("detail_endpoint_template")
+    if detail_tpl and probe_status == "LIVE_SUCCESS" and fmt == "json":
+        try:
+            import time as _time
+            import httpx as _httpx
+            ids = parsed if isinstance(parsed, list) else []
+            detail_items: list[dict] = []
+            with _httpx.Client(timeout=_TIMEOUT_SEC) as dclient:
+                for _id in ids[: int(probe_spec.get("detail_limit", 3))]:
+                    r = dclient.get(detail_tpl.format(id=_id), headers=headers)
+                    if r.status_code == 200:
+                        d = r.json()
+                        if isinstance(d, dict):
+                            detail_items.append({
+                                "title": d.get("title"), "url": d.get("url"),
+                                "time": d.get("time"), "id": d.get("id"),
+                                "score": d.get("score"),
+                            })
+                    _time.sleep(0.2)
+            if detail_items:
+                extracted["items"] = detail_items
+                items_found = len(detail_items)
+        except Exception as exc:
+            logger.warning("detail fetch failed for %s: %s", service_id, exc)
+
     if extracted:
         try:
             ep = save_extracted_payload(run_id, service_id, uh, extracted)
             artifact_paths["extracted_payload"] = str(ep)
         except Exception as exc:
             logger.warning("extracted_payload save failed for %s: %s", service_id, exc)
+
+    # RISK-T04 (docs/90 §3): Route 1 429 → cooldown 영속 기록.
+    # HTTP 429와 alpha_vantage soft limit(Note/Information), 비-JSON 200 rate-limit 텍스트가
+    # 모두 probe_status="RATE_LIMITED"로 수렴한다. Route 2(cloud_browser_like)와 동일한
+    # record_rate_limited 경로를 써서 health gate의 should_skip / in_cooldown을 살린다.
+    next_retry_at: Optional[str] = None
+    if probe_status == "RATE_LIMITED":
+        try:
+            from ingestion.core.rate_limit_policy import (
+                load_rate_limit_policy,
+                record_rate_limited,
+            )
+            cooldown = load_rate_limit_policy(service_id).cooldown_on_429_seconds
+            retry_after = response.headers.get("Retry-After", "")
+            if retry_after.isdigit():
+                cooldown = max(cooldown, int(retry_after))
+            next_retry_at = record_rate_limited(
+                service_id, query or "", cooldown_seconds=cooldown
+            )
+            logger.info(
+                "RATE_LIMITED recorded for %s — next_retry=%s", service_id, next_retry_at
+            )
+        except Exception as exc:
+            logger.warning("record_rate_limited failed for %s: %s", service_id, exc)
 
     return ProbeResult(
         source_id=service_id,
@@ -809,6 +906,7 @@ def run_api_live_probe(
         items_extracted=items_found,
         meaningful_fields=meaningful_found,
         artifact_paths=artifact_paths,
+        next_retry_at=next_retry_at,
         error_category=probe_status if probe_status not in ("LIVE_SUCCESS", "LIVE_PARTIAL") else None,
         next_action=_NEXT_ACTION_MAP.get(probe_status, "investigate"),
     )
