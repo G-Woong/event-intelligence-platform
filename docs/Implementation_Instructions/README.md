@@ -14,13 +14,14 @@
 | 문서 | 상태 | 비고 |
 |---|---|---|
 | 00_OVERVIEW_AND_CLOSING_LOOP.md | **ROOT (유효)** | 절대 제약/Closing Loop 원문 — 운영 제약은 계속 유효 |
-| 01~10_*.md | **APPLIED / SUPERSEDED_BY trace final** | 적용 완료. 이력 보존(삭제 금지) |
-| ROADMAP.md | 참고 | 라운드 로드맵 |
-| IMPLEMENTATION_TRACE_FINAL.md | **현재 1순위** | 통합 trace |
+| 01~10_*.md | **APPLIED / SUPERSEDED — stub** | 원래 경로는 1~2줄 stub. 원문 전체는 `_archive_applied/`에 보존 |
+| _archive_applied/01~10_*.md | 보존(historical) | 적용 완료된 원본 지시서 전문. 활성 지시로 재실행 금지 |
+| ROADMAP.md | **APPLIED / SUPERSEDED — stub** | 방법론은 TRACE_FINAL 부록 A로 흡수. 활성 로드맵 아님 |
+| IMPLEMENTATION_TRACE_FINAL.md | **현재 1순위** | 통합 trace (부록 A=실행 순서/방법론) |
 | _progress/closing_checklist.md | 활성 | iter 기록 누적 |
 
-원본 00~10은 비파괴적으로 보존(각 상단 APPLIED/SUPERSEDED 배너). `_archive_applied/` 이동은
-탐색을 방해할 때만 `git mv`로 수행하며, 현 시점(10편)에서는 root 유지 + 배너로 충분.
+01~10/ROADMAP은 원래 경로에 **stub**만 남기고 원문 전체를 `_archive_applied/`로 `git mv`(경로 이력 보존)했다.
+신규 세션은 stub/archive를 활성 지시로 재실행하지 말고 **TRACE_FINAL**을 단일 출처로 사용하라.
 
 ## 아직 유효한 운영 제약 (00 문서 요약)
 

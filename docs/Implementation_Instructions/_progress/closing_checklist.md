@@ -1,7 +1,8 @@
-# Closing Checklist — 2026-06-13 (01 + 02 → 03 + 04)
+# Closing Checklist — 2026-06-13 (최종: PASS 14 / CONFIRMED_EXTERNAL_RATE_LIMIT 1)
 
-> 1차 턴 범위: **01(RISK-T04) + 02(gdelt 안정화)**. 2차 턴 범위: **03(ap_news) + 04(newsapi)**.
-> 05~15는 이후 턴. 따라서 본 체크리스트의 나머지 항목은 PENDING 유지가 정상이다.
+> **최종 상태(2026-06-13)**: 15 checklist 전부 종결 — **PASS 14 / google_trends_explore CONFIRMED_EXTERNAL_RATE_LIMIT 1**.
+> gdelt PASS(승격), trends fallback chain PASS, runner orchestration **13/13 agent_ready**, 전체 pytest 통과, **secret scan verdict=PASS(WARNING 0)**.
+> 아래 표·iter 섹션은 누적 기록(historical)이며 "PENDING / 이후 턴 / WARNING 오탐" 류 문구는 **해당 iter 시점 기준**이다(현재 상태는 본 헤더와 맨 끝 최종 섹션 기준).
 
 | # | 항목 | 상태 | iter | 가설/원인 | 증거(명령/출력/경로) | 종결 시각 |
 |---|------|------|------|----------|---------------------|----------|
@@ -236,3 +237,14 @@ GDELT public API가 IP 단위 rate limit 평문을 반환했고, 수정된 api_p
 - **PHASE 7 통폐합**: `IMPLEMENTATION_TRACE_FINAL.md`(통합 trace) + `README.md`(진입점 index) 신설. 00=ROOT 배너, 01~10=APPLIED/SUPERSEDED 배너(비파괴, 삭제 없음).
 - **PHASE 8 검증**: 전체 `pytest ingestion\tests -q` → **635 passed**(627 + 8). secret scan 캐노니컬 PASS. env hygiene 6 AMBIGUOUS_ALIAS(기준선). git push/reset/clean 미사용.
 - **판정**: `PASS_WITH_GOOGLE_TRENDS_EXPLORE_EXTERNAL_GAP` — fallback chain이 실제 related_candidate 생성(19). google_trends_explore만 외부 provider 429 이월(optional, 비차단). 15 checklist PASS 14 / CONFIRMED_EXTERNAL_RATE_LIMIT 1.
+
+## 최종 정리 턴 — CLEAN 전환 (secret scan PASS + 통폐합 stub + manifest, 2026-06-13)
+
+> 목표: 잔여 WARNING / untracked 문서 / 문서 중복 / artifact 재현성 약점을 규약에 맞게 닫아 최종 상태를 CLEAN으로 만든다.
+
+- **secret scan WARNING → PASS(WARNING 0)**: 6건 전부 false positive로 분류·종결(REAL_SECRET 0). ① `api_probe.py` `access_token = _igdb_get_access_token(...)` = 함수 호출 → scan_secrets에 좁은 코드참조 FP 판별 추가(따옴표 리터럴은 그대로 WARNING). ② 테스트 fixture(test_scan_secrets×4, test_env_alias_precedence×1) = 라인별 `# pragma: allowlist secret`(Layer1만 면제, Layer2 BLOCKED는 면제 불가). `sk-*` 전체 무시 아님. 신규 테스트 4건(함수호출 FP/따옴표 리터럴 탐지/pragma 억제/pragma가 env값 누출은 미억제). **캐노니컬 scan(ingestion docs plans) verdict=PASS**.
+- **Implementation_Instructions 통폐합**: 00=ROOT(절대 제약 유지). 01~10 + ROADMAP = 원래 경로 **stub**, 원문 전체는 `_archive_applied/`로 `git mv`(경로 이력 보존). ROADMAP 방법론(실행 순서/A→E 루프/안정성 서열)은 TRACE_FINAL **부록 A**로 흡수. README가 단일 진입점.
+- **artifact manifest**: `docs/ingestion/artifact_manifest_final.md` 신설 — outputs 미커밋(gitignore) 사유 + 8개 핵심 JSONL의 size/SHA256/재생성 명령/checklist + 대표 body/DOM/screenshot 경로.
+- **_audit_common contract test 강화**: truncate_query(이중 상한·한영혼합·None), seed_ready_label_for(article vs numeric_signal), extract_related_candidates malformed 내성(None sample skip) 추가.
+- **검증**: 전체 `pytest ingestion\tests -q` 통과(635 + 신규). `git diff --check` 통과. **secret scan verdict=PASS**. git push/reset/clean/rm 미사용.
+- **판정**: **CLEAN** — untracked 문서 0, secret scan WARNING 0, 문서 상태 충돌 0, ROADMAP/01~10 stub 완료, artifact manifest 존재. outputs는 gitignore(매니페스트 기록).

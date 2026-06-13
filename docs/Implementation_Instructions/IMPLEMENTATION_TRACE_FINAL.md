@@ -88,11 +88,12 @@
 
 - `raw_payload/<source>/`, `raw_signal/<source>/`, `rendered_dom/<source>/`, `screenshots/<source>/`, `extracted_payload/<source>/`, `extracted_text/<source>/`
 - `jsonl/` audit 결과 (위 prefix), `reports/` MD 리포트, `state/rate_limit_cache.json`(local_file backend cooldown 영속).
+- `outputs/**`는 `.gitignore`로 커밋 제외. evidence 경로·크기·SHA256·재생성 명령은 **`docs/ingestion/artifact_manifest_final.md`**(단일 매니페스트)에 기록.
 
 ## 9. 테스트 / secret scan / env
 
 - pytest: **635 passed**(직전 627 + trend fallback 8). 0 fail.
-- secret scan: 캐노니컬(outputs/docs/plans) PASS. openai_key 오탐은 좁은 slug 판별로 종결(`sk-*` 전체 무시 아님).
+- secret scan: **verdict=PASS, WARNING 0, 실제 leak 0**. false positive 종결 방식 — openai_key URL slug(좁은 엔트로피 판별), `access_token = func(...)` 코드참조(따옴표 리터럴은 그대로 WARNING), 테스트 fixture(`# pragma: allowlist secret`, Layer1만 면제). `sk-*` 전체 무시 아님. Layer2 BLOCKED(.env 값 누출)는 pragma로도 미억제.
 - env hygiene: AMBIGUOUS_ALIAS 6건(기준선, 기능 영향 없음). 실제 키 값 미노출.
 
 ## 10. 남은 외부 조건
@@ -104,3 +105,12 @@
 
 - **plans/012**: Celery + Redis 비동기 수집/랭킹 오케스트레이션, LangGraph 이벤트 추론 그래프.
 - 후속: google_trends_trending_now_export 정식 registry 온보딩, 기법 6(sitemap 백필)·8(self-healing)·11(LLM judge) 본격 구현, EventSeedCandidate → canonical 정규화/병합(docs/91 schema 제안).
+
+## 부록 A. 라운드 실행 순서·방법론 (ROADMAP.md 흡수, 적용 완료)
+
+기존 `ROADMAP.md`(00~10 턴별 실행 지시서)의 방법론을 여기로 흡수한다. ROADMAP.md는 deprecated stub으로 축약됨.
+
+- **적용 순서(의존)**: 00(체크리스트 세팅) → 01(Route1 429 cooldown 안전장치) → 09§1(의존성 readiness) → 02(gdelt+장문 query 절단) → 03(ap_news) → 04(newsapi everything) → 05(trends_explore 역할) → 08(API partial #9~#13) → 06(structure explorer) → 07(Playwright 5종 Route2 위임) → 09 나머지(기법 흡수+프레임워크 결정) → 10(최종 감사).
+- **의존 근거**: 01은 모든 live 재검증의 안전장치; 02/05는 01에 의존(429 재발 가능); 06은 07의 도구; 09§1은 06/07의 전제(Playwright Chromium 런타임); 10은 01~09 완료 후 마지막.
+- **소스 공통 루프 A→E**: A 직전 실패 재현 확인 → B raw/HTML/status/screenshot 증거 → C 최소 수정/대안 경로 → D 단위 테스트+전체 pytest+제한 live → E PASS/BLOCKED_TERMINAL/DEFERRED 판정. 소스당 최대 4회, "명령+핵심 출력+artifact/테스트 경로" 3종 증거 없는 PASS 금지.
+- **안정성 서열(경로 승격 원칙)**: 공식 API > RSS/sitemap > 숨은 JSON/XHR > CSS selector > 본문 휴리스틱.

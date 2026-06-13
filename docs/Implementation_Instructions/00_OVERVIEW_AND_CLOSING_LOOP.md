@@ -103,6 +103,8 @@
 
 ### 3.6 체크리스트 템플릿 (`_progress/closing_checklist.md` 생성용)
 
+> 아래 표는 **초기 생성용 템플릿**(전부 PENDING/iter 0)이다. **현재 상태가 아니다.** 실제 최종 상태(PASS 14 / google_trends_explore CONFIRMED_EXTERNAL_RATE_LIMIT 1)는 `_progress/closing_checklist.md` 헤더와 `IMPLEMENTATION_TRACE_FINAL.md` §3 참조.
+
 ```markdown
 # Closing Checklist — <시작일시 UTC>
 | # | 항목 | 상태 | iter | 가설/원인 | 증거(명령/출력/경로) | 종결 시각 |
