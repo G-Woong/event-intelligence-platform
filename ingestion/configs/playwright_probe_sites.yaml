@@ -80,22 +80,34 @@ sites:
     input_type: keyword
     collection_method: playwright
     start_url: "https://gall.dcinside.com/board/lists/?id=stock_new1"
+    search_url: "https://search.dcinside.com/combine/q/{query}"
     official: false
     evidence_level: low
     max_items_default: 3
     min_interval_minutes: 10
     selectors:
       list:
+        # 검색 결과 페이지(search.dcinside.com): 게시글 제목 → board/view detail URL
+        - "a.tit_txt"
+        # 갤러리 목록 페이지(start_url)
         - "tr.ub-content .gall_tit a"
         - ".ub-content td.gall_tit a"
         - ".listwrap .ub-content a"
       click_target:
+        - "a.tit_txt"
         - "tr.ub-content .gall_tit a"
+      body:
+        # 게시글 본문 영역 — 범용 추출기가 "자동 짤방" 공통 안내 박스를
+        # 오선택하는 문제를 site 지정 selector로 우선 회피
+        - ".write_div"
+        - ".writing_view_box"
+      # verified: 2026-06-13 search items=20 (a.tit_txt → board/view detail), body=.write_div
     status:
       if_captcha: BLOCKED
       if_login: BLOCKED
       if_empty: LIVE_PARTIAL
     search_strategy: page_load_only
+    wait_after_ms: 2500
     deferred: false
 
   fmkorea:

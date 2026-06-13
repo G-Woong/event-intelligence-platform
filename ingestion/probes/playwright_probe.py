@@ -31,21 +31,33 @@ logger = logging.getLogger("ingestion.probes.playwright_probe")
 _CLICK_DELAY_SEC = 2.0
 _MAX_CLICK_LINKS = 3
 
-_RATE_LIMITED_SIGNALS = [
-    "429 too many requests",
-    "too many requests",
-    "rate limit exceeded",
-    "you have been rate limited",
-    "temporarily blocked",
-    "slow down",
-    "quota exceeded",
-]
-
 
 def _detect_429(html: str) -> bool:
-    """Return True if rendered HTML indicates a 429 / rate-limited page (case-insensitive)."""
-    lower = html.lower()
-    return any(sig in lower for sig in _RATE_LIMITED_SIGNALS)
+    """Return True if rendered HTML indicates a 429 / rate-limited page (case-insensitive).
+
+    기법 10 (docs/09 §2): rate-limit 신호 목록은 error_taxonomy 단일 출처를 쓴다.
+    """
+    from ingestion.core.error_taxonomy import is_rate_limited_text
+    return is_rate_limited_text(html)
+
+
+def _select_rate_limit_backend(backend: Optional[str]) -> None:
+    """Force a durable rate-limit backend before the store singleton is built.
+
+    Standalone probe runs default to the in-memory store, so a 429 cooldown
+    recorded during RATE_LIMITED detection lives only in-process and is lost on
+    exit — the next process sees an open gate and can hammer the provider again.
+    Operational 429 verification MUST pass backend='local_file' so the cooldown
+    deadline is persisted to rate_limit_cache.json and survives restarts.
+    No-op when backend is None (dev runs keep the memory default).
+    """
+    if not backend:
+        return
+    import os
+    from ingestion.core.rate_limit_store import reset_store_for_tests
+
+    os.environ["INGESTION_RATE_LIMIT_BACKEND"] = backend
+    reset_store_for_tests()  # drop any singleton built under the old backend
 
 
 def run_playwright_probe(
@@ -91,8 +103,10 @@ async def _async_probe(
             next_action="implement_in_next_round",
         )
 
-    # Build URL from template
+    # Build URL from template — query가 있고 search_url이 정의된 사이트는 검색 진입
     url = spec.start_url
+    if query and getattr(spec, "search_url", ""):
+        url = spec.search_url
     if region:
         url = url.replace("{region}", region)
     elif "{region}" in url:
@@ -212,13 +226,21 @@ async def _async_probe(
             if classify_content_blocker(detail_html.lower()) is not None:
                 break
             try:
-                from ingestion.tools.trafilatura_extractor import extract_with_trafilatura
-                result = extract_with_trafilatura(detail_html, detail_url)
-                if result and result.body:
+                from ingestion.fetch_strategies.article_body_extractor import extract_article_body
+                body_selectors = spec.selectors.get("body", []) if spec.selectors else []
+                body = extract_article_body(detail_html, detail_url, body_selectors=body_selectors)
+                if body and body.get("body"):
                     items_extracted += 1
-                    artifact_paths[f"extracted_body_{items_extracted}"] = str(detail_ss)
+                    from ingestion.core.artifact_store import save_extracted_payload
+                    ep = save_extracted_payload(run_id, site_id, detail_uh, {
+                        "url": detail_url,
+                        "title": body.get("title"),
+                        "body": body["body"][:5000],
+                        "method": body.get("method"),
+                    })
+                    artifact_paths[f"extracted_body_{items_extracted}"] = str(ep)
             except Exception as exc:
-                logger.warning("trafilatura extraction failed for %s: %s", detail_url, exc)
+                logger.warning("body extraction failed for %s: %s", detail_url, exc)
 
     if items_found > 0:
         probe_status = "LIVE_SUCCESS"
@@ -254,13 +276,13 @@ def _extract_list_items(html: str, base_url: str, selectors, max_items: int) -> 
             if not found:
                 continue
             items: list[dict] = []
-            for el in found[:max_items]:
+            for i, el in enumerate(found[:max_items]):
                 text = el.get_text(strip=True)
                 href = el.get("href", "")
                 if href and not href.startswith("http"):
                     href = urljoin(base_url, href)
                 if text:
-                    items.append({"keyword": text, "url": href})
+                    items.append({"keyword": text, "url": href, "rank": i + 1})
             if items:
                 return items
     except Exception as exc:
@@ -290,3 +312,34 @@ def _extract_links(html: str, base_url: str, selectors, limit: int) -> list[str]
     except Exception as exc:
         logger.warning("link extraction failed: %s", exc)
     return []
+
+
+def main(argv: Optional[list] = None) -> int:
+    """Operational standalone runner. For RATE_LIMITED verification pass
+    --rate-limit-backend local_file so the 429 cooldown is persisted durably."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Standalone Playwright probe (operational 429-verification path)."
+    )
+    parser.add_argument("--site", required=True, help="site_id in playwright_probe_sites.yaml")
+    parser.add_argument("--query", default=None)
+    parser.add_argument("--region", default=None)
+    parser.add_argument("--max-items", type=int, default=10)
+    parser.add_argument(
+        "--rate-limit-backend",
+        default=None,
+        help="local_file persists cooldown across restarts — required when verifying RATE_LIMITED.",
+    )
+    args = parser.parse_args(argv)
+
+    _select_rate_limit_backend(args.rate_limit_backend)
+    result = run_playwright_probe(
+        args.site, query=args.query, region=args.region, max_items=args.max_items
+    )
+    print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

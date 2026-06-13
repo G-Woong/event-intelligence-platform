@@ -66,6 +66,36 @@ def run_collection_probe(
 
     # Route 2: Playwright-required or external-signal
     if source_id in _PLAYWRIGHT_FIRST_SOURCES or _is_playwright_required(source_id, service_config):
+        # site spec 보유 소스는 run_playwright_probe로 위임 — URL 템플릿/wait 힌트/
+        # selector 추출/click-through/429 기록을 단일 경로로 통일 (docs/RISK-S05 구조 수정).
+        site_spec = None
+        try:
+            from ingestion.probes.site_specs import load_site_specs
+            site_spec = load_site_specs().get(source_id)
+        except Exception:
+            pass
+        if site_spec is not None and not site_spec.deferred:
+            from ingestion.probes.playwright_probe import run_playwright_probe
+            probe_result = run_playwright_probe(
+                source_id, query=query, max_items=max_items
+            )
+            ap = probe_result.artifact_paths or {}
+            return _update_health(CollectionProbeResult(
+                source_id=source_id,
+                status=probe_result.status,
+                strategy_used="playwright_site_spec",
+                items_found=probe_result.items_found,
+                probe_result=probe_result,
+                artifact_paths=ArtifactPaths(
+                    raw_payload=ap.get("raw_signal"),
+                    screenshot=ap.get("screenshot"),
+                    rendered_dom=ap.get("rendered_dom"),
+                ),
+                error_category=probe_result.error_category,
+                next_action=probe_result.next_action,
+            ))
+
+        # site spec 없는(또는 deferred) playwright 소스만 기존 generic 렌더 경로 유지
         endpoint = (service_config or {}).get("endpoint", "")
         if not endpoint:
             return CollectionProbeResult(

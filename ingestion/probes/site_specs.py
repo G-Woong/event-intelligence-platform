@@ -23,6 +23,7 @@ class SiteSpec:
     selectors: dict = field(default_factory=dict)
     status: dict = field(default_factory=dict)
     search_strategy: str = ""
+    search_url: str = ""          # query 검색 진입용 URL 템플릿 ({query})
     wait_after_ms: int = 0
     deferred: bool = False
 
@@ -45,6 +46,7 @@ def load_site_specs(config_path: Optional[Path] = None) -> dict[str, SiteSpec]:
             selectors=data.get("selectors", {}),
             status=data.get("status", {}),
             search_strategy=data.get("search_strategy", ""),
+            search_url=data.get("search_url", ""),
             wait_after_ms=int(data.get("wait_after_ms", 0)),
             deferred=bool(data.get("deferred", False)),
         )

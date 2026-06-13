@@ -93,33 +93,31 @@ def test_run_collection_probe_missing_key():
     assert result.items_found == 0
 
 
-def test_run_collection_probe_playwright_first_uses_cloud_browser_like():
-    """Sources in _PLAYWRIGHT_FIRST_SOURCES route to CloudBrowserLikeStrategy."""
+def test_run_collection_probe_playwright_first_delegates_to_playwright_probe():
+    """site spec 보유 playwright 소스는 run_playwright_probe로 위임된다 (Route 2 구조 수정).
+
+    이전엔 CloudBrowserLikeStrategy(렌더 힌트/selector 추출 없음)로 떨어졌으나,
+    site spec(deferred=false)을 가진 소스는 이제 run_playwright_probe 단일 경로를 탄다.
+    """
     from ingestion.fetch_strategies.collection_probe import (
         _PLAYWRIGHT_FIRST_SOURCES,
         run_collection_probe,
     )
+    from ingestion.probes.models import ProbeResult
 
     assert "dcinside" in _PLAYWRIGHT_FIRST_SOURCES
 
-    mock_rendered = RenderedPageFetchResult(
-        url="https://gall.dcinside.com",
-        strategy_used="playwright_basic",
-        html="<html>gallery content</html>",
-        markdown="# gallery",
-        status="LIVE_SUCCESS",
-        timing=2.1,
+    fake = ProbeResult(
+        source_id="dcinside", method="playwright", status="LIVE_SUCCESS",
+        items_found=5, artifact_paths={"raw_signal": "/tmp/x.json"},
     )
-    with patch(
-        "ingestion.fetch_strategies.cloud_browser_like.CloudBrowserLikeStrategy"
-    ) as mock_cls:
-        mock_cls.return_value.fetch.return_value = mock_rendered
-        result = run_collection_probe("dcinside")
+    with patch("ingestion.probes.playwright_probe.run_playwright_probe", return_value=fake):
+        result = run_collection_probe("dcinside", force=True)
 
     assert result.status == "LIVE_SUCCESS"
-    assert result.strategy_used == "playwright_basic"
-    assert result.extraction is not None
-    assert result.extraction.rendered_page is not None
+    assert result.strategy_used == "playwright_site_spec"
+    assert result.items_found == 5
+    assert result.probe_result is fake
 
 
 def test_run_collection_probe_unknown_source_returns_unknown():
