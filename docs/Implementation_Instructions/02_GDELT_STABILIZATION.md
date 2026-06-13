@@ -1,5 +1,9 @@
 # 02. gdelt 안정화 — 429 원인 규명 + PARSE_ERROR 해소 + 장문 query 절단
 
+> **상태: APPLIED — SUPERSEDED_BY [IMPLEMENTATION_TRACE_FINAL.md](./IMPLEMENTATION_TRACE_FINAL.md)** (2026-06-13). 본 지시문은 적용 완료. 원문은 이력 보존용이며 파괴적 삭제 금지. 현재 상태는 trace final + docs/ingestion/70·86·92 참조.
+
+> ✅ **적용 완료 (2026-06-13)**: (a) gdelt spec에 `query_transform:"quote_phrase"` + `_transform_query` 추가 — 다단어 query를 큰따옴표로 감싸 GDELT의 200+오류텍스트 응답을 차단. (b) JSON parse except 블록을 비-JSON 200 정직 분류로 교체 — `rate limit`/`too many requests`/`limit requests`(실측 보강) → RATE_LIMITED, query 형식 오류 텍스트 → QUERY_ENCODING_OR_PARAM_ERROR (둘 다 기존 status, 신규 literal 없음). (c) `rate_limit_policy.yaml` gdelt: min_interval 5→60s, cooldown 300→900s. (d) `_audit_common.truncate_query`(토큰5·문자60 이중 상한) 추가 + `run_enrichment_live_audit._clean_query`가 이를 호출하도록 단일화(RISK-Q05). **STEP B 실측 보강**: live 1회 호출의 raw payload가 `"Please limit requests to one every 5 seconds..."` 평문이었고 이 문구가 §3-b 키워드에 안 걸려 `limit requests` 패턴을 추가함(docs/89 §5-2 PARSE_ERROR의 실제 원인일 개연성). 검증: 신규 `test_gdelt_stabilization.py` 6건 통과 + 전체 회귀 520 passed(509+5+6), 실패 0, secret scan PASS. **live LIVE_SUCCESS는 DEFERRED** — 외부 GDELT IP rate limit으로 429(코드 결함 아님), 00 §3.3에 따라 cooldown(900s) 만료 전 재호출 금지. 재개 조건은 체크리스트 항목 2 참조.
+
 > 선행: **01 완료 필수** (429 재발 시 cooldown 기록이 안전망). 변경: `api_probe.py`, `rate_limit_policy.yaml`, `_audit_common.py`(또는 enrichment runner), 신규 테스트.
 
 ## 1. 해석 — 실측 사실과 원인 가설

@@ -218,3 +218,22 @@ public `.json`은 동작하지만 비로그인 rate_limit 변동성이 커서 MV
 | P2 | RISK-S05 | fast_signal selector 취약 — loword/google_trending_now는 page title만 추출, dcinside/eu_press_corner 동일 | update_selector (signal_bz만 keyword 추출 성공) |
 | P3 | RISK-Q04 | relevance 스코어러 cross-language 한계 — tmdb "군체"→"Colony" 정타 매칭을 low로 측정 | 정규화 단계 entity 매칭으로 대체 |
 | P3 | RISK-Q05 | 장문 seed query(공시명 그대로) 검색 0건 | hot seed 도출 시 핵심 키워드 절단 (docs/89 §5) |
+
+## 08/09 라운드 — 리스크 종결 (2026-06-13)
+
+| 리스크 | 직전 상태 | 종결 |
+|---|---|---|
+| federal_register url/date 부재 | partial | **CLOSED** — fields[] 5필드 list |
+| igdb timestamp/url 부재 | partial | **CLOSED** — apicalypse url + $root/epoch 매핑 |
+| culture_info 날짜 부재 | partial | **CLOSED** — _XML_FIELD_NAMES 매핑 (구 Service Error는 과거 param, 현 endpoint LIVE_SUCCESS) |
+| hacker_news detail 미설계 | no | **CLOSED** — /v0/item/{id}.json 2차 호출 |
+| bok_ecos/eia/its sample 매핑 부재 | 평가 불가 | **CLOSED** — _SAMPLE_PATHS 추가 |
+| 시장 수치 seed_ready=no(분류 오류) | no | **CLOSED** — numeric_signal 평가 경로(signal_ready) |
+| RATE_LIMITED 신호 목록 2벌(playwright/api) | 잠재 불일치 | **CLOSED** — error_taxonomy 단일 출처(기법10) |
+
+신규 발견: finnhub flat quote는 list 추출 0건이라 seed evaluator가 probe items_found를 무시하면 signal_ready 오판(no) → `_evaluate_seed`가 probe items_found 사용하도록 수정(이번 턴 종결, 잔존 리스크 아님).
+
+## Trends fallback 턴 갱신 (2026-06-13)
+
+- **google_trends_explore 429 = 외부 provider 리스크(코드 결함 아님)**: Google 공식 quota 부재. 잔존 리스크는 optional_enrichment로 한정되고 **fallback chain**(google_trending_now + 공개 RSS export + 뉴스/검색 related expansion)으로 event queue 비차단 → 리스크 등급 하향(NOT_READY → CONFIRMED_EXTERNAL, 비차단).
+- 신규 리스크 없음. 수정 가능한 코드/selector/mapping 결함 0건 유지.

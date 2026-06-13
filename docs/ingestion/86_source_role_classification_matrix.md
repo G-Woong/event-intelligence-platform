@@ -80,7 +80,8 @@
 | signal_bz | Signal.bz | primary_seed | playwright | 없음 | 실시간 검색어 keyword 목록 | title(keyword),source_id | 30~60분 | min 30분(yaml), UNKNOWN | P1 |
 | loword | Loword | primary_seed | playwright | 없음 | 실시간 검색어 keyword 목록 | title(keyword),source_id | 30~60분 | min 30분, CSS-in-JS selector 취약 | P2 |
 | google_trending_now | Google Trending Now | primary_seed | playwright | (선택) region | 트렌딩 keyword 목록 | title(keyword),source_id | 2시간+ | **429 이력**, min_interval 7200s | P2 |
-| google_trends_explore | Google Trends Explore | enrichment | playwright | keyword | 연관 검색어 | title(keyword) | 수동/2시간+ | **429 이력**, min_interval 7200s, 반복 호출 금지 | P3 |
+| google_trends_explore | Google Trends Explore | optional_enrichment | playwright | hot seed keyword | 연관 검색어 | title(keyword) | 수동/2시간+ | **CONFIRMED_EXTERNAL_RATE_LIMIT(429)**, min_interval 7200s / cooldown 3600s / max_retries_on_429=0, hot seed trigger, 실패 시 collected=false + **fallback chain**(아래 §Trends fallback), event queue 비차단, body_status=not_required, 반복 호출 금지 | P3 |
+| google_trends_trending_now_export | Google Trends Trending Now RSS | primary_seed(fallback B) | rss | (선택) region | 트렌딩 keyword RSS entry | title(keyword),url | 2시간+ | 공개 RSS `trends.google.com/trending/rss?geo={region}` — **EXPORT_AVAILABLE 실측(2026-06-13)**. 내부 RPC 아님. 정식 registry 온보딩은 후속 라운드 | P2 |
 
 ## 7. market_signal (6)
 
@@ -118,3 +119,25 @@
 | excluded | 5 | x, blind, reuters, fmkorea, google_programmable_search |
 
 > 주: "파라미터형 lookup"(kofic/kma/finnhub 등)은 free-text query는 없지만 파라미터(날짜/symbol/지역)로 주기 호출하는 1차 소스로 분류. 2차 audit에서는 `query_unsupported`로 기록하고 1차 결과로 enrichment 용도(사건 검증용 수치 lookup)를 평가한다.
+
+## 08 라운드 — numeric_signal 평가 경로 분리 (2026-06-13)
+
+시장/지표 수치 소스는 title/url 개념이 없어 seed 5필드 체계로는 영원히 no가 된다(분류 오류). `_audit_common.NUMERIC_SIGNAL_SOURCES`로 분리하고 `seed_ready_label_for`가 **probe items_found>0 = signal_ready**로 평가한다.
+
+- **numeric_signal role**: finnhub, alpha_vantage, polygon, coinbase_market, binance_market, twelve_data, its, eia, bok_ecos, kma.
+- **both → event 보강**: federal_register(seed+query), igdb/culture_info(domain enrichment, sample=event_candidate).
+- hacker_news: primary_seed(detail 2차 호출로 title+url+time 확보).
+- flat quote(finnhub 등 list 없는 응답)도 데이터 수신 자체가 signal_ready — `_flat_numeric_signal`로 scalar 필드를 1 record로 묶는다.
+
+## Google Trends 역할 3분할 + Trends fallback chain (PHASE 1/2, 2026-06-13)
+
+**역할 3분할 (혼동 방지):**
+- **Google Trends** — 제품/서비스 이름. source_id 아님.
+- **google_trending_now** — 지금 급상승 검색어 seed를 뽑는 primary trend seed source. **PASS**(LIVE_SUCCESS). 이벤트 발견용으로 유지.
+- **google_trends_explore** — 이미 확보한 hot seed의 연관 검색어를 확장하는 **optional_enrichment**. **CONFIRMED_EXTERNAL_RATE_LIMIT**. critical dependency에서 제외. 실패해도 event queue 전체를 막지 않는다.
+
+**Trends fallback chain (google_trends_explore 429 시 대체 경로, `run_trend_fallback_enrichment_audit.py`):**
+- **A. google_trending_now** (Playwright seed) — trend item ≥3 → event candidate. cooldown이면 직전 raw_signal artifact로 평가(재호출 없음).
+- **B. google_trends_trending_now_export** (공개 RSS) — `trends.google.com/trending/rss?geo={region}` feed_discovery 검증. 실측 **EXPORT_AVAILABLE**. 404/blocked면 `EXPORT_UNAVAILABLE`로 기록하고 A를 primary로 유지.
+- **C. 뉴스/검색 enrichment** — hot seed 1개를 serper/tavily/exa/naver/gnews/newsapi/guardian/ap_news에 질의 → title+snippet에서 규칙 기반 related_candidate 생성(`extract_related_candidates`, co-occurring term / title bigram / proper entity / 한글 2-gram). URL 결과는 본문 추출 ≥1회.
+- **실측(trend_fallback_enrichment_audit_20260613_102354)**: A collected / B EXPORT_AVAILABLE / C serper·tavily·naver collected(related 8/3/12, body 1건 extracted) / explore RATE_LIMITED_CONFIRMED. aggregate related_candidates **19**(≥5), collected fallback source **5**(≥2). 우회 0건.

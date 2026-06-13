@@ -1,5 +1,7 @@
 # 08. API 소스 보강 — partial/no 소스 전량 종결 (federal_register·igdb·culture_info·hacker_news·bok_ecos·eia·its·시장 수치)
 
+> **상태: APPLIED — SUPERSEDED_BY [IMPLEMENTATION_TRACE_FINAL.md](./IMPLEMENTATION_TRACE_FINAL.md)** (2026-06-13). 본 지시문은 적용 완료. 원문은 이력 보존용이며 파괴적 삭제 금지. 현재 상태는 trace final + docs/ingestion/70·86·92 참조.
+
 > 선행: 01. 변경: `api_probe.py`(`_PROBE_SPEC` 3곳 + hn detail), `_audit_common.py`(`_SAMPLE_PATHS`/XML 맵/numeric signal/`collect_samples`), 테스트. live 검증: 소스당 1회 (전부 저쿼터 안전 소스).
 
 ## 0. 공통 원칙 — "no/partial"의 3가지 서로 다른 원인을 구분하라

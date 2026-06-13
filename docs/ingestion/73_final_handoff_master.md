@@ -241,3 +241,16 @@ query 주입 단건 검증: `run_collection_probe --source naver_news_search --q
 > "수집 계층은 '살아있음'을 넘어 **용도 검증(1차 seed 32종 + 2차 enrichment 9종 + 주기 시뮬레이션)**까지 실측 완료됐다(509 tests). EventSeedCandidate schema와 주기 초안(docs/91~92)이 준비되어 다음 단계는 plans/012 Celery 오케스트레이션이며, 그 전에 Route 1 429 cooldown 기록(RISK-T04)과 소스 정비 4건이 권장된다."
 
 (이전) > "CORE_READY 44개 소스 + pluggable rate limit store + health/quarantine gate + secret scan 자동화까지 갖춘 수집 계층이 실측 검증 완료 상태(450 tests)이며, 다음 단계는 plans/012의 Celery+Redis 오케스트레이션(12-2) 구현이다. 사용자 필수 액션은 없고, KRX 키 발급(A-2)과 .env 키 개명(A-1, 6건)이 선택 과제로 남아 있다."
+
+## 08/09 라운드 — 신규 runner/도구 (2026-06-13)
+
+- `python -m ingestion.runners.run_api_partial_sources_audit [--sources ...] [--no-rate-limit]` — API partial/no 소스 E2E(sample→candidate/numeric_signal→본문). JSONL/MD 산출.
+- `ingestion/tools/feed_discovery.py` — discover_feeds / validate_feed / google_news_proxy_url / discover_sitemaps (신규 뉴스 소스 온보딩 표준 1단계).
+- `error_taxonomy.is_rate_limited_text()` — 429/soft-block 텍스트 분류 공용(playwright_probe·api_probe 공유).
+- `_audit_common`: `NUMERIC_SIGNAL_SOURCES`, `seed_ready_label_for`, `_XML_FIELD_NAMES`, `_SAMPLE_PATHS`(igdb/hacker_news/bok_ecos/eia/its), `$root`/epoch 정규화.
+
+## Trends fallback 턴 인수인계 (2026-06-13)
+
+- **신규 진입점**: `docs/Implementation_Instructions/IMPLEMENTATION_TRACE_FINAL.md`(통합 trace) + `README.md`(index). 개별 00~10은 APPLIED/SUPERSEDED.
+- **신규 runner**: `run_trend_fallback_enrichment_audit.py` — Google Trends fallback enrichment(A trending_now / B RSS export / C 뉴스·검색). JSONL `trend_fallback_enrichment_audit_*`.
+- **상태**: 15 checklist PASS 14 / CONFIRMED_EXTERNAL_RATE_LIMIT 1(google_trends_explore, fallback로 비차단). pytest 635 passed. 다음 단계 plans/012(Celery/LangGraph).

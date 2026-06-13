@@ -1,5 +1,7 @@
 # 00. 소스 연결 문제 Closing 라운드 — 총괄 지시서 + 종결 루프 설계
 
+> **상태: ROOT — 절대 제약/Closing Loop 원문은 계속 유효**. 적용 진행 흐름은 [IMPLEMENTATION_TRACE_FINAL.md](./IMPLEMENTATION_TRACE_FINAL.md), 신규 세션 진입점은 [README.md](./README.md) 참조.
+
 > **이 디렉토리의 모든 문서는 "구현 지시 상세 명령서"다.**
 > 실행 주체: Claude Sonnet 등 하위 모델 또는 에이전트 오케스트레이션.
 > 각 문서는 ① 해석(왜) ② 설명(무엇을) ③ 구현 diff(어떻게) ④ 검증(어떻게 확인) 4요소를 전부 포함한다.

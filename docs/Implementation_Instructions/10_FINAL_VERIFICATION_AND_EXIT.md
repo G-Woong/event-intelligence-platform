@@ -1,5 +1,7 @@
 # 10. 최종 검증·감사·종료 — 전 소스 동작 확인 루프의 출구
 
+> **상태: APPLIED — SUPERSEDED_BY [IMPLEMENTATION_TRACE_FINAL.md](./IMPLEMENTATION_TRACE_FINAL.md)** (2026-06-13). 본 지시문은 적용 완료. 원문은 이력 보존용이며 파괴적 삭제 금지. 현재 상태는 trace final + docs/ingestion/70·86·92 참조.
+
 > 실행 시점: 01~09 전부 완료(각 문서의 종결 기준 충족) 후. 이 문서를 통과해야만 턴이 끝난다.
 
 ## 1. 최종 감사 절차 (순서 고정)

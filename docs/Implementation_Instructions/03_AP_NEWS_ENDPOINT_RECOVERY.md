@@ -1,5 +1,19 @@
 # 03. ap_news 복구 — RSS endpoint HTML 에러 페이지 원인 규명 + 대체 경로
 
+> **상태: APPLIED — SUPERSEDED_BY [IMPLEMENTATION_TRACE_FINAL.md](./IMPLEMENTATION_TRACE_FINAL.md)** (2026-06-13). 본 지시문은 적용 완료. 원문은 이력 보존용이며 파괴적 삭제 금지. 현재 상태는 trace final + docs/ingestion/70·86·92 참조.
+
+> ## ✅ 적용 완료 (2026-06-13)
+> **원인 판정: H1(endpoint 폐기)** — `apnews.com/hub/ap-top-news?format=feed&type=rss`가 파라미터를
+> 무시하고 AP 홈페이지 HTML(200)을 반환. 브라우저 UA로 동일 호출해도 같은 HTML이라 **H2(UA 차단) 기각**,
+> rsshub 후보는 Cloudflare 403. **채택 해결책: §4-B — Google News RSS 프록시**로 endpoint 교체.
+> - 변경: `_SERVICE_CONFIGS["ap_news"].endpoint = https://news.google.com/rss/search` (+ note),
+>   `_PROBE_SPEC["ap_news"].extra_params = {q: "site:apnews.com", hl, gl, ceid}`.
+> - **실측 함정**: query를 endpoint URL에 박으면 httpx가 빈 `params={}`로 기존 query string을 통째
+>   덮어써 `/rss/search`(404)로 감 → query 파라미터를 `extra_params`로 이동해 해결.
+> - live 검증: `run_collection_probe --source ap_news --json` → **LIVE_SUCCESS, items_found=100**,
+>   sample title+url 확보(RSS pubDate는 `extract_sample_items`가 채움 — 단위 테스트로 입증).
+> - 테스트: `ingestion/tests/unit/test_ap_news_recovery.py` 3 passed. 전체 회귀 526 passed.
+
 > 선행: 01. 변경: `ingestion/runners/run_api_connectivity_check.py`(`_SERVICE_CONFIGS`), 경우에 따라 `ingestion/configs/source_registry.yaml`·`ingestion/sources/ap_news.py` 정합 확인. live 진단 호출 수: 최대 4회 (전부 키 불필요 public).
 
 ## 1. 해석 — 사실 관계

@@ -1,5 +1,7 @@
 # 06. 페이지 구조 탐색 툴킷 — `run_structure_explorer` 신설
 
+> **상태: APPLIED — SUPERSEDED_BY [IMPLEMENTATION_TRACE_FINAL.md](./IMPLEMENTATION_TRACE_FINAL.md)** (2026-06-13). 본 지시문은 적용 완료. 원문은 이력 보존용이며 파괴적 삭제 금지. 현재 상태는 trace final + docs/ingestion/70·86·92 참조.
+
 > 선행: 09 §1 (playwright chromium 설치 확인). 산출물: `ingestion/runners/run_structure_explorer.py` + 테스트. **07의 selector 소스 5종과 03/05의 fallback 진단이 전부 이 runner를 사용한다.**
 
 ## 1. 해석 — 왜 이 도구가 필요한가

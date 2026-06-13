@@ -1,5 +1,7 @@
 # 05. google_trends_explore 활성화 — DEFERRED 원인 식별 + 활용 경로 구현·검증
 
+> **상태: APPLIED — SUPERSEDED_BY [IMPLEMENTATION_TRACE_FINAL.md](./IMPLEMENTATION_TRACE_FINAL.md)** (2026-06-13). 본 지시문은 적용 완료. 원문은 이력 보존용이며 파괴적 삭제 금지. 현재 상태는 trace final + docs/ingestion/70·86·92 참조.
+
 > 선행: 01 (429 기록 안전망). 권장 병행: 07 §2 (Route 2 위임 — 완료 시 통합 경로까지 검증 가능). live 호출: **iteration당 최대 1회, 이 문서 전체에서 최대 2회** (min_interval 7200s 정책 준수).
 
 ## 1. 해석 — "DEFERRED"의 정확한 원인 (코드 부재가 아니다)

@@ -288,3 +288,30 @@ RUN apt-get install -y google-chrome-stable   # chromedriver는 Selenium Manager
 | `run_periodic_collection_simulation` | 주기 수집 검증 (≤3 cycle) | local_file backend(process env), cache_skip/cooldown/health/영속/실패기록 5종 검증 |
 
 공통 헬퍼 `_audit_common.py`: `gate_check`(health→cooldown→cache 순), `enforce_min_interval`(**Route 1에 rate limit 게이트가 없는 코드 gap의 runner 레벨 보완**), sample 추출(json `_SAMPLE_PATHS` per-source 매핑 / xml / html / rendered selector), relevance(영문 토큰 + 한글 2-gram), seed 필드 평가(3+ = ready). skip/cached는 record의 `audit_action` 필드로만 기록 — **PROBE_STATUS frozenset 불변**.
+
+## 08/09 라운드 — 상용 기법 흡수 + 프레임워크 결정 (2026-06-13)
+
+### feed_discovery (기법 2·3·6)
+`ingestion/tools/feed_discovery.py` 신설:
+- `discover_feeds(html, base_url)` — `<link rel=alternate type=application/rss+xml>` + 공통 경로(/rss,/feed) 폴백.
+- `validate_feed(url)` — httpx GET → feedparser `bozo==0 and entries>0`.
+- `google_news_proxy_url(domain)` — 자체 feed 없는 매체의 Google News RSS 우회(canonical은 url_resolver 기법4로 해석, evidence 1단계 하향). Google 내부 RPC/batchexecute 우회는 하지 않는다.
+- `discover_sitemaps(base_url)` — robots.txt Sitemap + 공통 sitemap 경로(기법 6, 깊은 백필 설계 고정).
+
+### 기법 10 — soft-block/429 텍스트 분류 단일 출처
+`error_taxonomy.RATE_LIMITED_SIGNALS` + `is_rate_limited_text()`로 승격. `playwright_probe._detect_429`이 이를 import(두 벌 목록 제거). api_probe의 비-JSON rate-limit 재분류와 동일 신호.
+
+### 본문 추출 캐스케이드 (기법 5) — API 소스에도 동일 적용
+`article_body_extractor.extract_article_body`(07 신설)를 federal_register/hacker_news 등 URL 보유 API 소스의 본문 추출에 재사용(중복 구현 없음). `run_api_partial_sources_audit`이 `extract_body`(httpx→Playwright fallback→trafilatura)로 연결.
+
+### §3 프레임워크/오케스트레이션 결정
+- **LangGraph 채택, 신규 패키지 미설치.** langgraph 0.2.76 기설치 — 탐색-수집-확장-검증 그래프(gate→probe→diagnose→explore→patch→verify)는 00 §3 종결 루프를 코드화한 것으로 LangGraph 노드+체크포인터로 충분. deepagents 등 신규 의존성은 Windows/py3.11 핀 환경의 회귀 표면을 넓혀 보류(도입 시 `uv pip install --dry-run` 충돌 확인 → 핀 변경 금지).
+- **MCP는 "개발 중 보조 탐색"으로만.** 수집 경로의 재현성은 repo 내 runner가 보장해야 하므로(headless/cron 운영에서 MCP 의존은 깨짐) `.claude/settings.json` MCP 추가는 별도 사용자 승인 후 범위 외.
+- runner/candidate/artifact contract는 이미 LangGraph 노드로 감싸기 쉬운 형태(run_collection_probe=probe 노드, run_structure_explorer=explore 노드, extract_article_body=verify 입력).
+- 기법 6(sitemap)·8(self-healing streak)·12(DOM fingerprint)는 explorer 산출물에 토대만 두고 설계 고정. 기법 7(Conditional GET)·11(LLM judge)은 plans/012/이벤트 큐 단계.
+
+## Trends fallback 전략 (2026-06-13)
+
+- **안전 대체 경로 원칙**: provider 429를 강제로 뚫지 않고(우회 금지) 안전·합법 대체 경로로 동일 목적 데이터를 확보한다. Google Trends Explore(related queries)가 막히면 fallback chain으로 대체.
+- **fallback chain** = A google_trending_now(Playwright) → B 공개 RSS export(`trends.google.com/trending/rss`) → C 뉴스/검색 enrichment(규칙 기반 related_candidate, `extract_related_candidates`).
+- runner: `run_trend_fallback_enrichment_audit.py`(agent_ready). 헬퍼: `_audit_common.extract_related_candidates`(LLM 없이 결정적).

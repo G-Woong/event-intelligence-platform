@@ -1,5 +1,20 @@
 # 04. newsapi — `/v2/top-headlines` → `/v2/everything` 전환
 
+> **상태: APPLIED — SUPERSEDED_BY [IMPLEMENTATION_TRACE_FINAL.md](./IMPLEMENTATION_TRACE_FINAL.md)** (2026-06-13). 본 지시문은 적용 완료. 원문은 이력 보존용이며 파괴적 삭제 금지. 현재 상태는 trace final + docs/ingestion/70·86·92 참조.
+
+> ## ✅ 적용 완료 (2026-06-13)
+> top-headlines+q가 헤드라인 풀 한정이라 임의 phrase 0건(구조적 부적합) → **`/v2/everything` 전환**.
+> - 변경: `_SERVICE_CONFIGS["newsapi"].endpoint = .../v2/everything`(+free_plan/note),
+>   `_PROBE_SPEC["newsapi"].extra_params = {q:"news", pageSize, sortBy:"publishedAt", language:"en"}`
+>   — **country 제거**(everything에 보내면 400), q 필수라 기본 q 주입. query 주입은 기존
+>   `_apply_query_override`가 q를 덮어씀(추가 작업 없음).
+> - live 검증(quota 100/day 중 1회): `run_collection_probe --source newsapi --query "AI semiconductor"
+>   --json` → **LIVE_SUCCESS, items_found=3**, 3건 전부 고관련(Sigurd chip/Marvell semiconductor/
+>   China AI data center) — relevance HIGH. NEWSAPI_API_KEY 존재 확인(값 비노출).
+> - 테스트: `ingestion/tests/unit/test_newsapi_everything.py` 3 passed(endpoint/no-country+기본q/query
+>   override 전역불변). 전체 회귀 526 passed. 기존 `test_query_injection.py` newsapi 단언은 q/params만
+>   검사하므로 회귀 없음.
+
 > 선행: 01. 변경: `_SERVICE_CONFIGS` 1곳 + `_PROBE_SPEC` 1곳 + 테스트. live 검증 1회 (quota 100/day 중 1).
 
 ## 1. 해석 — 왜 0건이었나

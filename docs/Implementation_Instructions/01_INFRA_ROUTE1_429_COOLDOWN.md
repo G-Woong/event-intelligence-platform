@@ -1,5 +1,9 @@
 # 01. RISK-T04 — Route 1(API) 429 cooldown 기록 gap 수정
 
+> **상태: APPLIED — SUPERSEDED_BY [IMPLEMENTATION_TRACE_FINAL.md](./IMPLEMENTATION_TRACE_FINAL.md)** (2026-06-13). 본 지시문은 적용 완료. 원문은 이력 보존용이며 파괴적 삭제 금지. 현재 상태는 trace final + docs/ingestion/70·86·92 참조.
+
+> ✅ **적용 완료 (2026-06-13)**: `api_probe.py`의 `run_api_live_probe` 최종 `return ProbeResult` 직전에 RATE_LIMITED 수렴 지점 1곳을 두고 `record_rate_limited(service_id, query or "", cooldown_seconds=...)`를 호출, `next_retry_at`을 ProbeResult에 채우도록 수정. `Retry-After` 헤더가 숫자면 `max(정책 cooldown, Retry-After)`로 반영. 근거: HTTP 429·alpha_vantage soft limit·비-JSON 200 rate-limit 텍스트가 모두 `probe_status="RATE_LIMITED"`로 수렴하므로 return 직전 1곳 검사로 누락 없음. 검증: 신규 `test_route1_rate_limit_record.py` 5건 통과 + 전체 회귀 514 passed(509+5), 실패 0. `ProbeResult.next_retry_at` 필드는 models.py에 이미 존재(추가 불필요).
+
 > 우선순위: **최상 (다른 모든 live 재검증의 안전망)**. 의존성: 없음. 예상 변경: `api_probe.py` 1곳 + 신규 테스트 1파일.
 
 ## 1. 해석 — 무엇이 왜 문제인가
