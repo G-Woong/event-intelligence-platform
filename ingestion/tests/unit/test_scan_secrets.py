@@ -88,6 +88,38 @@ def test_placeholder_is_allowed(tmp_path: Path, fake_env: Path):
     assert report["verdict"] == "PASS"
 
 
+def test_news_url_slug_is_not_openai_key_false_positive(tmp_path: Path, fake_env: Path):
+    """기사 URL slug(`…risk-if-…`, `musk-spacex-…`)는 sk- 정규식에 걸려도 키가 아니다."""
+    target = tmp_path / "outputs"
+    target.mkdir()
+    (target / "exa.json").write_text(
+        '{"url":"https://example.com/oecd-cuts-growth-forecast-and-warns-of-'
+        'recession-risk-if-iran-war-persists","title":"OECD"}\n'
+        "source_url: https://apnews.com/article/"
+        "musk-spacex-tesla-ipo-trillionaire-billionaire-worth-rockets-7723f82b\n",
+        encoding="utf-8",
+    )
+    report = scan_paths([target], env_path=fake_env)
+    assert report["verdict"] == "PASS"
+    assert report["findings"] == []
+
+
+def test_real_openai_key_shape_still_warns(tmp_path: Path, fake_env: Path):
+    """하이픈 없는 고엔트로피 토큰을 가진 진짜 키 형태는 여전히 WARNING."""
+    from ingestion.tools.scan_secrets import _is_openai_url_slug_false_positive
+    assert _is_openai_url_slug_false_positive("sk-if-iran-war-persists") is True
+    assert _is_openai_url_slug_false_positive("sk-spacex-tesla-ipo-trillionaire-billionaire-") is True
+    assert _is_openai_url_slug_false_positive("sk-proj-Ab12Cd34Ef56Gh78Ij90Kl12Mn34") is False
+    assert _is_openai_url_slug_false_positive("sk-aaaabbbbccccddddeeeeffff1234") is False
+    target = tmp_path / "docs"
+    target.mkdir()
+    (target / "leak.md").write_text(
+        "token: sk-proj-Ab12Cd34Ef56Gh78Ij90Kl12Mn34xyz\n", encoding="utf-8"
+    )
+    report = scan_paths([target], env_path=fake_env)
+    assert report["verdict"] == "WARNING"
+
+
 def test_env_file_itself_is_not_scanned(tmp_path: Path, fake_env: Path):
     """`.env` 파일 자체는 스캔 대상에서 제외된다."""
     env_in_target = tmp_path / ".env"

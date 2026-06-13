@@ -144,3 +144,25 @@ def classify_content_blocker(html_lower: str) -> Optional[ErrorType]:
     if any(s in html_lower for s in paywall_signals):
         return ErrorType.PAYWALL_DETECTED
     return None
+
+
+# 기법 10 (docs/09 §2): soft-block/429 텍스트 신호 단일 출처.
+# playwright_probe·api_probe가 각자 다른 목록을 두지 않도록 여기로 승격한다.
+RATE_LIMITED_SIGNALS: tuple[str, ...] = (
+    "429 too many requests",
+    "too many requests",
+    "rate limit exceeded",
+    "rate limited",
+    "you have been rate limited",
+    "temporarily blocked",
+    "slow down",
+    "quota exceeded",
+    # GDELT는 soft limit을 200+평문으로 알린다 ("Please limit requests to one every 5 seconds")
+    "limit requests",
+)
+
+
+def is_rate_limited_text(text: str) -> bool:
+    """렌더된 HTML/평문 응답이 429/rate-limit 페이지인지 (대소문자 무시)."""
+    lower = (text or "").lower()
+    return any(sig in lower for sig in RATE_LIMITED_SIGNALS)

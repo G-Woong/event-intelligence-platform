@@ -47,6 +47,22 @@ def _is_placeholder(matched: str, line: str) -> bool:
     return any(m in matched or m in line for m in _PLACEHOLDER_MARKERS)
 
 
+def _is_openai_url_slug_false_positive(matched: str) -> bool:
+    """`sk-...` 매치가 OpenAI 키가 아니라 뉴스 기사 URL slug인지 판별.
+
+    실제 OpenAI 키는 `sk-`(또는 `sk-proj-`/`sk-svcacct-` 등) 뒤에 하이픈 없는
+    20자 이상 고엔트로피(영문+숫자 혼합) 토큰을 갖는다.
+    공개 기사 URL slug는 'sk-if-iran-war-persists'(=…ri[sk]-if-…),
+    'sk-spacex-tesla-ipo-…'(=mu[sk]-spacex-…)처럼 하이픈으로 끊긴 단어들의 나열이다.
+    후자(고엔트로피 토큰이 하나도 없는 경우)만 false positive로 처리한다.
+    전체 `sk-*`를 무시하지 않는다 — 키 형태(긴 혼합 토큰)는 그대로 WARNING으로 남긴다.
+    """
+    for seg in matched[3:].split("-"):  # 'sk-' 제거 후 하이픈 분할
+        if len(seg) >= 20 and any(c.isdigit() for c in seg) and any(c.isalpha() for c in seg):
+            return False  # 고엔트로피 토큰 존재 → 실제 키 가능성, FP 아님
+    return True
+
+
 # Only keys whose NAME indicates a credential are compared in layer 2.
 # Infra config values (MILVUS_HOST=localhost, ports, URLs) are not secrets and
 # would flood the report with false BLOCKED findings.
@@ -139,6 +155,12 @@ def scan_paths(
             for pat_name, pattern in _SECRET_PATTERNS:
                 m = pattern.search(line)
                 if m and not _is_placeholder(m.group(0), line):
+                    if pat_name == "openai_key":
+                        # 'sk'가 단어 중간(mu[sk]-spacex…, ri[sk]-if…)이면 키가 아니라
+                        # 기사 URL slug다. 실제 키는 단어 경계(공백/=/"/:)에서 시작한다.
+                        prev = line[m.start() - 1] if m.start() > 0 else ""
+                        if prev.isalnum() or _is_openai_url_slug_false_positive(m.group(0)):
+                            continue
                     findings.append({
                         "severity": "WARNING",
                         "type": f"PATTERN_{pat_name.upper()}",

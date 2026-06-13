@@ -15,8 +15,10 @@ default:
 
 per_source:
   gdelt:
-    min_interval_seconds: 5
-    cooldown_on_429_seconds: 300
+    # 실측상 5s 간격으로도 429 발생, 300s cooldown 후 재호출도 또 429 (docs/89 §5-2, 02 문서).
+    # GDELT public API의 IP rate limit 윈도우가 더 길다고 추정 → 보수적으로 강화.
+    min_interval_seconds: 60
+    cooldown_on_429_seconds: 900
     max_retries_on_429: 1
     cache_ttl_seconds: 900
   # google_trends: 1800s 간격에서도 429 재발 이력 → 7200s로 강화 (12-6).
