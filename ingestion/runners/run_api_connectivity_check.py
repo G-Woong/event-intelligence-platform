@@ -47,11 +47,17 @@ _SERVICE_CONFIGS: dict[str, dict] = {
     },
     "ap_news": {
         "keys": [], "auth": "none",
-        "endpoint": "https://apnews.com/hub/ap-top-news?format=feed&type=rss",
+        "endpoint": "https://news.google.com/rss/search",
         "free_plan": "Public RSS — no key required",
         "docs_url": "https://apnews.com",
         "layer": "document_discovery",
-        "note": "rsshub 403 → AP official RSS/Atom feed (2026-06-03)",
+        # hub?format=feed 경로는 2026-06-12 HTML 홈페이지로 전환(param 무시, H1 확정 — 브라우저 UA로도 동일 HTML).
+        # rsshub 후보는 Cloudflare 403. Google News RSS 프록시로 교체(2026-06-13 검증, 100 items title+link+pubDate).
+        # query(q=site:apnews.com 등)는 _PROBE_SPEC["ap_news"].extra_params로 전달 — endpoint에 박으면
+        # httpx가 params={}로 기존 query string을 덮어써 404가 난다(2026-06-13 실측).
+        # 주의1: item link가 news.google.com redirect URL → 정규화 단계에서 원 URL 해석 필요(09 §2-4).
+        # 주의2: AP 직접 feed가 아니므로 evidence_level은 한 단계 낮게(source_registry ap_news와 동기화).
+        "note": "hub?format=feed HTML 에러페이지 전환(2026-06-12) → Google News RSS 프록시 (2026-06-13 검증)",
     },
     "techcrunch": {
         "keys": [], "auth": "none",
@@ -309,11 +315,11 @@ _SERVICE_CONFIGS: dict[str, dict] = {
     "newsapi": {
         "keys": ["NEWSAPI_API_KEY"],
         "auth": "query_param_apiKey",
-        "endpoint": "https://newsapi.org/v2/top-headlines",
-        "free_plan": "Developer: 100 req/day; no commercial use on free plan",
+        "endpoint": "https://newsapi.org/v2/everything",
+        "free_plan": "Developer: 100 req/day; no commercial use on free plan; everything은 24h 지연+최근 1개월",
         "docs_url": "https://newsapi.org/docs",
         "layer": "search_enrichment",
-        "note": "Commercial use requires paid plan",
+        "note": "top-headlines+q 0건 실측(docs/89)으로 everything 전환 (2026-06-13). everything은 q 필수.",
     },
     "gnews": {
         "keys": ["GNEWS_API_KEY"],
