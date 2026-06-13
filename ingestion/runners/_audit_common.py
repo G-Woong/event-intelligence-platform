@@ -103,6 +103,21 @@ def seed_ready_label(count: int) -> str:
     return "no"
 
 
+# 수치 임계값 signal 소스 — seed 5필드 대신 signal 기준으로 평가 (docs/88 §3-5).
+# title/url 개념이 없어 seed 5필드 체계로는 영원히 no → 분류 오류이므로 평가 경로 분리.
+NUMERIC_SIGNAL_SOURCES: frozenset[str] = frozenset({
+    "finnhub", "alpha_vantage", "polygon", "coinbase_market",
+    "binance_market", "twelve_data", "its", "eia", "bok_ecos", "kma",
+})
+
+
+def seed_ready_label_for(source_id: str, count: int, items_found: int) -> str:
+    """seed 평가 라벨. 수치 signal 소스는 데이터 수신 자체가 ready(signal_ready)."""
+    if source_id in NUMERIC_SIGNAL_SOURCES:
+        return "signal_ready" if items_found > 0 else "no"
+    return seed_ready_label(count)
+
+
 # ── relevance ────────────────────────────────────────────────────────────────
 
 def relevance_score(query: str, title: str, snippet: str = "") -> float:
@@ -130,6 +145,123 @@ def relevance_label(score: float) -> str:
     if score >= 0.2:
         return "medium"
     return "low"
+
+
+# ── related candidate 추출 (trend fallback enrichment) ───────────────────────
+
+# Google Trends Explore 연관검색어가 막혔을 때, 뉴스/검색 fallback 결과의
+# title+snippet에서 규칙 기반(co-occurring term / title bigram / 반복 개체)으로
+# related_candidate를 만든다. LLM 없이 결정적. (PHASE 2-C)
+_REL_STOP_EN = frozenset({
+    "the", "and", "for", "with", "from", "that", "this", "are", "was", "were",
+    "has", "have", "had", "will", "would", "could", "should", "its", "their",
+    "his", "her", "they", "them", "you", "your", "our", "out", "into", "over",
+    "after", "before", "about", "than", "then", "but", "not", "all", "new",
+    "says", "say", "said", "amid", "via", "how", "why", "who", "what", "when",
+    "more", "most", "year", "years", "day", "days", "week", "news", "report",
+    "reports", "update", "live", "video", "photos", "latest",
+})
+_REL_EN_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9.'-]{2,}")
+_REL_EN_PROPER = re.compile(r"\b([A-Z][A-Za-z0-9.'-]+(?:\s+[A-Z][A-Za-z0-9.'-]+){0,2})\b")
+_REL_KO_RUN = re.compile(r"[가-힣]{2,}")
+
+
+def _seed_units(seed: str) -> set:
+    units: set = set()
+    units.update(t.lower() for t in _REL_EN_TOKEN.findall(seed or ""))
+    for run in _REL_KO_RUN.findall(seed or ""):
+        units.add(run)
+        if len(run) > 2:
+            units.update(run[i:i + 2] for i in range(len(run) - 1))
+    return units
+
+
+def extract_related_candidates(
+    seed: str, samples: list[dict], max_candidates: int = 12
+) -> list[dict]:
+    """seed 1개에 대한 뉴스/검색 sample들에서 related_candidate를 규칙 기반 추출.
+
+    method:
+      repeated_term   — 2개 이상 문서에 공통 등장한 의미 토큰(영문) / 2-gram(한글)
+      proper_entity   — title의 대문자 시작 고유명 구(영문, 1회 이상)
+      title_bigram    — title 인접 토큰 2-gram(영문, 1회 이상)
+    seed 자신과 stopword는 제외. 결정적(정렬) 출력. 네트워크 없음.
+    """
+    seed_units = _seed_units(seed)
+    docs_tokens: list[set] = []
+    proper: dict[str, int] = {}
+    bigrams: dict[str, int] = {}
+    ko_runs: dict[str, int] = {}
+
+    for s in samples:
+        title = (s.get("title") or "")
+        text = f"{title} {s.get('snippet') or ''}"
+        toks = [t.lower() for t in _REL_EN_TOKEN.findall(text)
+                if t.lower() not in _REL_STOP_EN and t.lower() not in seed_units]
+        docs_tokens.append(set(toks))
+        # 영문 고유명 구 (title 우선)
+        for m in _REL_EN_PROPER.findall(title):
+            key = m.strip()
+            if key.lower() in seed_units or len(key) < 4:
+                continue
+            if all(w.lower() in _REL_STOP_EN for w in key.split()):
+                continue
+            proper[key] = proper.get(key, 0) + 1
+        # 영문 title bigram
+        title_toks = [t for t in _REL_EN_TOKEN.findall(title)
+                      if t.lower() not in _REL_STOP_EN]
+        for a, b in zip(title_toks, title_toks[1:]):
+            bg = f"{a} {b}"
+            if a.lower() in seed_units and b.lower() in seed_units:
+                continue
+            bigrams[bg] = bigrams.get(bg, 0) + 1
+        # 한글 2-gram run
+        for run in _REL_KO_RUN.findall(text):
+            if run in seed_units or len(run) < 2:
+                continue
+            ko_runs[run] = ko_runs.get(run, 0) + 1
+
+    # 토큰 문서빈도 (몇 개 문서에 등장)
+    df: dict[str, int] = {}
+    for ts in docs_tokens:
+        for t in ts:
+            df[t] = df.get(t, 0) + 1
+
+    out: list[dict] = []
+    seen: set = set()
+
+    def _add(phrase: str, method: str, support: int) -> None:
+        key = phrase.strip().lower()
+        if not key or key in seen or key in seed_units:
+            return
+        seen.add(key)
+        out.append({"phrase": phrase.strip()[:80], "method": method, "support": support})
+
+    for token, support in sorted(df.items(), key=lambda kv: (-kv[1], kv[0])):
+        if support >= 2:
+            _add(token, "repeated_term", support)
+    for run, support in sorted(ko_runs.items(), key=lambda kv: (-kv[1], kv[0])):
+        if support >= 2:
+            _add(run, "repeated_term", support)
+    for phrase, support in sorted(proper.items(), key=lambda kv: (-kv[1], kv[0].lower())):
+        _add(phrase, "proper_entity", support)
+    for bg, support in sorted(bigrams.items(), key=lambda kv: (-kv[1], kv[0].lower())):
+        _add(bg, "title_bigram", support)
+    return out[:max_candidates]
+
+
+def truncate_query(query: str, max_tokens: int = 5, max_chars: int = 60) -> str:
+    """장문 seed query 절단 (RISK-Q05). 토큰 수·문자 수 이중 상한.
+
+    괄호/특수문자 안의 부연은 검색 적합성이 낮으므로 먼저 제거한다.
+    opendart 공시명처럼 토큰 수는 적어도 한 토큰이 매우 긴 경우(공백 없는 장문)
+    토큰 상한만으로는 못 막으므로 문자 상한을 함께 적용한다.
+    """
+    q = re.sub(r"[\(\)\[\]<>{}]", " ", query or "")
+    q = re.sub(r"\s+", " ", q).strip()
+    tokens = q.split(" ")[:max_tokens]
+    out = " ".join(tokens)
+    return out[:max_chars].strip()
 
 
 # ── sample 추출 ──────────────────────────────────────────────────────────────
@@ -202,6 +334,30 @@ _SAMPLE_PATHS: dict[str, dict] = {
             "snippet": "obsrValue", "published_at": "baseDate"},
     "tour": {"list": "response.body.items.item", "title": "title", "url": None,
              "snippet": "addr1", "published_at": "modifiedtime"},
+    # igdb: root가 JSON 배열 ($root) + first_release_date는 unix epoch (공통 정규화)
+    "igdb": {"list": "$root", "title": "name", "url": "url",
+             "snippet": "rating", "published_at": "first_release_date"},
+    # hacker_news: detail 2차 호출 결과가 extracted_payload "items"에 저장됨. time=epoch
+    "hacker_news": {"list": "items", "title": "title", "url": "url",
+                    "snippet": "score", "published_at": "time"},
+    # bok_ecos/eia/its: numeric/카탈로그 — url/date 개념 약함 (docs/08 §5)
+    "bok_ecos": {"list": "StatisticTableList.row", "title": "STAT_NAME",
+                 "url": None, "snippet": "CYCLE", "published_at": None},
+    "eia": {"list": "response.routes", "title": "name", "url": None,
+            "snippet": "description", "published_at": None},
+    "its": {"list": "body.items", "title": "roadName", "url": None,
+            "snippet": "speed", "published_at": "createdDate"},
+}
+
+# per-source XML 태그명 확장 (RSS 표준명 뒤에 시도) — data.go.kr 등 비-RSS XML
+_XML_FIELD_NAMES: dict[str, dict[str, tuple[str, ...]]] = {
+    "culture_info": {
+        "title": ("title", "TITLE"),
+        "url": ("url", "URL"),
+        "snippet": ("place", "PLACE", "area", "realmName"),
+        "published_at": ("startDate", "STRTDATE", "beginDe", "sdate"),
+    },
+    "kopis": {"published_at": ("prfpdfrom",)},  # 기존 하드코딩의 선언화 (동작 동일)
 }
 
 _GENERIC_LIST_KEYS = ("items", "results", "articles", "list", "values",
@@ -228,11 +384,19 @@ def _normalize_sample_url(source_id: str, url) -> Optional[str]:
     return s
 
 
+def _normalize_epoch(value):
+    """unix epoch(초) 정수/실수를 ISO 날짜 문자열로 변환. 그 외는 원본 반환."""
+    if isinstance(value, (int, float)) and value > 10_000_000:
+        return datetime.fromtimestamp(value, tz=timezone.utc).strftime("%Y-%m-%d")
+    return value
+
+
 def _sample_from_json(source_id: str, parsed, max_samples: int) -> list[dict]:
     spec = _SAMPLE_PATHS.get(source_id)
     items = None
     if spec:
-        items = _dig(parsed, spec["list"])
+        # $root: 응답 root 자체가 JSON 배열인 소스 (igdb 등)
+        items = parsed if spec["list"] == "$root" else _dig(parsed, spec["list"])
     if not isinstance(items, list):
         # generic fallback: dict에서 첫 list-of-dicts 필드 또는 root list
         spec = None
@@ -261,6 +425,7 @@ def _sample_from_json(source_id: str, parsed, max_samples: int) -> list[dict]:
             url = next((item[k] for k in _GENERIC_URL_KEYS if item.get(k)), None)
             snippet = next((item[k] for k in _GENERIC_SNIPPET_KEYS if item.get(k)), None)
             published = next((item[k] for k in _GENERIC_TIME_KEYS if item.get(k)), None)
+        published = _normalize_epoch(published)  # igdb/hacker_news epoch → ISO
         samples.append({
             "title": _truncate(_strip_tags(title), _TITLE_MAX),
             "url": _normalize_sample_url(source_id, url),
@@ -286,6 +451,7 @@ def _sample_from_xml(source_id: str, text: str, max_samples: int) -> list[dict]:
     items = root.findall(".//item") or root.findall(f".//{atom}entry")
     if not items and source_id == "kopis":
         items = root.findall(".//db")
+    extra = _XML_FIELD_NAMES.get(source_id, {})
     samples: list[dict] = []
     for el in items[:max_samples]:
         def _find_text(*names):
@@ -297,11 +463,13 @@ def _sample_from_xml(source_id: str, text: str, max_samples: int) -> list[dict]:
                     return child.text or child.get("href")
             return None
         samples.append({
-            "title": _truncate(_find_text("title", "prfnm"), _TITLE_MAX),
-            "url": _truncate(_find_text("link", "guid"), 500),
-            "snippet": _truncate(_strip_tags(_find_text("description", "summary")), _SNIPPET_MAX),
+            "title": _truncate(_find_text("title", "prfnm", *extra.get("title", ())), _TITLE_MAX),
+            "url": _truncate(_find_text("link", "guid", *extra.get("url", ())), 500),
+            "snippet": _truncate(_strip_tags(
+                _find_text("description", "summary", *extra.get("snippet", ()))), _SNIPPET_MAX),
             "published_at": _truncate(
-                _find_text("pubDate", "updated", "published", "prfpdfrom"), 64),
+                _find_text("pubDate", "updated", "published", "prfpdfrom",
+                           *extra.get("published_at", ())), 64),
         })
     return samples
 
@@ -337,12 +505,41 @@ def _sample_from_html(source_id: str, text: str, max_samples: int) -> list[dict]
 
 
 def extract_sample_items(
-    source_id: str, artifact_path: Optional[str], max_samples: int = 3
+    source_id: str,
+    artifact_path: Optional[str],
+    max_samples: int = 3,
+    resolve_canonical: bool = False,
+    canonical_via_browser: bool = False,
 ) -> list[dict]:
     """raw_payload artifact에서 sample item ≤max_samples 추출 (json/xml/html 분기).
 
     title 120자 / snippet 200자 절단. 실패 시 빈 리스트 (예외 없음).
+
+    resolve_canonical=True면 각 sample의 url을 url_resolver로 풀어 canonical_url을 부착한다
+    (네트워크 I/O 발생 — 기본 off라 audit runner/순수 파싱 테스트는 영향 없음). 해석 실패 시
+    canonical_url은 원본 url과 동일(예외 없음).
+
+    canonical_via_browser=True면 HTTP resolve로 풀리지 않는 URL(예: Google News RSS 신형
+    `news.google.com/rss/articles/CBM...`)을 Playwright headless 1-hop으로 승격 해석한다 —
+    ap_news 원본 apnews.com 기사 URL 정규화에 사용. 브라우저 spawn 비용이 크므로 명시 opt-in.
     """
+    samples = _extract_sample_items_raw(source_id, artifact_path, max_samples)
+    if resolve_canonical and samples:
+        from ingestion.tools import url_resolver
+        for s in samples:
+            u = s.get("url")
+            if not u:
+                continue
+            if canonical_via_browser and url_resolver.needs_browser_resolution(u):
+                s["canonical_url"] = url_resolver.resolve_via_browser(u)
+            else:
+                s["canonical_url"] = url_resolver.resolve(u)
+    return samples
+
+
+def _extract_sample_items_raw(
+    source_id: str, artifact_path: Optional[str], max_samples: int
+) -> list[dict]:
     if not artifact_path or not Path(artifact_path).exists():
         return []
     try:
@@ -425,6 +622,12 @@ def collect_samples(result, max_samples: int = 3) -> list[dict]:
     raw_path = result.artifact_paths.raw_payload or result.artifact_paths.raw_html
     if raw_path:
         samples = extract_sample_items(result.source_id, raw_path, max_samples)
+        if samples:
+            return samples
+    # raw가 id 목록형(hacker_news 등)이라 비면 detail이 저장된 extracted_payload 시도
+    ep = getattr(result.artifact_paths, "extracted_payload", None)
+    if ep:
+        samples = extract_sample_items(result.source_id, ep, max_samples)
         if samples:
             return samples
     if result.extraction and result.extraction.rendered_page:
