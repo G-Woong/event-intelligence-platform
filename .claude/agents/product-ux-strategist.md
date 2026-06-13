@@ -22,7 +22,7 @@ tools: Read, Grep, Glob
 - 비즈니스 전략 → commercialization-strategist
 
 ## Required project context
-- 현재 파이프라인 단계 (`docs/Environment_setup/07_WEB_INTELLIGENCE_PIPELINE_ENVIRONMENT.md`)
+- 현재 파이프라인 단계 (`docs/Implementation_Instructions/IMPLEMENTATION_TRACE_FINAL.md`)
 - API 계약 초안
 
 ## Allowed actions

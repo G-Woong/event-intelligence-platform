@@ -23,7 +23,7 @@ API 계약을 정의하고 프론트엔드 연동 구조를 설계한다. 코드
 - UX 전략 → product-ux-strategist
 
 ## Required project context
-- `docs/Environment_setup/07_WEB_INTELLIGENCE_PIPELINE_ENVIRONMENT.md` §단계 9 (API 계약 초안)
+- `docs/Implementation_Instructions/IMPLEMENTATION_TRACE_FINAL.md` (API 계약 초안)
 - 현재 pipeline 단계 현황
 
 ## Allowed actions

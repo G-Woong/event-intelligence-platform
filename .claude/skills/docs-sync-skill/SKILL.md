@@ -17,11 +17,10 @@ TRACE_FINAL / README / checklist / docs/70·86·92 / Environment_setup 문서의
 ## procedure
 1. **단일 출처 확인**:
    - 수집: `docs/Implementation_Instructions/IMPLEMENTATION_TRACE_FINAL.md`
-   - 환경: `docs/Environment_setup/ENVIRONMENT_SETUP_TRACE_FINAL.md`
+   - 환경: `docs/Environment_setup/ENVIRONMENT_SETUP_FINAL.md`
 2. **drift grep** (아래 patterns) 실행, 위반 라인 식별
 3. **갱신**: 위반/누락 섹션을 Edit/Write로 교정
-4. **stub 보호**: 00~10 적용 완료 stub을 active instruction으로 되살리지 않음
-5. **README 진입점 유효성** 확인
+4. **단일 FINAL 유지**: 환경 설정은 `ENVIRONMENT_SETUP_FINAL.md` 하나가 canonical. obsolete trace/spec 문서를 되살리지 않음
 
 ## drift grep patterns
 ```powershell
@@ -39,17 +38,17 @@ Select-String -Path docs -Recurse -Pattern '(?m)current.*\b(PENDING|IN_LOOP)\b' 
 ## failure conditions
 - google_trends_explore가 실제 status로 PASS 표기됨 → 교정 필수
 - gdelt가 NOT_READY로 잔존 → 교정 (실제 PASS)
-- 적용 완료 stub이 active 지시로 재서술됨 → 교정
+- obsolete trace/spec 문서가 active 지시로 재서술됨 → 교정
 
 ## success criteria
 - 핵심 패턴 오표기 0건 (정책 문장 제외)
-- TRACE_FINAL이 단일 출처로 일관됨
-- README 진입점 링크 유효
+- FINAL 문서가 단일 출처로 일관됨 (구현/환경 각 1개)
+- 단일 출처 진입점 링크 유효
 
 ## safety constraints
 - APPLIED 지시서를 active 지시로 재실행 금지
-- 00~10 stub을 원문으로 혼동 금지
-- `_archive_applied/` 파일 무단 삭제 금지 (rm/Remove-Item 금지)
+- obsolete trace/spec 문서를 canonical로 혼동 금지
+- 문서 파일 무단 삭제 금지 (rm/Remove-Item 금지; 제거는 git rm + 사용자 확인)
 - git push 금지 / .env 값 출력 금지
 
 ## output format

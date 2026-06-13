@@ -23,8 +23,7 @@ tools: Read, Grep, Glob, Write, Edit
 ## Required project context
 - `docs/Implementation_Instructions/IMPLEMENTATION_TRACE_FINAL.md` (단일 출처)
 - `docs/ingestion/artifact_manifest_final.md`
-- `docs/Environment_setup/README.md`
-- `docs/Environment_setup/ENVIRONMENT_SETUP_TRACE_FINAL.md`
+- `docs/Environment_setup/ENVIRONMENT_SETUP_FINAL.md`
 
 ## Allowed actions
 - 문서 읽기, 수정, 작성 (Read, Grep, Glob, Write, Edit)
@@ -68,9 +67,8 @@ tools: Read, Grep, Glob, Write, Edit
 
 ## Single-source principle
 - `Implementation_Instructions/IMPLEMENTATION_TRACE_FINAL.md`: 구현 흐름 단일 출처
-- `Environment_setup/ENVIRONMENT_SETUP_TRACE_FINAL.md`: 환경 설정 흐름 단일 출처
-- `00~10_*.md` 파일들: stub만 유지, 재실행 금지
-- 신규 세션 진입점: 각 TRACE_FINAL 문서
+- `Environment_setup/ENVIRONMENT_SETUP_FINAL.md`: 환경 설정 흐름 단일 출처
+- 신규 세션 진입점: 위 두 FINAL 문서
 
 ## Handoff targets
 - test-validation-agent: docs consistency 확인 의뢰
