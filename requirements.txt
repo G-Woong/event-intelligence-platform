@@ -1,0 +1,58 @@
+# Runtime core dependencies — pinned to installed versions (2026-06-08)
+# Install: uv pip install -r requirements.txt
+# Full freeze for reproducibility: see requirements.lock.txt
+
+# ── HTTP fetch ────────────────────────────────────────────────────────────────
+httpx==0.28.1
+requests==2.32.4
+aiohttp==3.12.14
+
+# ── Browser automation ────────────────────────────────────────────────────────
+playwright==1.48.0
+selenium==4.26.1
+
+# ── HTML extraction ───────────────────────────────────────────────────────────
+beautifulsoup4==4.12.3
+lxml==5.3.0
+lxml-html-clean==0.4.4
+trafilatura==1.12.2
+readability-lxml==0.8.1
+
+# ── Feed / RSS ────────────────────────────────────────────────────────────────
+feedparser==6.0.11
+
+# ── Config / settings ─────────────────────────────────────────────────────────
+pyyaml==6.0.2
+pydantic==2.11.7
+pydantic-settings==2.7.1
+python-dotenv==1.1.1
+
+# ── API / web framework ───────────────────────────────────────────────────────
+fastapi==0.115.14
+uvicorn==0.35.0
+starlette==0.46.2
+
+# ── Async / concurrency ───────────────────────────────────────────────────────
+anyio==4.9.0
+
+# ── LLM / observability ───────────────────────────────────────────────────────
+openai==1.108.1
+langsmith==0.1.147
+langchain==0.2.11
+langchain-core==0.2.43
+langchain-openai==0.1.7
+langgraph==0.2.76
+langgraph-checkpoint==2.1.1
+
+# ── Vector store / storage ───────────────────────────────────────────────────
+pymilvus==2.4.4
+redis==5.0.0
+
+# ── Background tasks ─────────────────────────────────────────────────────────
+celery==5.5.3
+kombu==5.5.4
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+tenacity==8.5.0
+python-dateutil==2.9.0.post0
+tqdm==4.67.3

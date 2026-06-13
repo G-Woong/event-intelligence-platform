@@ -60,6 +60,7 @@ sources:
     known_blockers: []
     expected_fields: [title, body, published_at, author]
     implemented: true
+    status: LIVE_SUCCESS  # 2026-06-12 재프로브 실측 (run_collection_probe, html 후보 10건) — CORE_READY 편입
 
   - id: etnews
     name: "전자신문 (ETNews)"
@@ -72,6 +73,7 @@ sources:
     known_blockers: []
     expected_fields: [title, body, published_at, author]
     implemented: true
+    status: LIVE_SUCCESS  # 2026-06-12 재프로브 실측 (run_collection_probe, html 후보 10건) — CORE_READY 편입
 
   - id: yna
     name: "연합뉴스 (Yonhap)"
@@ -84,6 +86,7 @@ sources:
     known_blockers: []
     expected_fields: [title, body, published_at, author]
     implemented: true
+    status: LIVE_SUCCESS  # 2026-06-12 재프로브 실측 (run_collection_probe, RSS item 120건) — CORE_READY 편입
 
   - id: hankyung
     name: "한국경제"
@@ -96,6 +99,7 @@ sources:
     known_blockers: []
     expected_fields: [title, body, published_at, author]
     implemented: true
+    status: LIVE_SUCCESS  # 2026-06-12 재프로브 실측 (run_collection_probe, RSS item 50건) — CORE_READY 편입
 
   - id: maekyung
     name: "매일경제"
@@ -108,6 +112,7 @@ sources:
     known_blockers: []
     expected_fields: [title, body, published_at, author]
     implemented: true
+    status: LIVE_SUCCESS  # 2026-06-12 재프로브 실측 (run_collection_probe, RSS item 50건) — CORE_READY 편입
 
   - id: aljazeera
     name: "Al Jazeera"
@@ -120,6 +125,7 @@ sources:
     known_blockers: []
     expected_fields: [title, body, published_at, author]
     implemented: true
+    status: LIVE_SUCCESS  # 2026-06-12 재프로브 실측 (run_collection_probe, RSS item 25건) — CORE_READY 편입
 
   # ────── Phase 2: 커뮤니티/소셜 (10개, 확정 목록) ──────
   - id: reddit
@@ -133,6 +139,9 @@ sources:
     known_blockers: [rate_limit, api_restriction]
     expected_fields: [title, body, published_at, engagement]
     implemented: true
+    # 2026-06-12 라운드: MVP 적용 보류 (사용자 확정). 코드(sources/reddit.py)는 유지.
+    status: MVP_DEFERRED
+    exclusion_reason: "MVP 적용 보류 — public .json은 동작하나 비로그인 rate_limit 변동성이 커서 MVP 수집 셋에서 제외; 재평가 시 OAuth 전환 검토"
 
   - id: hacker_news
     name: "Hacker News"
@@ -221,6 +230,8 @@ sources:
     known_blockers: [login_wall, api_key_required]
     expected_fields: [title, body, published_at, engagement]
     implemented: true
+    status: MVP_EXCLUDED
+    exclusion_reason: "X API v2 Basic tier required ($100+/mo); login wall on web; excluded until paid API access secured"
 
   - id: cnbc
     name: "CNBC"
@@ -245,6 +256,8 @@ sources:
     known_blockers: [login_wall]
     expected_fields: [title, body, engagement]
     implemented: true
+    status: MVP_EXCLUDED
+    exclusion_reason: "Requires workplace email verification (login_wall); cannot bypass; excluded until auth solution available"
 
   # ────── Phase 3: 공식/데이터 소스 (10개, 확정 목록) ──────
   - id: gdelt
@@ -373,6 +386,8 @@ sources:
     known_blockers: [bot_protection, paywall]
     expected_fields: [title, body, published_at, author]
     implemented: true
+    status: MVP_EXCLUDED
+    exclusion_reason: "Thomson Reuters licensing restrictions; bot protection on web scrape; excluded until official API license obtained"
 
   # ────── Internal ──────
   - id: _dummy
@@ -406,9 +421,10 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "100 req/day free; $5/1000 after"
-    status: MISSING_KEY
-    next_action: set_GOOGLE_CUSTOM_SEARCH_API_KEY_and_CX
+    status: DEPRECATED_OR_EXCLUDED
+    next_action: reactivate_when_CX_and_key_confirmed_working
     implemented: false
+    exclusion_reason: "All probes return 400 (invalid CX or quota); code/spec/alias preserved; reactivate after CX setup"
 
   - id: serper
     name: "Serper (Google SERP API)"
@@ -427,8 +443,8 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "2500 free (one-time); paid after"
-    status: MISSING_KEY
-    next_action: set_SERPER_API_KEY
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, organic 3건)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: tavily
@@ -448,8 +464,8 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "1000 req/month free"
-    status: MISSING_KEY
-    next_action: set_TAVILY_API_KEY
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, results 3건)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: exa
@@ -469,8 +485,8 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "1000 req/month free"
-    status: MISSING_KEY
-    next_action: set_EXA_API_KEY
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, results 3건)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: newsapi
@@ -490,8 +506,8 @@ sources:
     commercial_risk: medium
     terms_risk: medium
     rate_limit_summary: "100 req/day free; no commercial use"
-    status: MISSING_KEY
-    next_action: set_NEWSAPI_API_KEY
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, articles 3건)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: gnews
@@ -511,8 +527,8 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "100 req/day, 10 articles/req free"
-    status: MISSING_KEY
-    next_action: set_GNEWS_API_KEY
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, articles 3건)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: guardian
@@ -532,8 +548,8 @@ sources:
     commercial_risk: medium
     terms_risk: medium
     rate_limit_summary: "5000 calls/day free; no commercial redistribution"
-    status: MISSING_KEY
-    next_action: set_GUARDIAN_API_KEY
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, response 정상)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: nyt
@@ -553,8 +569,8 @@ sources:
     commercial_risk: high
     terms_risk: high
     rate_limit_summary: "500 req/day free; commercial license required"
-    status: MISSING_KEY
-    next_action: set_NYT_API_KEY
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, docs 3건)
+    next_action: integrate_into_pipeline
     implemented: false
 
   # fast_signal (external, API key 없음)
@@ -639,8 +655,8 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "60 req/min free; real-time US stocks"
-    status: MISSING_KEY
-    next_action: set_FINNHUB_API_KEY
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, quote 필드 정상)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: twelve_data
@@ -660,8 +676,8 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "800 credits/day free"
-    status: MISSING_KEY
-    next_action: set_TWELVE_DATA_API_KEY
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, values 3건)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: alpha_vantage
@@ -681,8 +697,8 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "25 req/day free (verify current limit)"
-    status: MISSING_KEY
-    next_action: set_ALPHA_VANTAGE_API_KEY
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, Time Series 100건)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: polygon
@@ -702,8 +718,8 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "Unlimited prev-day data free; real-time requires paid"
-    status: MISSING_KEY
-    next_action: set_POLYGON_API_KEY
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, prev-day aggs 정상)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: coinbase_market
@@ -756,9 +772,9 @@ sources:
     role: secondary
     phase: 4
     layer: domain_signal
-    base_url: "https://apihub.kma.go.kr/api/typ01/url/kma_sfcdd.php"
+    base_url: "https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
     known_blockers: [api_key_required]
-    expected_fields: [date, weather_code, temp, location]
+    expected_fields: [baseDate, baseTime, category, obsrValue, nx, ny]
     auth: query_param_serviceKey
     env_keys: [KMA_API_KEY]
     evidence_type: weather_data
@@ -766,8 +782,9 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "Free via data.go.kr; quota UNKNOWN"
-    status: MISSING_KEY
-    next_action: set_KMA_API_KEY_via_data.go.kr
+    # 2026-06-12 실측: apihub.kma.go.kr는 별도 authKey 발급 필요(401) → data.go.kr 단기예보로 전환 후 성공
+    status: LIVE_SUCCESS
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: tour
@@ -777,7 +794,7 @@ sources:
     role: secondary
     phase: 4
     layer: domain_signal
-    base_url: "https://apis.data.go.kr/B551011/KorService1/areaBasedList1"
+    base_url: "https://apis.data.go.kr/B551011/KorService2/areaBasedList2"
     known_blockers: [api_key_required]
     expected_fields: [title, address, category, mapX, mapY]
     auth: query_param_serviceKey
@@ -787,8 +804,9 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "Free via data.go.kr; quota UNKNOWN"
-    status: MISSING_KEY
-    next_action: set_TOUR_API_KEY_via_data.go.kr
+    # 2026-06-12 실측: KorService1 폐기(500) → KorService2/areaBasedList2로 전환 후 성공
+    status: LIVE_SUCCESS
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: its
@@ -798,7 +816,7 @@ sources:
     role: secondary
     phase: 4
     layer: domain_signal
-    base_url: "https://openapi.its.go.kr:9443/api/"
+    base_url: "https://openapi.its.go.kr:9443/trafficInfo"
     known_blockers: [api_key_required]
     expected_fields: [road_name, incident_type, timestamp, location]
     auth: query_param_apiKey
@@ -808,8 +826,9 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "Free via its.go.kr; quota UNKNOWN"
-    status: MISSING_KEY
-    next_action: set_ITS_API_KEY_via_its.go.kr
+    # 2026-06-12 실측: 구 NCMInfra 경로 4004(잘못된 URL) → /trafficInfo로 전환 후 성공
+    status: LIVE_SUCCESS
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: kofic
@@ -823,14 +842,14 @@ sources:
     known_blockers: [api_key_required]
     expected_fields: [rank, movieNm, openDt, salesAmt, audiCnt]
     auth: query_param_key
-    env_keys: [KOBIS_API_KEY]
+    env_keys: [KOFIC_API_KEY]
     evidence_type: box_office
     mvp_priority: P1
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "Free; key via kobis.or.kr; quota UNKNOWN"
-    status: MISSING_KEY
-    next_action: set_KOBIS_API_KEY_via_kobis.or.kr
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, dailyBoxOfficeList 정상); env key는 KOFIC_API_KEY
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: tmdb
@@ -850,8 +869,8 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "~100 req/hour free; generous quota"
-    status: MISSING_KEY
-    next_action: set_TMDB_API_KEY
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, results 정상)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: kopis
@@ -871,8 +890,8 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "Free via kopis.or.kr; quota UNKNOWN"
-    status: MISSING_KEY
-    next_action: set_KOPIS_API_KEY_via_kopis.or.kr
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, 공연목록 XML 정상)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: aladin
@@ -892,8 +911,8 @@ sources:
     commercial_risk: medium
     terms_risk: medium
     rate_limit_summary: "Personal use free; commercial requires agreement"
-    status: MISSING_KEY
-    next_action: set_ALADIN_TTB_KEY
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (http 200, item 3건)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: igdb
@@ -913,8 +932,8 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "4 req/sec; unlimited total via Twitch OAuth"
-    status: MISSING_KEY
-    next_action: set_IGDB_CLIENT_ID_and_SECRET
+    status: LIVE_SUCCESS  # 2026-06-12 실측 (Twitch OAuth flow 정상, games 3건)
+    next_action: integrate_into_pipeline
     implemented: false
 
   - id: culture_info
@@ -924,7 +943,7 @@ sources:
     role: secondary
     phase: 4
     layer: domain_signal
-    base_url: "https://www.culture.go.kr/openapi/rest/publicperformancedisplays/period"
+    base_url: "https://apis.data.go.kr/B553457/cultureinfo/period2"
     known_blockers: [api_key_required]
     expected_fields: [title, startDate, endDate, place, realmName]
     auth: query_param_serviceKey
@@ -934,6 +953,7 @@ sources:
     commercial_risk: low
     terms_risk: low
     rate_limit_summary: "Free via culture.go.kr; quota UNKNOWN"
-    status: MISSING_KEY
-    next_action: set_CULTURE_INFO_API_KEY_via_culture.go.kr
+    # 2026-06-12 실측: 구 culture.go.kr REST 폐기(HTML 에러페이지) → data.go.kr period2로 전환 후 성공
+    status: LIVE_SUCCESS
+    next_action: integrate_into_pipeline
     implemented: false

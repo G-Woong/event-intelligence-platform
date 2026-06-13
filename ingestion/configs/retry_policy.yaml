@@ -20,3 +20,16 @@ no_retry_on:
   - PAYWALL_DETECTED
   - ROBOTS_BLOCKED
   - HTTP_4XX
+
+# 소스별 전략 budget override.
+# 전역 기본 3은 httpx 계열에서 끝나므로, Playwright-first(js_heavy)·
+# EXTRACTION_EMPTY 점프 대상 소스는 브라우저 전략까지 도달하도록 확장한다.
+per_source:
+  krx_kind:
+    max_strategies_per_url: 8   # js_heavy — playwright 필수
+  eu_press_corner:
+    max_strategies_per_url: 8   # js_heavy — playwright 필수
+  dcinside:
+    max_strategies_per_url: 6   # anti_bot — EXTRACTION_EMPTY → playwright 점프 대상
+  fmkorea:
+    max_strategies_per_url: 6   # anti_bot — EXTRACTION_EMPTY → playwright 점프 대상

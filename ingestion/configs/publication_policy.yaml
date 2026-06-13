@@ -1,0 +1,48 @@
+# Publication boundary / quota policy (RISK 12-7)
+# 수집(ingestion)과 게시(publication)의 경계 정의.
+# 이 파일은 수집 경로에 연결되지 않는다 — 미래 게시 계층(API/프론트)용 가드.
+# registry 57개 entry는 수정하지 않는다 (별도 파일 정책).
+
+default:
+  # 원문 전문 게시 금지 — 요약/프리뷰 + 원문 링크만
+  allow_full_text_publication: false
+  max_public_preview_chars: 200
+  attribution_required: true       # 출처(소스명) 표기 필수
+  source_url_required: true        # 원문 URL 없으면 게시 후보 불가
+  raw_artifact_visibility: internal_only  # raw_html/raw_payload/screenshot 외부 노출 금지
+  quota_limit_notes: >-
+    무료 플랜 쿼터(per-source rate_limit_policy.yaml 참조)를 게시 트래픽이 아닌
+    수집 트래픽 기준으로만 소모한다. 게시 계층은 수집 artifact를 재사용하며
+    소스 API를 직접 호출하지 않는다.
+
+per_source:
+  # 검색/AI API — 결과 재배포 제한 약관이 일반적 (검증 전까지 프리뷰 더 보수적으로)
+  serper:
+    max_public_preview_chars: 0    # 결과 자체 비게시 — 내부 시그널 전용
+    quota_limit_notes: "SERP 결과 재배포 금지 약관 — 내부 랭킹 시그널로만 사용"
+  tavily:
+    max_public_preview_chars: 0
+    quota_limit_notes: "검색 결과 재배포 제한 — 내부 시그널 전용"
+  exa:
+    max_public_preview_chars: 0
+    quota_limit_notes: "검색 결과 재배포 제한 — 내부 시그널 전용"
+  newsapi:
+    max_public_preview_chars: 0
+    quota_limit_notes: "developer plan은 상업적 사용/재배포 금지 — 내부 시그널 전용"
+
+  # 커뮤니티 — 개인 게시물: 인용 최소화
+  reddit:
+    max_public_preview_chars: 100
+    quota_limit_notes: "Reddit Data API 약관 — 사용자 콘텐츠 재배포 제한"
+  dcinside:
+    max_public_preview_chars: 100
+  fmkorea:
+    max_public_preview_chars: 100
+
+  # 공공/정부 — 출처 표기 시 전문 인용 상대적으로 관대 (단, 기본은 보수 유지)
+  federal_register:
+    max_public_preview_chars: 500
+    quota_limit_notes: "미 연방 공보 — 공공 도메인이나 attribution 유지"
+  sec_edgar:
+    max_public_preview_chars: 500
+    quota_limit_notes: "EDGAR 공시 — 공공 정보, fair access 정책 준수"

@@ -1,0 +1,201 @@
+# Playwright probe site specifications
+# official: true only for sites operated by official organisations
+# evidence_level: low | low_to_medium | medium | high
+# deferred: true = spec only, no live run this round
+
+sites:
+  signal_bz:
+    layer: fast_signal
+    input_type: none
+    collection_method: playwright
+    start_url: "https://www.signal.bz/"
+    official: false
+    evidence_level: low
+    max_items_default: 10
+    min_interval_minutes: 30
+    selectors:
+      list:
+        - ".rank-tex"
+        - ".rank-layer .rank-tex"
+        - ".realtime-rank .rank-tex"
+        - ".rank-layer"
+      click_target: []
+      wait_for: ".rank-tex"
+    status:
+      if_captcha: BLOCKED
+      if_login: BLOCKED
+      if_empty: LIVE_PARTIAL
+    search_strategy: page_load_only
+    wait_after_ms: 3000
+    deferred: false
+
+  google_trending_now:
+    layer: fast_signal
+    input_type: region
+    collection_method: playwright
+    start_url: "https://trends.google.com/trending?geo={region}"
+    official: true
+    evidence_level: low_to_medium
+    max_items_default: 10
+    min_interval_minutes: 60
+    selectors:
+      list:
+        - ".mZ3RIc"
+        - "[jsname='FGHLXd']"
+        - ".trending-searches-list li"
+        - "feed-list-wrapper li"
+        - "td.col-1"
+      click_target: []
+    status:
+      if_captcha: BLOCKED
+      if_login: BLOCKED
+      if_empty: LIVE_PARTIAL
+    search_strategy: page_load_scroll
+    deferred: false
+
+  google_trends_explore:
+    layer: fast_signal
+    input_type: keyword
+    collection_method: playwright
+    start_url: "https://trends.google.com/trends/explore?q={query}&geo={region}"
+    official: false
+    evidence_level: low
+    max_items_default: 5
+    min_interval_minutes: 120
+    selectors:
+      list:
+        - ".fe-related-queries-item"
+        - ".related-queries-table tr td:first-child"
+        - "[jsname='CtgRsb']"
+      click_target: []
+    status:
+      if_captcha: BLOCKED
+      if_login: BLOCKED
+      if_empty: LIVE_PARTIAL
+    search_strategy: page_load_scroll
+    deferred: false
+
+  dcinside:
+    layer: community_signal
+    input_type: keyword
+    collection_method: playwright
+    start_url: "https://gall.dcinside.com/board/lists/?id=stock_new1"
+    official: false
+    evidence_level: low
+    max_items_default: 3
+    min_interval_minutes: 10
+    selectors:
+      list:
+        - "tr.ub-content .gall_tit a"
+        - ".ub-content td.gall_tit a"
+        - ".listwrap .ub-content a"
+      click_target:
+        - "tr.ub-content .gall_tit a"
+    status:
+      if_captcha: BLOCKED
+      if_login: BLOCKED
+      if_empty: LIVE_PARTIAL
+    search_strategy: page_load_only
+    deferred: false
+
+  fmkorea:
+    layer: community_signal
+    input_type: keyword
+    collection_method: playwright
+    start_url: "https://www.fmkorea.com/index.php?mid=stock"
+    official: false
+    evidence_level: low
+    max_items_default: 3
+    min_interval_minutes: 10
+    selectors:
+      list:
+        - ".li_best .title a"
+        - ".li_normal .title a"
+        - ".listType2 .title a"
+        - "article .title a"
+      click_target:
+        - ".li_best .title a"
+        - ".li_normal .title a"
+    status:
+      if_captcha: BLOCKED
+      if_login: BLOCKED
+      if_empty: LIVE_PARTIAL
+    search_strategy: page_load_only
+    deferred: true
+    deferred_reason: "BLOCKED: Cloudflare Turnstile bot challenge detected on 2026-06-03; bypass not permitted"
+
+  krx_kind:
+    layer: official_evidence
+    input_type: none
+    collection_method: playwright
+    start_url: "https://kind.krx.co.kr/disclosure/todaydisclosure.do"
+    official: true
+    evidence_level: high
+    max_items_default: 10
+    min_interval_minutes: 60
+    selectors:
+      list:
+        - "table.list tbody tr td.col-1 a"
+        - "table.list tbody tr"
+        - ".tblList tbody tr td a"
+      click_target: []
+    status:
+      if_captcha: BLOCKED
+      if_login: BLOCKED
+      if_empty: LIVE_PARTIAL
+    search_strategy: page_load_wait_js
+    wait_after_ms: 2000
+    deferred: true
+    deferred_reason: "SERVER_ERROR: kind.krx.co.kr returns 1.3KB error page (EUC-KR오류 title); confirmed 2026-06-08; retry next round with mobile UA or different endpoint"
+
+  eu_press_corner:
+    layer: official_evidence
+    input_type: none
+    collection_method: playwright
+    start_url: "https://ec.europa.eu/commission/presscorner/home/en"
+    official: true
+    evidence_level: high
+    max_items_default: 10
+    min_interval_minutes: 120
+    selectors:
+      list:
+        - "a[href*=\"detail/en/\"]"
+        - "article.ecl-content-item h3 a"
+        - "article.ecl-content-item .ecl-link"
+        - ".ecl-content-item__title a"
+        - "ecl-content-item .ecl-content-block__title a"
+        - "article h3 a"
+      click_target: []
+      wait_for: "article, .ecl-content-item, ecl-content-item"
+    status:
+      if_captcha: BLOCKED
+      if_login: BLOCKED
+      if_empty: LIVE_PARTIAL
+    search_strategy: page_load_scroll
+    wait_after_ms: 4000
+    deferred: false
+
+  loword:
+    layer: fast_signal
+    input_type: none
+    collection_method: playwright
+    start_url: "https://loword.co.kr/"
+    official: false
+    evidence_level: low
+    max_items_default: 10
+    min_interval_minutes: 30
+    selectors:
+      list:
+        - "span[style*=\"line-height: 20px\"]"
+        - "span[style*=\"font-size: 16px\"]"
+        - "span[style*=\"font-weight: 600\"]"
+      click_target: []
+      wait_for: "body"
+    status:
+      if_captcha: BLOCKED
+      if_login: BLOCKED
+      if_empty: LIVE_PARTIAL
+    search_strategy: page_load_only
+    wait_after_ms: 3000
+    deferred: false
+    note: "Uses styled-components (CSS-in-JS) inline style selectors — may break on site rebuild"

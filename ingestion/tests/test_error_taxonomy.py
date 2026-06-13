@@ -13,7 +13,7 @@ from ingestion.core.error_taxonomy import (
 
 
 def test_error_type_count():
-    assert len(ErrorType) == 34  # +8 API-level error types added in source repair round
+    assert len(ErrorType) == 36  # +8 API-level (repair round) +2 Playwright/signal (remaining resolution)
 
 
 def test_retryable_errors_are_subset():
@@ -142,3 +142,15 @@ def test_new_errors_not_retryable():
     ):
         assert et not in RETRYABLE_ERRORS, f"{et} should not be retryable"
         assert et not in BLOCKED_ERRORS, f"{et} should not be a blocker"
+
+
+def test_selector_matched_but_url_empty_exists_and_not_retryable():
+    assert ErrorType.SELECTOR_MATCHED_BUT_URL_EMPTY
+    assert ErrorType.SELECTOR_MATCHED_BUT_URL_EMPTY not in RETRYABLE_ERRORS
+    assert ErrorType.SELECTOR_MATCHED_BUT_URL_EMPTY not in BLOCKED_ERRORS
+
+
+def test_low_evidence_external_signal_exists_and_not_retryable():
+    assert ErrorType.LOW_EVIDENCE_EXTERNAL_SIGNAL
+    assert ErrorType.LOW_EVIDENCE_EXTERNAL_SIGNAL not in RETRYABLE_ERRORS
+    assert ErrorType.LOW_EVIDENCE_EXTERNAL_SIGNAL not in BLOCKED_ERRORS

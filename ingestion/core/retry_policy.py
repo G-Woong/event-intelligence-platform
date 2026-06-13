@@ -28,6 +28,7 @@ class RetryPolicy:
     max_delay_sec: float = 30.0
     exponential_base: float = 2.0
     retry_on: frozenset[str] = None  # type: ignore[assignment]
+    per_source_budget: dict[str, int] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         if self.retry_on is None:
@@ -39,6 +40,12 @@ class RetryPolicy:
                 "LLM_TIMEOUT",
                 "LLM_RATE_LIMIT",
             })
+        if self.per_source_budget is None:
+            self.per_source_budget = {}
+
+    def budget_for(self, source_id: str) -> int:
+        """Per-source strategy budget; falls back to global max_strategies_per_url."""
+        return self.per_source_budget.get(source_id, self.max_strategies_per_url)
 
     def next_strategy(self, current: str) -> Optional[str]:
         try:
@@ -62,6 +69,12 @@ def load_retry_policy(config_path: Path) -> RetryPolicy:
     with open(config_path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
     backoff = data.get("backoff", {})
+    per_source_raw = data.get("per_source") or {}
+    per_source_budget = {
+        sid: cfg["max_strategies_per_url"]
+        for sid, cfg in per_source_raw.items()
+        if isinstance(cfg, dict) and "max_strategies_per_url" in cfg
+    }
     return RetryPolicy(
         max_attempts=data.get("max_attempts", 5),
         max_strategies_per_url=data.get("max_strategies_per_url", 3),
@@ -69,4 +82,5 @@ def load_retry_policy(config_path: Path) -> RetryPolicy:
         max_delay_sec=backoff.get("max_delay_sec", 30.0),
         exponential_base=backoff.get("exponential_base", 2.0),
         retry_on=frozenset(data.get("retry_on", [])),
+        per_source_budget=per_source_budget,
     )

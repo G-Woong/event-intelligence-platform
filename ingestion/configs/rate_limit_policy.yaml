@@ -1,0 +1,33 @@
+# Backing store for call cache + 429 cooldown persistence.
+# backend: memory(기본, 기존 동작) | local_file(재기동 생존) | redis(plans/012 멀티워커)
+# 우선순위: env INGESTION_RATE_LIMIT_BACKEND > 이 섹션 > memory
+rate_limit_backend:
+  backend: memory
+  local_file_path: ""   # 비우면 ingestion/outputs/state/rate_limit_cache.json
+  redis_url_env: REDIS_URL
+
+default:
+  min_interval_seconds: 0
+  max_calls_per_run: 1
+  cooldown_on_429_seconds: 60
+  max_retries_on_429: 1
+  cache_ttl_seconds: 0
+
+per_source:
+  gdelt:
+    min_interval_seconds: 5
+    cooldown_on_429_seconds: 300
+    max_retries_on_429: 1
+    cache_ttl_seconds: 900
+  # google_trends: 1800s 간격에서도 429 재발 이력 → 7200s로 강화 (12-6).
+  # trends 신선도 요구는 수 시간 단위라 수집 가치 손실 없음.
+  google_trends_explore:
+    min_interval_seconds: 7200
+    cooldown_on_429_seconds: 3600
+    max_retries_on_429: 0
+    cache_ttl_seconds: 7200
+  google_trending_now:
+    min_interval_seconds: 7200
+    cooldown_on_429_seconds: 3600
+    max_retries_on_429: 0
+    cache_ttl_seconds: 7200

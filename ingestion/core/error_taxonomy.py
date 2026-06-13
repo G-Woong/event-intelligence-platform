@@ -41,6 +41,10 @@ class ErrorType(Enum):
     XML_PARAMETER_ERROR = "XML_PARAMETER_ERROR"
     API_RETURNED_HTML_ERROR_PAGE = "API_RETURNED_HTML_ERROR_PAGE"
     DYNAMIC_RENDER_REQUIRED = "DYNAMIC_RENDER_REQUIRED"
+    # Playwright selector matched but extracted href/url was empty (selector fallback signal)
+    SELECTOR_MATCHED_BUT_URL_EMPTY = "SELECTOR_MATCHED_BUT_URL_EMPTY"
+    # Low-credibility external signal (official=false, evidence_level=low)
+    LOW_EVIDENCE_EXTERNAL_SIGNAL = "LOW_EVIDENCE_EXTERNAL_SIGNAL"
 
 
 RETRYABLE_ERRORS: frozenset[ErrorType] = frozenset({

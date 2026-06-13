@@ -31,7 +31,17 @@ async def open_page(
     wait_selector: Optional[str] = None,
     screenshot_path: Optional[Path] = None,
     dom_snapshot_path: Optional[Path] = None,
+    capture_network: bool = False,
 ) -> Optional[str]:
+    """Render a page with Playwright and return its HTML content.
+
+    Args:
+        capture_network: When True, attach a response listener and collect
+            publicly observable requests (URL, method, status, content-type,
+            and small JSON bodies ≤4 KB). Results are returned via the module-level
+            ``last_network_log`` list — caller should read it immediately after await.
+            No login / auth bypass — observation only.
+    """
     await _ensure_rate_limit()
     try:
         from playwright.async_api import async_playwright
@@ -50,6 +60,32 @@ async def open_page(
                     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
                 ),
             )
+
+            network_entries: list[dict] = []
+            if capture_network:
+                async def _on_response(response) -> None:
+                    try:
+                        entry: dict = {
+                            "url": response.url,
+                            "method": response.request.method,
+                            "status": response.status,
+                            "content_type": response.headers.get("content-type", ""),
+                        }
+                        ct = entry["content_type"].lower()
+                        if "json" in ct:
+                            try:
+                                body = await response.body()
+                                if len(body) <= 4096:
+                                    import json as _json
+                                    entry["json_body"] = _json.loads(body)
+                            except Exception:
+                                pass
+                        network_entries.append(entry)
+                    except Exception:
+                        pass
+
+                page.on("response", _on_response)
+
             await page.goto(url, wait_until=wait_until, timeout=timeout_ms)
 
             if wait_after_ms > 0:
@@ -75,6 +111,12 @@ async def open_page(
                 dom_snapshot_path.parent.mkdir(parents=True, exist_ok=True)
                 dom_snapshot_path.write_text(html[:50000], encoding="utf-8")
 
+            if capture_network:
+                # Small wait to allow any final XHR responses to settle
+                await asyncio.sleep(0.5)
+                last_network_log.clear()
+                last_network_log.extend(network_entries)
+
             await browser.close()
     except Exception as exc:
         logger.warning("playwright open_page error: %s - %s", url, exc)
@@ -82,6 +124,11 @@ async def open_page(
             await _save_error_screenshot(url, screenshot_path)
         html = None
     return html
+
+
+# Module-level network log — populated when capture_network=True.
+# Caller must read this immediately after awaiting open_page().
+last_network_log: list[dict] = []
 
 
 async def _scroll_page(page, steps: int = 3, delay_ms: int = 500) -> None:
