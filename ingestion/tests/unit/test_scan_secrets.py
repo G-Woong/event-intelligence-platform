@@ -67,7 +67,7 @@ def test_pattern_hit_is_warning_not_blocked(tmp_path: Path, fake_env: Path):
     target = tmp_path / "docs"
     target.mkdir()
     (target / "doc.md").write_text(
-        "token: sk-aaaabbbbccccddddeeeeffff1234\n", encoding="utf-8"
+        "token: sk-aaaabbbbccccddddeeeeffff1234\n", encoding="utf-8"  # pragma: allowlist secret
     )
     report = scan_paths([target], env_path=fake_env)
     assert report["verdict"] == "WARNING"
@@ -109,12 +109,12 @@ def test_real_openai_key_shape_still_warns(tmp_path: Path, fake_env: Path):
     from ingestion.tools.scan_secrets import _is_openai_url_slug_false_positive
     assert _is_openai_url_slug_false_positive("sk-if-iran-war-persists") is True
     assert _is_openai_url_slug_false_positive("sk-spacex-tesla-ipo-trillionaire-billionaire-") is True
-    assert _is_openai_url_slug_false_positive("sk-proj-Ab12Cd34Ef56Gh78Ij90Kl12Mn34") is False
-    assert _is_openai_url_slug_false_positive("sk-aaaabbbbccccddddeeeeffff1234") is False
+    assert _is_openai_url_slug_false_positive("sk-proj-Ab12Cd34Ef56Gh78Ij90Kl12Mn34") is False  # pragma: allowlist secret
+    assert _is_openai_url_slug_false_positive("sk-aaaabbbbccccddddeeeeffff1234") is False  # pragma: allowlist secret
     target = tmp_path / "docs"
     target.mkdir()
     (target / "leak.md").write_text(
-        "token: sk-proj-Ab12Cd34Ef56Gh78Ij90Kl12Mn34xyz\n", encoding="utf-8"
+        "token: sk-proj-Ab12Cd34Ef56Gh78Ij90Kl12Mn34xyz\n", encoding="utf-8"  # pragma: allowlist secret
     )
     report = scan_paths([target], env_path=fake_env)
     assert report["verdict"] == "WARNING"
@@ -152,6 +152,54 @@ def test_main_exit_codes(tmp_path: Path, fake_env: Path, capsys):
     out = capsys.readouterr().out
     assert (_FAKE_ENV_VALUE in out) is False
     assert "MY_TEST_API_KEY" in out
+
+
+def test_code_reference_assignment_is_not_secret(tmp_path: Path, fake_env: Path):
+    """`access_token = func(...)` 같은 함수 호출/식별자 참조는 secret이 아니다."""
+    target = tmp_path / "src"
+    target.mkdir()
+    (target / "a.py").write_text(
+        "access_token = _igdb_get_access_token(client_id, client_secret)\n",
+        encoding="utf-8",
+    )
+    report = scan_paths([target], env_path=fake_env)
+    assert report["verdict"] == "PASS"
+    assert report["findings"] == []
+
+
+def test_quoted_credential_literal_still_warns(tmp_path: Path, fake_env: Path):
+    """따옴표 리터럴로 박힌 credential 값은 함수호출 FP와 무관하게 여전히 WARNING."""
+    target = tmp_path / "src"
+    target.mkdir()
+    (target / "b.py").write_text(
+        'access_token = "Ab12Cd34Ef56Gh78Ij90Kl12"\n', encoding="utf-8"  # pragma: allowlist secret
+    )
+    report = scan_paths([target], env_path=fake_env)
+    assert report["verdict"] == "WARNING"
+
+
+def test_allowlist_pragma_suppresses_pattern_warning(tmp_path: Path, fake_env: Path):
+    """`# pragma: allowlist secret` 이 있는 라인의 Layer1 패턴 경고는 면제된다."""
+    target = tmp_path / "docs"
+    target.mkdir()
+    (target / "f.md").write_text(
+        "token: sk-aaaabbbbccccddddeeeeffff1234  # pragma: allowlist secret\n",
+        encoding="utf-8",
+    )
+    report = scan_paths([target], env_path=fake_env)
+    assert report["verdict"] == "PASS"
+    assert report["findings"] == []
+
+
+def test_allowlist_pragma_does_not_suppress_env_value_leak(tmp_path: Path, fake_env: Path):
+    """pragma 가 있어도 실제 .env 값 누출(Layer2 BLOCKED)은 절대 면제되지 않는다."""
+    target = tmp_path / "outputs"
+    target.mkdir()
+    (target / "leak.txt").write_text(
+        f"echoed {_FAKE_ENV_VALUE}  # pragma: allowlist secret\n", encoding="utf-8"
+    )
+    report = scan_paths([target], env_path=fake_env)
+    assert report["verdict"] == "BLOCKED"
 
 
 # ── _sanitize_response 회귀 테스트 (api_probe) ─────────────────────────────

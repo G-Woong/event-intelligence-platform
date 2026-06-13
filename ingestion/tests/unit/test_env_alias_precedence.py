@@ -40,7 +40,7 @@ def test_legacy_alone_still_resolves(monkeypatch):
 def test_env_status_resolves_via_alias(tmp_path: Path, monkeypatch):
     monkeypatch.delenv("BOK_ECOS_API_KEY", raising=False)
     monkeypatch.delenv("ECOS_API_KEY", raising=False)
-    env = _write_env(tmp_path, "ECOS_API_KEY=fake_alias_value_xyz\n")
+    env = _write_env(tmp_path, "ECOS_API_KEY=fake_alias_value_xyz\n")  # pragma: allowlist secret
     status = env_status(["BOK_ECOS_API_KEY"], env_path=env)
     assert status["BOK_ECOS_API_KEY"] == "present"
 

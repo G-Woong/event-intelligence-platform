@@ -42,9 +42,26 @@ _PLACEHOLDER_MARKERS = (
     "placeholder", "PLACEHOLDER", "xxxx", "XXXX", "...",
 )
 
+# Inline allowlist pragma — a line carrying this marker is exempt from Layer 1
+# pattern WARNINGs (intentional test fixtures only). It NEVER suppresses Layer 2
+# BLOCKED findings (a real .env value leak is reported regardless of the pragma).
+_ALLOWLIST_PRAGMA = "pragma: allowlist secret"
+
 
 def _is_placeholder(matched: str, line: str) -> bool:
     return any(m in matched or m in line for m in _PLACEHOLDER_MARKERS)
+
+
+def _is_code_reference_false_positive(matched: str, line: str, end: int) -> bool:
+    """`generic_api_key_assign` 매치가 리터럴 secret이 아니라 코드 식별자/함수 호출인지 판별.
+
+    `access_token = _igdb_get_access_token(client_id, client_secret)`처럼 RHS가
+    따옴표 없는 식별자이고 바로 뒤가 '('이면 값이 아니라 함수 호출 표현식이다.
+    따옴표가 있으면(리터럴 문자열) secret 후보로 남긴다 — 전체 무시가 아니다.
+    """
+    if "'" in matched or '"' in matched:
+        return False  # 따옴표 리터럴 → 잠재 secret, 그대로 WARNING
+    return line[end:end + 1] == "("  # 매치 직후 '(' → 함수 호출
 
 
 def _is_openai_url_slug_false_positive(matched: str) -> bool:
@@ -151,6 +168,9 @@ def scan_paths(
                         "file": str(f),
                         "line": lineno,
                     })
+            # 인라인 allowlist pragma → Layer 1 패턴 경고만 면제(Layer 2 BLOCKED는 위에서 이미 처리).
+            if _ALLOWLIST_PRAGMA in line:
+                continue
             # Layer 1: pattern hit → WARNING
             for pat_name, pattern in _SECRET_PATTERNS:
                 m = pattern.search(line)
@@ -161,6 +181,9 @@ def scan_paths(
                         prev = line[m.start() - 1] if m.start() > 0 else ""
                         if prev.isalnum() or _is_openai_url_slug_false_positive(m.group(0)):
                             continue
+                    if pat_name == "generic_api_key_assign" and \
+                            _is_code_reference_false_positive(m.group(0), line, m.end()):
+                        continue
                     findings.append({
                         "severity": "WARNING",
                         "type": f"PATTERN_{pat_name.upper()}",
