@@ -36,24 +36,32 @@
 
 ---
 
+## 적용 완료 항목 (2026-06-13 APPLY 턴)
+
+| 항목 | 상태 |
+|------|------|
+| Skills (`.claude/skills/*/SKILL.md`) | APPLIED — 5개 (test-validation, source-audit, artifact-manifest, docs-sync, runner-contract) |
+| Hook 스크립트 (`.claude/hooks/*.py`) | APPLIED — 3개 (forbidden-command-guard 차단형 / secret-scan-reminder / docs-conflict-grep-check) |
+| Hook wiring (`settings.json` hooks) | APPLIED (로컬 전용 — settings.json은 git untracked) |
+| Hook 라이브 활성화 | CONFIRMED (별도 trust 조작 없이 동작; 라이브 차단/허용 실증) |
+
+> 상세 평가/검증: [SKILLS_HOOKS_APPLY_TRACE.md](./SKILLS_HOOKS_APPLY_TRACE.md)
+
 ## 이번 턴 미적용 항목
 
 | 항목 | 상태 | 다음 단계 |
 |------|------|---------|
 | MCP 신규 설치 | NOT_APPLIED (REJECT 3 + DEFER 7) | NEXT_TURN_MCP_REVIEW |
-| Skills (.claude/skills/) | NOT_APPLIED — 명세서 확정 완료 | NEXT_TURN_SKILLS_HOOKS_APPLY |
-| Hooks (settings.json hooks 섹션) | NOT_APPLIED — 명세서 확정 완료 | NEXT_TURN_SKILLS_HOOKS_APPLY |
 | Plugins | DEFERRED (skills/hooks 안정화 후) | - |
+| settings.json git 추적 | USER_DECISION_REQUIRED (현재 로컬 전용) | - |
 | WebSearch/WebFetch in 4 agents | USER_DECISION_REQUIRED (공식 지원 확인됨) | - |
+| Phase 2/3 skills, 추가 hooks | DEFERRED | 안정화 후 |
 
 ---
 
 ## 다음 적용 순서
 
-1. **Skills + Hooks** (Phase 1 Apply) — `11_SKILLS_HOOKS_MCP_PLUGIN_SPEC.md §14` 기반으로 적용
-   - `.claude/skills/<name>/SKILL.md` (subdirectory 형식, flat file 아님)
-   - `settings.json` hooks 섹션 추가 (stdin JSON 파싱 방식)
-   - `.gitignore` `.claude/skills/` 예외 추가
+1. **settings.json 추적 여부** — hook wiring을 git으로 공유할지 사용자 결정 (현재 로컬 전용)
 2. **WebSearch/WebFetch in agents** — 사용자 결정 후 4개 에이전트 frontmatter 업데이트
 3. **MCP** — 신규 없음. Semantic Scholar KEEP. 나머지 DEFER/REJECT 유지.
 4. **Orchestration** — Celery/LangGraph 구현 (plans/012)

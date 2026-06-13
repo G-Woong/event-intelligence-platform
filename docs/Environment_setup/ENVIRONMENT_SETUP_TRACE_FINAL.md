@@ -196,12 +196,47 @@
 
 | 순서 | 작업 | 분류 |
 |------|------|------|
-| 1 | `.claude/skills/` 생성 및 skills 파일 적용 (11번 명세서 기반) | NEXT_TURN_SKILLS_HOOKS_APPLY |
-| 2 | hooks 설정 적용 (settings.json hooks 섹션 추가) | NEXT_TURN_SKILLS_HOOKS_APPLY |
-| 3 | WebSearch/WebFetch in 4 agents 추가 여부 결정 | USER_DECISION_REQUIRED |
-| 4 | source-ingestion-engineer에 Bash 권한 추가 여부 재검토 | USER_DECISION_REQUIRED |
-| 5 | MCP 최소 도입/DEFER 최종 결정 | NEXT_TURN_MCP_REVIEW |
-| 6 | Celery/LangGraph 오케스트레이션 구현 (plans/012) | NEXT_TURN_ORCHESTRATION |
+| 1 | settings.json git 추적 여부 결정 (현재 로컬 전용) | USER_DECISION_REQUIRED |
+| 2 | WebSearch/WebFetch in 4 agents 추가 여부 결정 | USER_DECISION_REQUIRED |
+| 3 | source-ingestion-engineer에 Bash 권한 추가 여부 재검토 | USER_DECISION_REQUIRED |
+| 4 | MCP 최소 도입/DEFER 최종 결정 | NEXT_TURN_MCP_REVIEW |
+| 5 | Celery/LangGraph 오케스트레이션 구현 (plans/012) | NEXT_TURN_ORCHESTRATION |
+
+(hook 라이브 활성화는 이번 턴에 CONFIRMED — 별도 trust 조작 불필요했음.)
+
+---
+
+## 15. Skills / Hooks 실제 적용 (2026-06-13 APPLY 턴)
+
+> 상세 위원회 평가는 `SKILLS_HOOKS_APPLY_TRACE.md` 참조.
+
+### 적용 완료
+
+| 항목 | 결과 |
+|------|------|
+| Skills 생성 | 5개 (`.claude/skills/<name>/SKILL.md`) — test-validation, source-audit, artifact-manifest, docs-sync, runner-contract |
+| Hook 스크립트 | 3개 (`.claude/hooks/*.py`) — forbidden-command-guard(차단), secret-scan-reminder(알림), docs-conflict-grep-check(알림) |
+| Hook wiring | `.claude/settings.json` hooks 섹션 (PreToolUse + Stop) — **로컬 전용** |
+| .gitignore 예외 | `.claude/skills/**`, `.claude/hooks/**` 추가 |
+| Hook smoke | forbidden-guard v2 15/16(1건 의도된 보수적 차단), Stop hooks 비차단 |
+| Hook 라이브 활성화 | **CONFIRMED** (별도 trust 프롬프트 없이 동작; 라이브 차단/허용 실증) |
+| Skill 구조검증 | 5/5 PASS |
+| secret scan | PASS |
+
+### 중요 발견: settings.json은 git untracked
+- `.claude/settings.json`은 과거 커밋됐다가 `git rm --cached` + `.claude/*` 규칙으로 추적 해제됨 (저장소의 의도적 결정)
+- hook **스크립트**는 커밋되지만 hook **wiring**(settings.json)은 로컬 전용
+- 임의 force-add 안 함 → settings.json 추적 여부는 USER_DECISION_REQUIRED
+
+### Hook 설계 원칙
+- 차단형은 forbidden-command-guard 하나뿐. 나머지 2개는 비차단 reminder.
+- 모든 hook stdlib only + parse 오류 시 fail-open(exit 0) → 정상 명령 미차단.
+- stdin JSON 파싱 (`$env:CLAUDE_TOOL_INPUT` 미사용).
+
+### Hook 라이브 활성화 상태: CONFIRMED
+- settings.json hooks 추가 후 **별도 trust 프롬프트 없이** 라이브로 동작함을 실증(프로젝트가 이미 신뢰됨).
+- 적용 중 forbidden-command-guard의 라이브 차단을 직접 관찰 → 초기 false positive(커밋 메시지 내 "git push" 텍스트) 발견 → command-position 앵커링으로 즉시 정밀화(v2).
+- 정밀화 후 단어 언급 명령의 라이브 ALLOW도 확인. Claude는 어떤 trust도 자동 승인하지 않았음(승인 절차 자체가 발생하지 않음).
 
 ---
 
@@ -278,7 +313,10 @@
 | `18f4766` | `docs: design environment setup for agent orchestration` — 12개 설계 문서 생성 |
 | `d8325bc` | `env: apply claude code team agents` — 15개 에이전트 파일 생성 |
 | `3047938` | `docs: consolidate environment setup agent docs` — TRACE_FINAL + stub 축약 + README 갱신 |
-| 이번 턴 | `docs: specify skills hooks mcp plugin adoption plan` — 11번 명세서 + TRACE_FINAL 갱신 + README 갱신 |
+| `345ae14` | `docs: specify skills hooks mcp plugin adoption plan` — 11번 명세서 + TRACE_FINAL 갱신 + README 갱신 |
+| APPLY 턴 (commit 1) | `env: add project skills for validation workflows` — skills 5개 + .gitignore skills 예외 |
+| APPLY 턴 (commit 2) | `env: add safety hooks for claude code` — hook 스크립트 3개 + .gitignore hooks 예외 (settings.json은 로컬 전용) |
+| APPLY 턴 (commit 3) | `docs: record skills hooks apply trace` — APPLY_TRACE + TRACE_FINAL + README + 11번 |
 
 ---
 
