@@ -37,6 +37,7 @@ from ingestion.runners._audit_common import (
     relevance_label,
     relevance_score,
     safe_print,
+    truncate_query,
     utc_now_iso,
     write_audit_jsonl,
     write_audit_md,
@@ -103,7 +104,10 @@ def _lang(query: str) -> str:
 def _clean_query(title: str, max_tokens: int = 5) -> str:
     t = re.sub(r"[\[\](){}'\"‘’“”…·,．/|:]", " ", title or "")
     tokens = [tok for tok in t.split() if len(tok) >= 2]
-    return " ".join(tokens[:max_tokens])
+    cleaned = " ".join(tokens[:max_tokens])
+    # RISK-Q05: 공백 없는 장문 토큰(opendart 공시명 등)은 토큰 상한으로 못 막으므로
+    # 문자 상한까지 적용 — 규칙을 _audit_common.truncate_query로 단일화한다 (02 §3-d).
+    return truncate_query(cleaned, max_tokens=max_tokens)
 
 
 def derive_hot_queries(primary_jsonl: Path) -> list[dict]:
