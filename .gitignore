@@ -1,5 +1,7 @@
 # Claude Code / local orchestration
-.claude/
+.claude/*
+!.claude/agents/
+!.claude/agents/**
 CLAUDE.md
 .claude/settings.local.json
 .claude/cache/
