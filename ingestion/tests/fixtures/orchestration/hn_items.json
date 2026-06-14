@@ -1,0 +1,6 @@
+{
+  "items": [
+    {"title": "Synthetic community post one", "url": "https://example.org/a", "time": 1781398186, "id": 1, "score": 100},
+    {"title": "Synthetic community post two", "url": "https://example.org/b", "time": 1781408610, "id": 2, "score": 50}
+  ]
+}

@@ -71,6 +71,20 @@ __all__ = [
     "classify_production_readiness",
     "build_source_report",
     "summarize_reports",
+    # Phase E-2
+    "SourceRevivalPlan",
+    "StrategyAttemptRecord",
+    "BodyFetchResult",
+    "StructuredSignalCandidate",
+    "SourceRevivalResult",
+    "RevivalEvidence",
+    "build_revival_plan",
+    "fetch_article_body",
+    "to_structured_signal_candidates",
+    "build_eventqueue_record",
+    "check_eventqueue_readiness",
+    "classify_final_status",
+    "summarize_revival",
 ]
 
 _SYMBOL_MODULE = {
@@ -130,6 +144,20 @@ _SYMBOL_MODULE = {
     "classify_production_readiness": "source_body_report",
     "build_source_report": "source_body_report",
     "summarize_reports": "source_body_report",
+    # Phase E-2
+    "SourceRevivalPlan": "full_source_revival",
+    "StrategyAttemptRecord": "full_source_revival",
+    "BodyFetchResult": "full_source_revival",
+    "StructuredSignalCandidate": "full_source_revival",
+    "SourceRevivalResult": "full_source_revival",
+    "RevivalEvidence": "full_source_revival",
+    "build_revival_plan": "full_source_revival",
+    "fetch_article_body": "full_source_revival",
+    "to_structured_signal_candidates": "full_source_revival",
+    "build_eventqueue_record": "full_source_revival",
+    "check_eventqueue_readiness": "full_source_revival",
+    "classify_final_status": "full_source_revival",
+    "summarize_revival": "full_source_revival",
 }
 
 

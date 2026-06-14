@@ -45,15 +45,14 @@ def test_artifact_exists_zero_candidates_is_risk():
 
 
 def test_numeric_nested_uses_structured_signal_fallback():
-    # coinbase products[] 형태: 기사 컨테이너 아님 → 분해 0이지만 market이므로 본문 누락이 아님
+    # coinbase products[] 형태: E-2 source 어댑터가 단일 numeric 신호로 환원(인플레 없이).
+    # market이므로 본문 누락이 아니라 structured signal로 살아난다.
     a = audit_artifact_text(
         _read("numeric_nested.json"), source_id="coinbase_market", purpose="numeric",
         source_group="market", artifact_path="x/coinbase.json", fmt="json",
     )
-    assert a.candidate_count == 0
-    assert a.structured_signal_count == 1
-    assert a.fallback_used is True
-    assert a.body_state_counts["numeric_exempt"] == 1
+    assert a.candidate_count == 1            # 어댑터가 products → 단일 numeric 신호로 매핑(E-2)
+    assert a.body_state_counts["numeric_exempt"] == 1  # numeric_exempt로 분류
     assert a.body_state_counts["missing"] == 0  # numeric은 missing으로 오염 안 됨
     assert "no_candidates_from_artifact" not in a.risk_flags
 

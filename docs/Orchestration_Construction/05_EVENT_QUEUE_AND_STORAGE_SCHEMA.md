@@ -361,4 +361,13 @@ signal_bz/loword)은 이번 라운드 제외.
 
 **Pre-gate 재측(35802 candidate)**: pass 3631 / hold 461 / reject 31710. pass의 3630이 numeric, reject의 31584가 its(title 없는 교통 데이터셋). **candidate_total은 구조 데이터셋(its)+numeric(binance)이 지배** — article pass는 0(present 1건은 hold 아님). group/body_state별 분리 없이 단일 숫자 해석 금지.
 
+### Phase E-2 — revival 출력 + EventQueue readiness (2026-06-14, run 20260614T105328Z)
+
+`full-revival` 산출물(전부 gitignored `ingestion/outputs/tmp_full_source_revival/<run_id>/`): `plan.json`, `trace.jsonl`(stage: profile_loaded→plan_created→strategy_attempt_*→artifact_saved→body_fetch_*→eventqueue_readiness_checked→source_finalized), `strategy_attempts.jsonl`(StrategyAttemptRecord), `source_matrix.{csv,json}`(소스별 final_status/root_cause/body_fetch sha256), `source_reports/<id>.json`, `samples/<id>/...`, `event_queue_preview.jsonl`.
+
+**EventQueue readiness**: `build_eventqueue_record`가 record_type별 적재 record 생성, `check_eventqueue_readiness`가 최소 스키마(record_type/source_id/title_or_label/evidence) 검증. **별도 audit 큐**(`ingestion/outputs/jsonl/full_source_revival_event_queue.jsonl`)에 기록 — 기본 `event_queue.jsonl` 미접촉. `EventQueue(redis_url="")` 명시로 REDIS_URL 환경과 무관하게 JSONL 안전.
+- record_type 분포(run4, 34건): article_candidate 11 / official_record 8 / structured_signal 7 / search_result 6 / community_signal 2. record_type 4종(article/official/structured/community/search)으로 분리 — numeric을 article과 섞지 않음.
+
+**Pre-gate 재측(인플레 제거)**: candidate_total **32216**(its 31587 교통행이 지배, NEEDS_PARSER로 성공 아님). **structured_signal 7 / pre_gate_pass 8** — E-1의 binance 3600행 인플레를 단일-신호 어댑터로 환원해 제거(pre_gate_pass 3607→8). body_present 1(audit 단계, fetch 전), live fetch promote 5는 source_matrix `body_fetch_status=SUCCESS`로 추적. **알려진 한계**: opendart 공시 title은 cp949 소스 가능 → 인코딩 협상 미구현(품질 CAUTION).
+
 > 다음 문서: `06_LANGCHAIN_LANGGRAPH_DEEPAGENTS_RESEARCH.md`.

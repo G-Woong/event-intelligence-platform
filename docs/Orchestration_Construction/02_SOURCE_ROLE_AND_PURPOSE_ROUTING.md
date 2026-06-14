@@ -367,3 +367,13 @@ SourceProfile:
 - **PRODUCTION_READY_SIGNAL 1**(the_verge, 마커 없는 1건뿐) / **STRUCTURED_SIGNAL_ONLY 6**(market/trend numeric) / **NEEDS_BODY_FETCH 18**(뉴스 대부분 snippet — 전체 기사 fetch 필요) / **NEEDS_PARSER 21**(스키마/필드 미매핑) / **HTML_UNSUPPORTED 2**(etnews/zdnet_korea) / **BLOCKED_NO_BYPASS 1**(dcinside) / **INSUFFICIENT_DATA 1**(google_trends_explore, artifact 없음).
 - **0분해 일부 복구**: nyt(`response.docs`)·sec_edgar(`hits.hits`) 중첩 컨테이너 파서로 분해 회복. opendart/bok_ecos는 에러/카탈로그로 정직 분류.
 - **결론 불변**: 병목은 라우팅이 아니라 (1) 뉴스 본문 fetch 미구현, (2) 공공/도메인 API 소스별 필드 매핑 — 둘 다 Phase E.
+
+### Phase E-2 — 소스별 live revival 매트릭스 (2026-06-14, run 20260614T105328Z)
+
+`run_source_body_audit --mode full-revival`로 target을 **실제 live 호출**(run_collection_probe 경유, force=False, rate-limit/health gate 존중). source_group별 "살아남"을 다르게 정의(news=본문/partial, official=stable record, market/trend=structured signal, community=unconfirmed, search=result url)하고 final_status로 닫는다.
+
+- **제외(우회 금지) 8**: POLICY_BLOCKED_NO_BYPASS 4(reuters/x/blind/dcinside) + EXCLUDED_BY_USER 4(reddit/fmkorea/krx_kind/google_programmable_search) — live 비호출.
+- **data_alive 24**(fully 22 + degraded 2): ARTICLE_BODY_ALIVE 6 / OFFICIAL_RECORD_ALIVE 4 / STRUCTURED_SIGNAL_ALIVE 7 / SEARCH_RESULT_ALIVE 6 / COMMUNITY_SIGNAL_ALIVE 1. degraded 2(eu_press_corner/igdb=NO_TIMESTAMP, URL anchor 보유).
+- **unresolved 23**: NEEDS_PARSER 18(공공/도메인 필드 매핑·sec_edgar title) + NEEDS_BODY_FETCH 5(ap_news/hankyung/maekyung/cnbc/nyt — fetch 실패/excerpt). EXTERNAL_RATE_LIMITED 2(gdelt/google_trends_explore).
+- **라우팅 무중단**: 키 보유 search 6종·market 키소스(finnhub/polygon)·official 키소스(opendart) 전부 live 도달. 키 부재 skip 0(이번 run plan key_missing_skipped=0).
+- alive를 **fully vs degraded로 분리**(F3): 32(정책닫힘 포함) 단일숫자로 과대평가 금지.

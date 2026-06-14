@@ -301,4 +301,15 @@ extractor) 책임.
 
 **긍정편향 자가 교정(핵심)**: the_verge atom content 10건 중 9건이 "Read the full story at The Verge." **발췌**였다 — 길이≥200만으로 present 판정하던 결함을 `body_state._looks_truncated`(excerpt 마커 탐지)로 보강해 present→snippet_only 강등. 결과 present 10→1. **즉 실측 본문 추출 성공은 사실상 0**(남은 1건도 마커 없는 단일 항목). 뉴스 본문은 여전히 canonical_url 기반 **전체 기사 fetch(Phase E)**가 선행조건이다. content:encoded/atom 경로는 *피드가 전문을 실을 때만* 유효하며 the_verge처럼 대부분 발췌다.
 
+### Phase E-2 — live 본문 fetch 실측 (2026-06-14, run 20260614T105328Z)
+
+뉴스 본문을 **canonical_url에서 policy-safe 전체 기사 fetch**로 확보(E-1의 "present≈0"을 실제로 돌파). `full_source_revival.fetch_article_body`:
+- 기존 자산 재사용(신규 설치 0): `html_fetch_tool`(httpx GET+timeout, 우회 없음) → `trafilatura`→`readability` 추출.
+- **robots.txt 준수**(stdlib `urllib.robotparser`): disallow면 fetch 안 함(`ROBOTS_BLOCKED`). paywall/login/captcha/proxy 우회 0.
+- **길이-only 금지**: excerpt 마커 탐지 + boilerplate 휴리스틱. snippet/excerpt는 present로 승격 안 함(SUCCESS만 promote).
+
+**실측**: news 본문 fetch SUCCESS로 **ARTICLE_BODY_ALIVE 6** 확보 — bbc(4926자)/techcrunch(8380)/guardian(16213)/aljazeera(2386)/yna(336) 5건이 live 전체 본문(trafilatura, boilerplate=low, excerpt=False), the_verge 1건은 feed-level present. ap_news/hankyung/maekyung/cnbc/nyt는 fetch 실패/excerpt → `NEEDS_BODY_FETCH_UNRESOLVED`(root cause BODY_FETCH_FAILED/BODY_FETCH_REQUIRED).
+**증거 보존(F2)**: 승격 본문은 `samples/<id>/body_fetch_evidence.txt`에 sha256+길이+head≤500자(gitignored, internal_only)로 남겨 ALIVE 판정 사후 검증 가능. 전문은 미커밋.
+**소스 어댑터**: 0분해 회복용 `source_adapters.py`(source_id 스코프, 전역 인플레 회피) — opendart(`list`→공시 record), coinbase(`products`→단일 numeric), binance(`[ticker…]`→단일 numeric). artifact 다중 후보 중 **가장 많이 분해되는 것 선택**(`_select_best_artifact`, hacker_news raw=id리스트 vs extracted={items} 문제 해결).
+
 > 다음 문서: `05_EVENT_QUEUE_AND_STORAGE_SCHEMA.md`.

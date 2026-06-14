@@ -234,8 +234,14 @@ def _parse_json(text, *, source_id, collection_status, confirmation_policy,
     except (json.JSONDecodeError, ValueError) as exc:
         return [], "json_malformed", [f"json decode error: {exc}"]
 
-    # list → generic article list
+    # list → source-scoped 어댑터(거래소 스냅샷 환원) 우선, 없으면 generic article list
     if isinstance(data, list):
+        from ingestion.orchestration.source_adapters import adapt_source_payload
+        adapted = adapt_source_payload(
+            source_id, data, collection_status=collection_status,
+            confirmation_policy=confirmation_policy, raw_artifact_path=raw_artifact_path)
+        if adapted is not None:
+            return adapted[0], adapted[1], []
         cands = [
             _article_from_item(it, source_id=source_id, collection_status=collection_status,
                                confirmation_policy=confirmation_policy,
@@ -293,6 +299,13 @@ def _parse_json(text, *, source_id, collection_status, confirmation_policy,
         env = _looks_like_error_envelope(data)
         if env:
             return [], "api_error_payload", [f"api_error_envelope:{env}"]
+        # source-scoped 어댑터(E-2): 전역 키 인플레 없이 특정 소스 스키마만 매핑.
+        from ingestion.orchestration.source_adapters import adapt_source_payload
+        adapted = adapt_source_payload(
+            source_id, data, collection_status=collection_status,
+            confirmation_policy=confirmation_policy, raw_artifact_path=raw_artifact_path)
+        if adapted is not None:
+            return adapted[0], adapted[1], []
         # 인식 불가한 dict → source-level fallback(빈 후보 아님, 단서 보존 없음 → 보고)
         return [], "json_unrecognized", ["no_article_container_and_not_numeric"]
 

@@ -247,4 +247,13 @@ test_no_bypass_in_policy                 # grep proxy/captcha bypass 0
 | 격리 재점검 주기? | 복귀 속도 vs 부하 | 주 1회 | No |
 | Phase A에서 sleep 폴백 유지? | 단일 프로세스 단순성 | 예 | No |
 
+### Phase E-2 — live revival의 rate-limit/실패 처리 (2026-06-14, run 20260614T105328Z)
+
+full-revival의 모든 live 호출은 `run_collection_probe`(force=False) 경유 → health gate(쿨다운/격리/차단)를 존중한다. revival 루프의 실패 정책:
+- **소스 격리**: `_revive_one_source`는 예외를 삼키고 소스별로 닫는다(한 소스 실패가 전체 run을 죽이지 않음). final_status 없는 소스 0 보장.
+- **rate-limit 무리한 재시도 금지**: probe가 RATE_LIMITED면 즉시 `EXTERNAL_RATE_LIMITED`로 닫고 strategy ladder 재시도 안 함(strategy attempt 1건만). run4에서 gdelt/google_trends_explore가 이 경로로 정직하게 닫힘.
+- **body fetch**: 소스당 1회(첫 candidate canonical_url), 15s timeout, robots disallow면 미fetch. 폭주/무한재시도 없음.
+- **재실행 가능**: 산출물은 run_id별 디렉터리. 연속 실행 시 health 쿨다운이 누적돼 외부 부하를 억제(3회 연속 live run에서 rate-limit이 늘 수 있으나 이는 정책 준수의 결과).
+- root cause taxonomy(RATE_LIMITED/EXTERNAL_API_ERROR/EMPTY_PAYLOAD/...)로 실패를 원자 분류 — "unknown"으로 끝내지 않음.
+
 > 다음 문서: `09_DATA_QUALITY_EVALUATION_AND_RISK_GATES.md`.
