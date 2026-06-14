@@ -14,7 +14,8 @@
 3. **docs/ingestion/INGESTION_FINAL.md** (수집 계층 최종 상태)
 4. **docs/Environment_setup/ENVIRONMENT_SETUP_FINAL.md** (환경 세팅 완료 상태)
 5. **docs/Implementation_Instructions/IMPLEMENTATION_TRACE_FINAL.md** (closing round 완료 trace)
-6. 필요 시: `docs/system_overview/09_CURRENT_IMPLEMENTATION_STATUS.md` (시스템 전체 상태, STEP 011 기준)
+6. **docs/Orchestration_Construction/README.md → 00_ORCHESTRATION_OVERVIEW_AND_USER_DECISIONS.md** (오케스트레이션 구축 설계 세트 — 다음 구현 진입점)
+7. 필요 시: `docs/system_overview/09_CURRENT_IMPLEMENTATION_STATUS.md` (시스템 전체 상태, STEP 011 기준)
 
 ---
 
@@ -47,6 +48,8 @@ docs/
     IMPLEMENTATION_TRACE_FINAL.md         ← closing round 완료 trace (단일 출처)
   Environment_setup/
     ENVIRONMENT_SETUP_FINAL.md            ← 환경 세팅 완료 상태 (단일 출처)
+  Orchestration_Construction/             ← 오케스트레이션 구축 설계 세트 (plans/012 확장, 설계 only)
+    README.md, 00_OVERVIEW ~ 12_RISK_CLOSURE
   system_overview/                        ← STEP 011.5 시스템 전체 명세 (2026-05-24)
     00_INDEX.md ~ 12_FILE_MAP_FOR_MAINTENANCE.md
   [설계 문서 17개]                          ← STEP 003-011 단편 설계 문서
