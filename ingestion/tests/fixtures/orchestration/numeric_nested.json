@@ -1,0 +1,6 @@
+{
+  "products": [
+    {"product_id": "BTC-USD", "price": "64403.45", "volume_24h": "4078.62"},
+    {"product_id": "ETH-USD", "price": "3402.10", "volume_24h": "9912.41"}
+  ]
+}

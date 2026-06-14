@@ -1,0 +1,11 @@
+title: Synthetic Full Body Article
+published_at: Wed, 13 Jun 2026 12:00:00 GMT
+source_url: https://news.test/full/a?utm_source=feed
+selected_strategy: rss_full
+---
+This is a synthetic, audit-only body that is deliberately long enough to exceed the
+full-body threshold for news sources. It contains several sentences of placeholder
+prose so that the body extraction state classifier reports a present full body rather
+than a snippet. None of this text is taken from any real article; it exists only to
+exercise the production audit and quality pre-gate code paths with a realistic length.
+The remaining lines pad the body past two hundred characters to satisfy the news gate.

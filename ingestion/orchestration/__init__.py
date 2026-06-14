@@ -48,6 +48,17 @@ __all__ = [
     "LiveSmokeResult",
     "audit_live_smoke",
     "summarize_live_smoke",
+    # Phase D-P / E-0
+    "SourceExpansionAudit",
+    "audit_artifact_text",
+    "audit_artifact_file",
+    "summarize_expansion",
+    "QualityPreGateResult",
+    "evaluate_pre_gate",
+    "normalize_published_at",
+    "compute_duplicate_key",
+    "assess_boilerplate",
+    "summarize_pre_gate",
 ]
 
 _SYMBOL_MODULE = {
@@ -84,6 +95,17 @@ _SYMBOL_MODULE = {
     "LiveSmokeResult": "live_smoke_audit",
     "audit_live_smoke": "live_smoke_audit",
     "summarize_live_smoke": "live_smoke_audit",
+    # Phase D-P / E-0
+    "SourceExpansionAudit": "production_audit",
+    "audit_artifact_text": "production_audit",
+    "audit_artifact_file": "production_audit",
+    "summarize_expansion": "production_audit",
+    "QualityPreGateResult": "quality_pre_gate",
+    "evaluate_pre_gate": "quality_pre_gate",
+    "normalize_published_at": "quality_pre_gate",
+    "compute_duplicate_key": "quality_pre_gate",
+    "assess_boilerplate": "quality_pre_gate",
+    "summarize_pre_gate": "quality_pre_gate",
 }
 
 

@@ -353,3 +353,10 @@ SourceProfile:
 - **live smoke (D-1)**: key-ready+public 44 소스 → 43 LIVE_SUCCESS / 1 RATE_LIMITED(gdelt). requires_api_key
   28개 전부 live 검증 완료(C-2의 "키 비검증" 리스크 해소). Playwright 4종만 이번 라운드 제외.
 - **google_trends_explore**: 여전히 probe 미연결(readiness=unknown). registry 연결 또는 runner 등록은 후속.
+
+### Phase D-P / E-0 Production Closure Audit (2026-06-14)
+
+실제 on-disk artifact 49소스를 분해 감사한 결과(긍정편향 제거, live 호출 0):
+- **분해의 진실**: artifact 존재 49/49이지만 candidate_total 4102 중 numeric_exempt 3633(binance 3600 등 시세 원소). 기사형 본문 `present=0/partial=0` — RSS 뉴스(yna/ap_news 등)는 title/url 100%지만 본문은 description뿐(snippet_only).
+- **21/49 소스 0-candidate**: sec_edgar(중첩 `hits.hits`), hacker_news(id-list), opendart/kma/nyt/guardian/serper/naver_news_search 등. numeric_exempt(정상)와 **parser 미지원 실패**(`no_candidates_from_artifact`)를 risk_flag로 분리. 면제가 아니라 Phase E 소스별 파서 보강 대상.
+- **role/purpose 라우팅 자체는 끊김 없음**: SourceProfile→StrategyDecision→readiness→seed→candidate→pre_gate 전 구간 연결 검증(test_pipeline_connectivity). 병목은 라우팅이 아니라 소스별 artifact 스키마 커버리지.

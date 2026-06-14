@@ -22,9 +22,12 @@ from ingestion.orchestration.canonical_url import canonicalize_url
 _ARTICLE_LIST_KEYS = ("articles", "results", "items", "stories", "docs", "data", "hits")
 # 필드 매핑(없는 값은 None — 첫 매칭만 사용).
 _TITLE_KEYS = ("title", "headline", "name")
-_URL_KEYS = ("url", "link", "webUrl", "web_url", "guid")
+# html_url: federal_register 등 정부 API가 쓰는 표준 기사 URL 키(존재하는 URL을 버리지 않는다).
+_URL_KEYS = ("url", "link", "webUrl", "web_url", "html_url", "guid")
+# publication_date: federal_register 등이 쓰는 발행일 키(존재하는 시각을 버리지 않는다).
 _TIME_KEYS = ("published_at", "publishedAt", "pubDate", "seendate", "date",
-              "webPublicationDate", "published", "updated", "created_at")
+              "webPublicationDate", "publication_date", "published", "updated",
+              "created_at")
 _SUMMARY_KEYS = ("summary", "description", "abstract", "snippet", "contentSnippet",
                  "content")
 _BODY_KEYS = ("body", "full_text", "articleBody", "bodyText", "text")

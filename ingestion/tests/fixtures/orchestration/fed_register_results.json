@@ -1,0 +1,20 @@
+{
+  "description": "All Documents",
+  "count": 3,
+  "results": [
+    {
+      "title": "Synthetic Rule Notification",
+      "html_url": "https://federalregister.test/documents/2026/06/15/c1/synthetic-rule?utm_campaign=feed",
+      "publication_date": "2026-06-15",
+      "abstract": "Synthetic abstract for audit fixture.",
+      "document_number": "C1-2026-00001"
+    },
+    {
+      "title": "Synthetic Reporting Change",
+      "html_url": "https://federalregister.test/documents/2026/06/15/c2/synthetic-change",
+      "publication_date": "2026-06-15",
+      "abstract": null,
+      "document_number": "C2-2026-00002"
+    }
+  ]
+}

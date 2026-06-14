@@ -325,4 +325,16 @@ fixtures(synthetic 10): gdelt/rss/generic/numeric/malformed×2/empty/snippet/no_
 **dead-end 명시**: article candidate는 현재 카운트만(큐 적재는 source-level seed 유지). 다운스트림 흐름은
 Phase H bridge(`bridge_to_raw_events`)에서 연결 — Phase D는 분해까지만.
 
+## Phase D-P / E-0 구현 완료 현황 (2026-06-14)
+
+신규 파일(`ingestion/orchestration/`): `production_audit.py`(SourceExpansionAudit + audit_artifact_text/file + summarize_expansion), `quality_pre_gate.py`(QualityPreGateResult + evaluate_pre_gate + normalize_published_at + compute_duplicate_key + assess_boilerplate + publication policy). 수정: `artifact_parser.py`(`html_url`/`publication_date` alias 보강 — 존재하는 URL/시각을 버리지 않음), `__init__.py`(lazy export 10종 추가).
+
+테스트(신규 32): `test_production_audit.py`(12) `test_quality_pre_gate.py`(15) `test_pipeline_connectivity.py`(5). fixtures(synthetic 4): fed_register_results/numeric_nested/rate_limit_note/full_body_article.
+
+검증: 전체 ingestion 회귀 **808 passed**(776→+32), 신규 설치 0, secret scan PASS, **live 호출 0**(기존 artifact 49소스 재사용).
+
+**닫은 긍정편향**: ① html_url/publication_date 미매핑(federal_register URL/시각 복구) ② rate-limit payload(`{"Note":...}`)를 success로 위장 → `possible_rate_limit_payload` 탐지 ③ numeric/structured signal 분리(market body missing 오염 0) ④ canonical 446/446·network 0 ⑤ REDIS_URL stub 회귀 고정.
+
+**못 닫은 것(정직)**: 기사형 본문 추출 0(present=0, RSS=snippet) → Phase E 본문 fetch. 21/49 소스 0분해(소스별 파서) → Phase E. candidate→raw_events dead-end → Phase H. dedup collapse/near-dup → Phase E.
+
 > 다음 문서: `12_RISK_CLOSURE_AND_VALIDATION_PLAN.md`.
