@@ -194,4 +194,23 @@ test_quality_judge_deterministic_first   # 규칙 우선, LLM 최소
 | freshness 강등 vs 폐기? | 과거 맥락 유지 | 강등(폐기 아님) | No |
 | summary_faithfulness를 1차에 넣을까? | LLM 비용/STEP 014 | 후속(다운스트림) | No |
 
+---
+
+## Phase D 핸드오프 — Phase E 품질 게이트로 넘기는 항목 (2026-06-14)
+
+Phase D는 article-level candidate + BodyExtractionState까지 **구조화**했다. 품질 *판정(통과/탈락)*은
+Phase E 게이트의 책임이며, data-quality 감사가 식별한 다음 항목을 여기서 닫는다:
+
+| # | 게이트 | 현재 상태(Phase D) | Phase E 책임 |
+|---|---|---|---|
+| 1 | **dedup 실행** | canonical_url *키*만 생성 | canonical 일치 collapse + url 없는 항목 title/body content_hash near-dup |
+| 2 | **boilerplate 필터** | body **길이**만 측정(`body_state`) | boilerplate 비율 측정 → 길이 통과해도 강등 |
+| 3 | **purpose 매핑 강제** | 호출자가 purpose 주입 | source→purpose 매핑 누락 시 임계 오적용 차단 |
+| 4 | **published_at 정규화** | 원문 포맷 보존(GDELT/RSS/ISO 혼재) | ISO-8601 UTC 정규화(시간 dedup/신선도 전제) |
+| 5 | **evidence 역추적** | 다중 candidate가 동일 raw_artifact_path 공유 | candidate별 artifact 내 위치(인덱스) 부여 |
+| 6 | **numeric 오분류 가드** | `_NUMERIC_KEYS` 1키 매칭 시 numeric 면제 | title/body 동시 존재 시 numeric 면제 회수 |
+
+이 게이트들은 Phase D candidate(body_missing/snippet_only/numeric_exempt/parse_error 정규화 완료)를 입력으로
+받으므로, Phase E는 *판정 로직*만 추가하면 된다.
+
 > 다음 문서: `10_COMMERCIALIZATION_PRODUCT_OPTIMIZATION.md`.

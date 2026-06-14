@@ -1,0 +1,20 @@
+{
+  "articles": [
+    {
+      "url": "https://example-news.test/world/a1?utm_source=gdelt",
+      "title": "Synthetic Event One",
+      "seendate": "20260613T120000Z",
+      "domain": "example-news.test",
+      "language": "English",
+      "sourcecountry": "United States"
+    },
+    {
+      "url": "https://example-news.test/world/a2",
+      "title": "Synthetic Event Two",
+      "seendate": "20260613T130000Z",
+      "domain": "example-news.test",
+      "language": "English",
+      "sourcecountry": "France"
+    }
+  ]
+}

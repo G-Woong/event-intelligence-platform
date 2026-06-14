@@ -312,4 +312,33 @@ test_preview_only_excerpt_truncated       # 저작권 길이 준수
 | 브리지를 별도 어댑터 task로? | 결합도 최소화 | 예(bridge_to_raw_events) | **REVIEW(D-6)** |
 | event_candidates 표를 만들까(Phase B)? | 큐 영속 필요 시점 | 필요해질 때만(기본 JSONL) | No |
 
+---
+
+## 12. Phase D 실제 구현 현황 (2026-06-14)
+
+**ArticleCandidate** (`ingestion/orchestration/article_candidate.py`) — source-level seed가 artifact를
+가질 때 분해되는 개별 기사 후보. 아직 raw_events 아님(Phase H 승격). 필드: source_id, title, source_url,
+published_at, summary, body_text, raw_artifact_path, extracted_text_ref, canonical_url, body_missing,
+collection_status, parser_name, parse_error, numeric_payload_exempt, confirmation_policy. **없는 값은 None**
+(title/url/body fabricate 금지).
+
+**artifact_parser** (`artifact_parser.py`) — 지원: GDELT JSON / RSS·Atom XML / generic JSON list /
+generic JSON dict(articles·results·items·stories·docs·data·hits) / numeric·API payload / extracted-text /
+HTML(미지원 fallback) / empty / malformed. stdlib(json, xml.etree)만 사용, 신규 설치 0. 파싱 실패는
+`parse_error`로 보존(cycle 안 죽음).
+
+**seed_expansion** (`seed_expansion.py`) — `expand_seed_to_article_candidates(seed, *, artifact_root=None,
+allow_network_resolution=False)`. 실패 seed 미확장, artifact 없음/깨짐 → source-level fallback(사건 보존).
+`run_cycle(..., expand_articles=False)` 옵션으로 연결(기본 off, **큐 계약 불변** — 큐에는 여전히 source-level
+seed만 적재, article_candidates는 카운트만 보고).
+
+**운영 발견 (REDIS_URL)**: `.env`에 `REDIS_URL`이 설정되면 `EventQueue()` 기본값이 Redis(stub)로 가
+`enqueue`가 `NotImplementedError`를 던진다. Phase A~F 큐 본체는 JSONL이므로 cycle/live는 `EventQueue(redis_url="")`로
+JSONL을 명시하거나 환경에서 REDIS_URL을 비워야 한다(Phase G에서 Redis Stream 구현 시 해소).
+
+**Live smoke 실측 (2026-06-14)**: 44 시도 → 43 LIVE_SUCCESS(kma LIVE_PARTIAL 포함) / 1 RATE_LIMITED(gdelt
+쿨다운, no bypass) / 0 failed. requires_api_key 28개 전부 live 성공(opendart 6354, its 31584,
+federal_register 10000건 등). 42 artifact 생성, 43 enqueued. Playwright 4종(eu_press_corner/google_trending_now/
+signal_bz/loword)은 이번 라운드 제외.
+
 > 다음 문서: `06_LANGCHAIN_LANGGRAPH_DEEPAGENTS_RESEARCH.md`.

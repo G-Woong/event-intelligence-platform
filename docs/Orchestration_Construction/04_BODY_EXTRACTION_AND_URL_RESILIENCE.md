@@ -247,4 +247,34 @@ test_trends_fallback_chain_nonblocking       # §6 A→B→C, 우회 0
 | preview 공개 글자 수 상한? | 저작권 안전 | publication_policy.yaml 기본값 준수 | No |
 | 렌더(Playwright) 일일 호출 상한? | CPU/시간 비용 | 소스당 cycle 1회 + on-demand | No |
 
+---
+
+## 14. Phase D 실제 구현 현황 (2026-06-14)
+
+§1의 `BodyExtractionState`는 **`ingestion/orchestration/body_state.py`**로 구현됨(문서 제안 경로
+`body_extraction_state.py` 대신 짧은 이름 채택). `assess_body_state(...)`가 §3 cascade 우선순위를
+정규화한다. 실제 필드/상태:
+
+| state | 조건 | body_missing |
+|---|---|---|
+| `present` | body_text ≥ 임계(뉴스 200 / 커뮤니티 50) | False |
+| `partial` | 50 ≤ body_text < 임계 | False |
+| `snippet_only` | body 부족 + summary 존재 (full body 아님) | **True** |
+| `numeric_exempt` | numeric/trend 신호(본문 불요) | False |
+| `missing` | body·summary 모두 없음 | True |
+| `no_artifact` / `parser_error` / `malformed` | artifact 없음/파싱 실패/깨짐 | True |
+
+상수: `FULL_BODY_MIN=200`, `COMMUNITY_FULL_MIN=50`, `PARTIAL_MIN=50`. **body_missing≠실패** 원칙 유지.
+`canonical_url`은 **`canonical_url.py:canonicalize_url`**(no-network: scheme/host 소문자, tracking 제거,
+fragment 제거, trailing slash 정책, query 정렬)로 구현. 네트워크 redirect 해석(`url_resolver`)은
+`allow_network_resolution=True` + resolver 주입 시에만 호출(기본 off).
+
+**Phase E로 넘기는 품질 항목**(data-quality 감사): ① body 기반 dedup 실행(현재는 canonical *키*만 생성,
+collapse 미실행) ② boilerplate 비율 게이트(현재 길이만 측정) ③ source→purpose 매핑 강제(임계 오적용 방지)
+④ `published_at` ISO-8601 정규화(GDELT/RSS/ISO 혼재) ⑤ evidence 역추적(다중 candidate 공유 artifact).
+
+**알려진 한계**: HTML 페이지(zdnet_korea/etnews)의 기사-level 분해는 Phase D 범위 밖 → `artifact_parser`가
+`html_unsupported` fallback으로 정직 처리(사건은 source-level로 보존). 본문 추출은 04 본문 cascade(기존
+extractor) 책임.
+
 > 다음 문서: `05_EVENT_QUEUE_AND_STORAGE_SCHEMA.md`.

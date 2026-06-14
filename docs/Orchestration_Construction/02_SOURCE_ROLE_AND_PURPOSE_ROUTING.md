@@ -345,3 +345,11 @@ SourceProfile:
 - **requires_api_key 29소스**: 키 존재 시 CORE_READY지만 live smoke 미수행(.env 비검증). 실제 운영 전 키 readiness 확인 필요(V-1).
 - **google_trends_explore**: probe 미연결 → Phase D/별도 라운드에서 runner 연결 또는 registry 등록 결정.
 - **개별 기사 분해**: 현재 source-level seed. article-level 후보화는 Phase D.
+
+### Phase D 갱신 (2026-06-14)
+- **API key readiness (D-0)**: requires_api_key 29 중 키 정의 보유 28개 → ready 23 / ambiguous(alias) 5 /
+  missing 0 (사용자 .env 키 투입 확인). x(login wall)는 키 정의 없음. `api_readiness.py`가 `_SERVICE_CONFIGS`
+  키 + `env_status`(alias 해석)로 판정, **키 값 비노출**.
+- **live smoke (D-1)**: key-ready+public 44 소스 → 43 LIVE_SUCCESS / 1 RATE_LIMITED(gdelt). requires_api_key
+  28개 전부 live 검증 완료(C-2의 "키 비검증" 리스크 해소). Playwright 4종만 이번 라운드 제외.
+- **google_trends_explore**: 여전히 probe 미연결(readiness=unknown). registry 연결 또는 runner 등록은 후속.

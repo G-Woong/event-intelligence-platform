@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Synthetic Feed</title>
+    <link>https://feed.test/</link>
+    <description>Synthetic RSS for parser tests</description>
+    <item>
+      <title>Feed Item One</title>
+      <link>https://feed.test/items/1?utm_medium=rss#section</link>
+      <pubDate>Sat, 13 Jun 2026 12:00:00 GMT</pubDate>
+      <description>Short synthetic summary one.</description>
+    </item>
+    <item>
+      <title>Feed Item Two</title>
+      <link>https://feed.test/items/2</link>
+      <pubDate>Sat, 13 Jun 2026 13:00:00 GMT</pubDate>
+      <description>Short synthetic summary two.</description>
+    </item>
+  </channel>
+</rss>

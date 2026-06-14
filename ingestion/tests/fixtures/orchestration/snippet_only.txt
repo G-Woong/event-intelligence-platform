@@ -1,0 +1,7 @@
+title: Snippet Only Article
+published_at: 2026-06-13T12:00:00Z
+source_url: https://snippet.test/a
+selected_strategy: rss_summary
+quality_score:
+---
+Short synthetic snippet body.

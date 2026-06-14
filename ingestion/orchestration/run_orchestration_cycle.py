@@ -35,6 +35,7 @@ class SourceOutcome:
     error_category: Optional[str] = None
     error: Optional[str] = None  # cycle 내부 예외 메시지(소스 격리 시)
     skip_reason: Optional[str] = None  # live_only에서 건너뛴 사유
+    article_candidates: Optional[int] = None  # expand_articles=True 시 분해된 기사 후보 수
 
 
 @dataclass
@@ -80,6 +81,7 @@ def run_cycle(
     max_items: int = 5,
     force: bool = False,
     live_only: bool = False,
+    expand_articles: bool = False,
 ) -> CycleReport:
     """Phase A/B/C deterministic local orchestration cycle.
 
@@ -151,10 +153,22 @@ def run_cycle(
                 if state_path is not None:
                     # 성공한 수집만 last_run_at 갱신(실패는 다음 cycle 즉시 재시도 가능)
                     record_last_run(state_path, source_id, now)
+                article_count = None
+                if expand_articles:
+                    # Phase D 옵션: artifact를 기사 후보로 분해(개수만 보고). 큐 적재는 불변.
+                    from ingestion.orchestration.seed_expansion import (
+                        expand_seed_to_article_candidates,
+                    )
+                    policy = prof.confirmation_policy if prof is not None else None
+                    expansion = expand_seed_to_article_candidates(
+                        seed, confirmation_policy=policy
+                    )
+                    article_count = len(expansion.candidates)
                 outcomes.append(SourceOutcome(
                     source_id=source_id, status=result.status,
                     items_found=result.items_found, enqueued=True,
                     item_id=item_id, error_category=result.error_category,
+                    article_candidates=article_count,
                 ))
             else:
                 failed += 1

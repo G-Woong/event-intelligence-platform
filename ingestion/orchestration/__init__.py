@@ -33,6 +33,21 @@ __all__ = [
     "load_last_run_state",
     "save_last_run_state",
     "record_last_run",
+    # Phase D
+    "ApiKeyReadiness",
+    "audit_api_key_readiness",
+    "summarize_readiness",
+    "canonicalize_url",
+    "ArticleCandidate",
+    "parse_artifact_text",
+    "BodyExtractionState",
+    "assess_body_state",
+    "assess_candidate_body",
+    "CandidateExpansionReport",
+    "expand_seed_to_article_candidates",
+    "LiveSmokeResult",
+    "audit_live_smoke",
+    "summarize_live_smoke",
 ]
 
 _SYMBOL_MODULE = {
@@ -54,6 +69,21 @@ _SYMBOL_MODULE = {
     "load_last_run_state": "cycle_state",
     "save_last_run_state": "cycle_state",
     "record_last_run": "cycle_state",
+    # Phase D
+    "ApiKeyReadiness": "api_readiness",
+    "audit_api_key_readiness": "api_readiness",
+    "summarize_readiness": "api_readiness",
+    "canonicalize_url": "canonical_url",
+    "ArticleCandidate": "article_candidate",
+    "parse_artifact_text": "artifact_parser",
+    "BodyExtractionState": "body_state",
+    "assess_body_state": "body_state",
+    "assess_candidate_body": "body_state",
+    "CandidateExpansionReport": "seed_expansion",
+    "expand_seed_to_article_candidates": "seed_expansion",
+    "LiveSmokeResult": "live_smoke_audit",
+    "audit_live_smoke": "live_smoke_audit",
+    "summarize_live_smoke": "live_smoke_audit",
 }
 
 

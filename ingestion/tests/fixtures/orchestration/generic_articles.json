@@ -1,0 +1,14 @@
+[
+  {
+    "title": "Generic List Article A",
+    "link": "https://generic.test/a",
+    "pubDate": "2026-06-13T12:00:00Z",
+    "description": "Synthetic snippet A."
+  },
+  {
+    "headline": "Generic List Article B",
+    "url": "https://generic.test/b",
+    "published": "2026-06-13T13:00:00Z",
+    "abstract": "Synthetic snippet B."
+  }
+]

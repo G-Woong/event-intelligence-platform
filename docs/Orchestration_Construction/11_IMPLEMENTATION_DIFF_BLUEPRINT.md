@@ -308,4 +308,21 @@ quality_gate_rejection_reason 품질 게이트 탈락 사유별 분포
 | Windows에서 Celery worker pool? | 가동 가능성 | solo 또는 deterministic 우선 | Phase G |
 | DOCS_FINAL pointer 추가 허용? | 진입점 일관성 | 1줄 추가 | No |
 
+---
+
+## Phase D 구현 완료 현황 (2026-06-14, commit 다음)
+
+신규 파일(`ingestion/orchestration/`): `api_readiness.py`(D-0), `canonical_url.py`(D-4),
+`article_candidate.py`+`artifact_parser.py`(D-2), `body_state.py`(D-3), `seed_expansion.py`(D-4b),
+`live_smoke_audit.py`(D-1). 수정: `run_orchestration_cycle.py`(`expand_articles` 옵션 + `SourceOutcome.article_candidates`),
+`__init__.py`(lazy export 15종 추가).
+
+테스트(신규 63): `test_api_readiness.py`(8) `test_canonical_url.py`(12) `test_artifact_parser.py`(15)
+`test_body_state.py`(13) `test_live_smoke_audit.py`(8) `test_article_candidate.py`(8, seed_expansion 포함).
+fixtures(synthetic 10): gdelt/rss/generic/numeric/malformed×2/empty/snippet/no_articles/html.
+
+검증: 전체 ingestion 회귀 **776 passed**(713→+63), 신규 설치 0, secret scan PASS, live smoke 43/44 success.
+**dead-end 명시**: article candidate는 현재 카운트만(큐 적재는 source-level seed 유지). 다운스트림 흐름은
+Phase H bridge(`bridge_to_raw_events`)에서 연결 — Phase D는 분해까지만.
+
 > 다음 문서: `12_RISK_CLOSURE_AND_VALIDATION_PLAN.md`.
