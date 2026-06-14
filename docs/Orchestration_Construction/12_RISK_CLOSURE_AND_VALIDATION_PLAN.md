@@ -280,3 +280,24 @@ rate-limit, its NOT_SERVICE_USEFUL, bok_ecos/eia vendor-route.
 STILL_OPEN(Phase E): bok_ecos/eia 전용 route 구현, kma 파라미터 수정 후 재검증, hankyung 본문 중복 정제,
 aladin URL 엔티티 디코딩, cnbc CNBC-Pro 비프로모션 경로. Phase H: candidate→raw_events bridge.
 검증: 942 passed, secret scan PASS(165), git diff CLEAN, outputs gitignored.
+
+
+## Phase F — Production Orchestration Closure
+
+Phase F validation: dry-run(network 0) + bounded live(4 then 6 sources, real network) →
+records→EventQueue→raw_events mirror, source_without_state=0, unknown=0, critical_alerts=0,
+bridge_contract_pass=True.
+
+Team review 흡수 사항:
+1. quarantine이 dead-path였음 → runner에 WIRED(failure-count 누적 + 회귀 테스트).
+2. is_due cadence 레이어 wired(last_run_at)를 2nd 게이트로.
+3. structured_signal dedup label 수정(literal이 아닌 실제 signal type).
+4. monitoring secret scan을 모든 record로 확대.
+
+STILL OPEN(next):
+- 실제 Postgres raw_events 채택(현재는 mirror + injectable/unit-tested db_writer).
+- queue write와 dedup index save 사이 crash-window(plans/012에서 dedup_key DB unique constraint 강제).
+- full body용 body fetch ladder 통합(현재 RSS snippet).
+- cross-source possible_duplicate는 report-only(auto-collapse 안 함).
+
+Launch blockers: ingestion contract에는 없음. raw_events DB migration이 Phase H 전제조건.

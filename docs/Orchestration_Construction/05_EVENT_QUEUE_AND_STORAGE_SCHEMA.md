@@ -381,3 +381,31 @@ signal_bz/loword)은 이번 라운드 제외.
 않는다(리뷰 흡수). 따라서 url 없는 record(product_hunt/culture_info degraded, twelve_data/
 alpha_vantage signal)는 eventqueue_ready=0으로 정직 표기. record_type: article_candidate/
 official_record/structured_signal/search_result/community_signal. REDIS_URL 무관 JSONL 명시(기본 큐 미접촉).
+
+
+## Phase F — Production Orchestration Closure
+
+Phase F는 EventQueue dedup(`eventqueue_dedup.py`) + cross-source dedup(`cross_source_dedup.py`) +
+raw_events bridge(`bridge_to_raw_events.py`)를 추가한다.
+
+Dedup key 우선순위: canonical_url > source_url(external만) > official_id(accession/rcpNo) >
+structured signal(source+signal_type+observed_at) > search(source+title+url) >
+fallback(source+norm_title+norm_time). identifier 없으면 → None (key를 지어내지 않고 hold).
+Persisted index `ingestion/outputs/state/eventqueue_dedup_index.json`(gitignored)가 re-run을
+collapse한다.
+
+Cross-source: deterministic union-find(canonical/official/signal strong → duplicate;
+title+date_bucket / token Jaccard>=0.8 weak → possible_duplicate HELD, auto-merge 안 함; embedding 없음).
+
+raw_events bridge는 EventQueue record → RawEventCreate contract(`backend/app/schemas/raw_events.py`)로
+매핑: source_type(article/official/signal/search/community), source_name=source_id,
+url(NOT NULL — 없으면 held, 지어내지 않음), content_hash=sha256(canonical|url|...) 64자,
+raw_text=""(preview_only, full body 아님), extra → raw_metadata.
+
+Writer: DB는 injected db_writer 경유, 없으면 로컬 durable mirror
+`ingestion/outputs/raw_events/raw_events_mirror.jsonl`(gitignored). content_hash + persisted dedup
+index가 re-run collapse를 제공(backend on_conflict_do_nothing(content_hash)와 정합).
+
+Live 20260614T124243Z: 4 sources → 130 EventQueue records → 130 mirror raw_events.
+Post-fix 6-source run: 128 records → 125 raw_events (3 held: 외부 URL 없음).
+Body는 대부분 snippet_only(RSS summary) — 정직하게 기록하며 full body로 둔갑시키지 않는다.

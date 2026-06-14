@@ -1,0 +1,194 @@
+"""Phase F-8 Cross-source Dedup — 서로 다른 source의 같은 사건을 결정적으로 묶는다.
+
+신규 embedding/vector 의존성을 도입하지 않는다(경량 결정적). 정책:
+  - canonical_url 정확히 일치 → duplicate(high)
+  - 같은 official id/accession → duplicate(high)
+  - 같은 metric signal key(source_group이 달라도 동일 지표 동일 시각) → duplicate(high)
+  - normalized title + 같은 날짜 bucket → possible_duplicate(medium)
+  - title token Jaccard 높음 + 같은 날짜 → possible_duplicate(medium)
+
+false positive가 위험하면 possible_duplicate로 hold한다(자동 병합하지 않는다). 목적은
+EventQueue/raw_events 양쪽에서 같은 사건이 N개 source로 폭주하는 것을 막는 것.
+
+stdlib만. 신규 설치 0.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Optional
+
+from ingestion.orchestration.eventqueue_dedup import (
+    _external_url,
+    _official_id,
+    compute_record_key,
+)
+from ingestion.orchestration.time_normalizer import normalize_time
+
+_WS = re.compile(r"\s+")
+_TOKEN = re.compile(r"[0-9A-Za-z가-힣]+")
+_TITLE_JACCARD_THRESHOLD = 0.8
+_STOPWORDS = frozenset({
+    "the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "with",
+    "is", "are", "was", "were", "says", "say", "after", "as", "at", "by",
+})
+
+CONF_DUPLICATE = "duplicate"
+CONF_POSSIBLE = "possible_duplicate"
+
+
+@dataclass(frozen=True)
+class CrossSourceDedupResult:
+    cluster_id: str
+    duplicate_group: tuple[str, ...]
+    primary_record_key: str
+    duplicate_record_keys: tuple[str, ...]
+    confidence: str
+    reason: str
+
+
+def _norm_title(title: Optional[str]) -> str:
+    return _WS.sub(" ", (title or "").strip().lower())
+
+
+def _title_tokens(title: Optional[str]) -> frozenset[str]:
+    toks = {t for t in _TOKEN.findall((title or "").lower()) if len(t) > 1 and t not in _STOPWORDS}
+    return frozenset(toks)
+
+
+def _date_bucket(record: dict) -> str:
+    raw = record.get("published_at_or_observed_at")
+    nt = normalize_time(raw) if raw else None
+    if nt and nt.value:
+        return nt.value[:10]  # YYYY-MM-DD
+    return ""
+
+
+def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
+    if not a or not b:
+        return 0.0
+    inter = len(a & b)
+    union = len(a | b)
+    return inter / union if union else 0.0
+
+
+class _UnionFind:
+    def __init__(self, n: int) -> None:
+        self.parent = list(range(n))
+
+    def find(self, x: int) -> int:
+        while self.parent[x] != x:
+            self.parent[x] = self.parent[self.parent[x]]
+            x = self.parent[x]
+        return x
+
+    def union(self, a: int, b: int) -> None:
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            self.parent[max(ra, rb)] = min(ra, rb)  # 낮은 인덱스를 root로(결정성)
+
+
+def cluster_records(records) -> list[CrossSourceDedupResult]:
+    """record 목록 → cross-source 중복 클러스터. 단일 멤버 클러스터는 제외.
+
+    강한 키(canonical/official/signal)로 먼저 union, 그 다음 약한 신호(title+date,
+    token Jaccard)로 union하되 약한 결합만으로 묶인 클러스터는 possible_duplicate.
+    """
+    records = list(records)
+    n = len(records)
+    if n < 2:
+        return []
+
+    keys: list[str] = []
+    for i, r in enumerate(records):
+        k, _ = compute_record_key(r)
+        keys.append(k or f"rec:{i}")
+
+    uf = _UnionFind(n)
+    strong_pairs: set[tuple[int, int]] = set()
+
+    # 강한 키 인덱싱
+    canon_idx: dict[str, int] = {}
+    official_idx: dict[str, int] = {}
+    signal_idx: dict[str, int] = {}
+    for i, r in enumerate(records):
+        canonical = r.get("canonical_url")
+        if isinstance(canonical, str) and canonical:
+            if canonical in canon_idx:
+                uf.union(canon_idx[canonical], i); strong_pairs.add((min(canon_idx[canonical], i), max(canon_idx[canonical], i)))
+            else:
+                canon_idx[canonical] = i
+        oid = _official_id(_external_url(r))
+        if oid:
+            if oid in official_idx:
+                uf.union(official_idx[oid], i); strong_pairs.add((min(official_idx[oid], i), max(official_idx[oid], i)))
+            else:
+                official_idx[oid] = i
+        if (r.get("record_type") == "structured_signal"):
+            sig = f"{r.get('body_state_or_signal')}|{_date_bucket(r)}|{_norm_title(r.get('title_or_label'))}"
+            if sig in signal_idx:
+                uf.union(signal_idx[sig], i); strong_pairs.add((min(signal_idx[sig], i), max(signal_idx[sig], i)))
+            else:
+                signal_idx[sig] = i
+
+    # 약한 신호: 같은 날짜 bucket 내 title 일치 / token Jaccard
+    weak_pairs: set[tuple[int, int]] = set()
+    by_bucket: dict[str, list[int]] = {}
+    for i, r in enumerate(records):
+        b = _date_bucket(r)
+        if b:
+            by_bucket.setdefault(b, []).append(i)
+    for bucket, idxs in by_bucket.items():
+        for a_pos in range(len(idxs)):
+            for b_pos in range(a_pos + 1, len(idxs)):
+                i, j = idxs[a_pos], idxs[b_pos]
+                ti, tj = _norm_title(records[i].get("title_or_label")), _norm_title(records[j].get("title_or_label"))
+                if not ti or not tj:
+                    continue
+                pair = (min(i, j), max(i, j))
+                if ti == tj or _jaccard(_title_tokens(records[i].get("title_or_label")),
+                                        _title_tokens(records[j].get("title_or_label"))) >= _TITLE_JACCARD_THRESHOLD:
+                    uf.union(i, j)
+                    weak_pairs.add(pair)
+
+    # 클러스터 수집
+    groups: dict[int, list[int]] = {}
+    for i in range(n):
+        groups.setdefault(uf.find(i), []).append(i)
+
+    out: list[CrossSourceDedupResult] = []
+    for root, members in sorted(groups.items()):
+        if len(members) < 2:
+            continue
+        members = sorted(members)
+        # 클러스터가 강한 결합을 하나라도 포함하면 duplicate, 아니면 possible
+        has_strong = any(
+            (min(a, b), max(a, b)) in strong_pairs
+            for a in members for b in members if a < b
+        )
+        confidence = CONF_DUPLICATE if has_strong else CONF_POSSIBLE
+        reason = "strong_key_match" if has_strong else "title_date_similarity"
+        member_keys = tuple(keys[m] for m in members)
+        out.append(CrossSourceDedupResult(
+            cluster_id=f"xcluster:{keys[members[0]]}",
+            duplicate_group=member_keys,
+            primary_record_key=keys[members[0]],
+            duplicate_record_keys=tuple(keys[m] for m in members[1:]),
+            confidence=confidence,
+            reason=reason,
+        ))
+    return out
+
+
+def summarize_clusters(clusters) -> dict:
+    """클러스터 분포 집계(모니터링/보고용)."""
+    clusters = list(clusters)
+    dup = sum(1 for c in clusters if c.confidence == CONF_DUPLICATE)
+    possible = sum(1 for c in clusters if c.confidence == CONF_POSSIBLE)
+    collapsed = sum(len(c.duplicate_record_keys) for c in clusters)
+    return {
+        "clusters": len(clusters),
+        "duplicate_clusters": dup,
+        "possible_duplicate_clusters": possible,
+        "records_collapsed": collapsed,
+    }

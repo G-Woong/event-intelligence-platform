@@ -266,3 +266,21 @@ RATE_LIMITED 2(gdelt/google_trends_explore)를 force=False(쿨다운 존중)로 
 - 여전히 rate-limit이면 `EXTERNAL_RATE_LIMITED_WITH_RETRY_POLICY`로 clean terminal(무한 retry 없음,
   우회 없음, next_action=retry_after_cooldown). 폭주 방지: source별 strategy attempt ≤5, browser ≤1.
 - HTTP 429는 body ladder에서도 EXTERNAL_RATE_LIMITED_WITH_RETRY_POLICY로 닫는다.
+
+
+## Phase F — Production Orchestration Closure
+
+Phase F는 런타임 거버넌스를 wired한다.
+
+RateLimitGovernor(`rate_limit_governor.py`): per-source last_call_at + cooldown_until(wall-clock,
+injectable now, persisted JSON). `detect_rate_limit_signal`은 error_taxonomy를 재사용한다
+(429 / rate-limit text / GDELT note). cooldown = Retry-After 또는 per-bucket 보수적 기본값,
+`_MAX_COOLDOWN_SECONDS=86400`으로 clamp(무한 대기 없음).
+
+Quarantine(`quarantine.py`)은 runner에 **WIRED** 되었다: probe 실패가 persisted production state의
+consecutive_failure_count에 누적되고, `evaluate_quarantine`가 retryable 실패를 threshold 3에서
+quarantine → QUARANTINED, 6h recovery(`is_quarantine_active`가 재진입 게이트). policy terminal
+(CAPTCHA/LOGIN/PAYWALL/ROBOTS)은 즉시 dead-end(quarantine 아님, 우회 없음).
+body-fetch 반복은 alt strategy 시도 후 quarantine.
+
+회귀 테스트로 3회 연속 실패 → QUARANTINED 확인.

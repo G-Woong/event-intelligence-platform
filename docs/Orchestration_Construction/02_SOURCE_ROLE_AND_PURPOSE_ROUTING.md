@@ -394,3 +394,25 @@ NOT_SERVICE_USEFUL 1(its: per-link 교통 telemetry), REQUIRES_VENDOR_SPECIFIC_A
 2(bok_ecos catalog / eia route-catalog endpoint). 제외 8은 killer 대상에서 자연 배제(우회 없음).
 type별 alive 정의는 변함없음(news=본문, official=record, market=signal, search=result,
 community=unconfirmed). 매트릭스: `ingestion/outputs/tmp_unresolved_source_killer/<run>/source_final_matrix.json`.
+
+
+## Phase F — Production Orchestration Closure
+
+Phase F는 `ProductionSourceState`(`ingestion/orchestration/production_state.py`)를 추가한다 — 제외되지 않은 모든
+소스가 `derive_production_state`(전역 함수, UNKNOWN=0)를 통해 단일 production 상태를 부여받는다.
+상태 enum: PRODUCTION_READY, PRODUCTION_READY_DEGRADED, POLICY_EXCLUDED, POLICY_BLOCKED_NO_BYPASS,
+EXTERNAL_RATE_LIMITED, EXTERNAL_API_ERROR, VENDOR_CONTRACT_REQUIRED, NOT_SERVICE_USEFUL, QUARANTINED,
+COOLDOWN, DEAD_END_SKIPPED, NEEDS_OPERATOR_REVIEW, UNKNOWN.
+
+57개 소스 분포(api key 부재 상태):
+- PRODUCTION_READY 28 + DEGRADED 2
+- POLICY_EXCLUDED 7
+- NEEDS_OPERATOR_REVIEW 11 (api_key_missing)
+- EXTERNAL_API_ERROR 3 (nyt/cnbc/kma)
+- EXTERNAL_RATE_LIMITED 2 (gdelt/google_trends_explore)
+- VENDOR_CONTRACT_REQUIRED 2 (bok_ecos/eia)
+- NOT_SERVICE_USEFUL 1 (its)
+- POLICY_BLOCKED_NO_BYPASS 1 (dcinside)
+
+source_without_state=0, unknown=0. memory final_status(E-3)가 static skip_reason보다 우선한다.
+degraded = root_cause_after 비어있지 않음(product_hunt/culture_info).

@@ -351,3 +351,22 @@ killer 루프가 source별 best/failed 전략을 **학습**해 다음 실행에 
   sha256/adapter 이름만) + run output `.../source_strategy_memory.learned.yaml`(gitignored).
 - consume: `decide_strategy_with_memory(profile, memory)`가 성공 전략을 preferred_strategy로 덮어쓰고,
   `is_known_dead_end()`로 terminal(nyt/its 등) 무의미 재시도를 회피한다. 다음 plan이 이를 참조한다.
+
+
+## Phase F — Production Orchestration Closure
+
+Phase F에서 SourceStrategyMemory가 production 전략 선택을 직접 구동한다 —
+`decide_production_strategy`(production_state.py) → `preferred_strategy_for(memory)`가
+profile.preferred_strategy를 덮어쓴다. dead-end auto-skip 강제(known_dead_end 또는 is_known_dead_end).
+
+`production_scheduler.build_production_run_plan`이 다음을 하나의 plan으로 통합한다:
+ProductionSourceState + memory + RateLimitGovernor + quarantine + dead-end + cycle_planner.is_due.
+
+Skip 우선순위: excluded > dead-end/not-ready > quarantine > cooldown(state) >
+governor(rate-limit/min_interval) > interval(is_due). is_due cadence 레이어는 wired되어 있다
+(last_run_at는 직전 state의 last_success_at에서) — governor와 나란히 두 번째 게이트로 작동한다.
+
+모드:
+- production (interval 준수)
+- production-validation (interval 면제, 단 policy/cooldown/quarantine은 여전히 강제)
+- production-dry-run (네트워크 0)
