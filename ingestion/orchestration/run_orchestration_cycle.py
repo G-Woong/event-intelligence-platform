@@ -34,6 +34,7 @@ class SourceOutcome:
     item_id: Optional[str] = None
     error_category: Optional[str] = None
     error: Optional[str] = None  # cycle 내부 예외 메시지(소스 격리 시)
+    skip_reason: Optional[str] = None  # live_only에서 건너뛴 사유
 
 
 @dataclass
@@ -45,6 +46,7 @@ class CycleReport:
     sources_attempted: int
     sources_succeeded: int
     sources_failed: int
+    sources_skipped: int
     items_enqueued: int
     outcomes: list[SourceOutcome] = field(default_factory=list)
 
@@ -56,6 +58,7 @@ class CycleReport:
             "sources_attempted": self.sources_attempted,
             "sources_succeeded": self.sources_succeeded,
             "sources_failed": self.sources_failed,
+            "sources_skipped": self.sources_skipped,
             "items_enqueued": self.items_enqueued,
             "outcomes": [vars(o) for o in self.outcomes],
         }
@@ -76,6 +79,7 @@ def run_cycle(
     query: Optional[str] = None,
     max_items: int = 5,
     force: bool = False,
+    live_only: bool = False,
 ) -> CycleReport:
     """Phase A/B/C deterministic local orchestration cycle.
 
@@ -98,12 +102,18 @@ def run_cycle(
     ``state_path``가 주어지면 **성공한 수집만** last_run_at을 그 파일에 기록한다
     (실패/차단/쿨다운은 갱신하지 않음 → 다음 cycle에서 즉시 재시도 가능).
 
+    ``live_only=True``(profiles 경로 전용): live_eligible != "true"인 소스는 실제 호출 없이
+    SKIPPED(skip_reason 포함)로 기록한다 — 제한적 live smoke용. dry-run은 live_only=False로
+    fake probe_fn을 주입해 전수 검증한다.
+
     ``probe_fn``/``queue``는 주입 가능 → 단위 테스트는 fake로 결정적 검증.
     """
     now = datetime.now(timezone.utc)
+    profile_by_id: dict[str, SourceProfile] = {}
     if schedules is not None:
         src = tuple(select_due_sources(schedules, now))
     elif profiles is not None:
+        profile_by_id = {p.source_id: p for p in profiles}
         last_run = load_last_run_state(state_path)
         src = tuple(select_due_sources(profiles_to_schedules(profiles, last_run), now))
     elif sources is not None:
@@ -117,8 +127,18 @@ def run_cycle(
     enqueued_count = 0
     succeeded = 0
     failed = 0
+    skipped = 0
 
     for source_id in src:
+        prof = profile_by_id.get(source_id)
+        if live_only and prof is not None and prof.live_eligible != "true":
+            # live smoke: live 부적격 소스는 실제 호출 없이 skip(no bypass, 키/차단 존중)
+            skipped += 1
+            outcomes.append(SourceOutcome(
+                source_id=source_id, status="SKIPPED", items_found=0, enqueued=False,
+                skip_reason=prof.skip_reason or "not_live_eligible",
+            ))
+            continue
         try:
             result = probe_fn(source_id, query=query, max_items=max_items, force=force)
             if result.status in SUCCESS_STATUSES:
@@ -153,12 +173,13 @@ def run_cycle(
 
     report = CycleReport(
         cycle_id=cycle_id, started_at=started, ended_at=_now_iso(),
-        sources_attempted=len(src), sources_succeeded=succeeded,
-        sources_failed=failed, items_enqueued=enqueued_count, outcomes=outcomes,
+        sources_attempted=len(src) - skipped, sources_succeeded=succeeded,
+        sources_failed=failed, sources_skipped=skipped,
+        items_enqueued=enqueued_count, outcomes=outcomes,
     )
     logger.info(
-        "cycle %s: attempted=%d succeeded=%d failed=%d enqueued=%d",
-        cycle_id, len(src), succeeded, failed, enqueued_count,
+        "cycle %s: attempted=%d succeeded=%d failed=%d skipped=%d enqueued=%d",
+        cycle_id, len(src) - skipped, succeeded, failed, skipped, enqueued_count,
     )
     return report
 

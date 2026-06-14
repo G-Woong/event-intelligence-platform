@@ -289,3 +289,59 @@ SourceProfile:
 | domain 소스 MVP 활성 범위? | 버티컬 우선순위 | kofic/tmdb/kma만 1차, 나머지 deferred | No |
 
 > 다음 문서: `03_COLLECTION_STRATEGY_ROUTER_DESIGN.md`.
+
+---
+
+## 10. Phase C-2 — SourceProfile Full Coverage Audit (2026-06-14)
+
+> 목적: 개별 소스 수집 검증(완료)을 넘어, **canonical 소스 전체가 오케스트레이션 레이어에서 빠짐없이 연결**되는지 확정. 산출물 = `ingestion/configs/source_profiles.yaml` 전수화 + dry-run/live smoke 검증.
+
+### 10.1 Canonical source set (정본: docs/ingestion/INGESTION_FINAL.md + source_registry.yaml)
+
+| 분류 | count | 처리 |
+|---|---|---|
+| **CORE_READY** | 44 | enabled=true. no-key & no-blocker는 live_eligible=true |
+| **READY_WITH_CAUTION** | 6 (cnbc, guardian, nyt, newsapi, dcinside, google_trends_explore) | enabled=true, profile_status=caution |
+| **DEFERRED_SPECIAL_ROUND** | 1 (krx_kind) | enabled=false, skip=needs_api_integration |
+| **MVP_DEFERRED** | 1 (reddit) | enabled=false, skip=disabled_by_policy |
+| **MVP_EXCLUDED** | 5 (x, blind, reuters, fmkorea, google_programmable_search) | enabled=false, skip=login/paywall/captcha_no_bypass |
+| _dummy(픽스처) | 1 | 미등록(운영 대상 아님) |
+| **source_profiles.yaml 등록 합계** | **57** | CORE_READY 44 + CAUTION 6 + 제외군 7 |
+
+> **명명 주의**: `google_trends_explore`(CAUTION)는 registry/`_SERVICE_CONFIGS`에 **미등록**(runner만 존재) → 프로파일은 등록하되 `live_eligible=false, skip=needs_api_integration, profile_status=verify_required`. registry id = `_SERVICE_CONFIGS` key 일치(56, _dummy 제외) 실측 확인.
+
+### 10.2 Orchestration coverage 집계
+
+| 지표 | 값 |
+|---|---|
+| 등록 프로파일 | 57 |
+| enabled (orchestration 대상) | 50 |
+| disabled (제외군 + skip_reason) | 7 |
+| live_eligible=true | 17 (no-key 뉴스 10 + hacker_news + 공식 no-key 3 + 시장 no-key 2 + eu_press_corner) |
+| live_eligible=conservative | 4 (cnbc, signal_bz, google_trending_now, loword) |
+| requires_api_key | 29 (CORE_READY/CAUTION에 키 필요 — 키 있으면 작동, live smoke는 보수적 skip) |
+| is_community | 9 (전부 unconfirmed_until_corroborated) |
+
+### 10.3 Dry-run orchestration (fake probe/queue, 네트워크 0)
+
+전체 enabled(50) → profiles_to_schedules → select_due → run_cycle(fake) 전수 통과: 50소스 각 1회 probe, 50 enqueue, disabled 7 미호출, 단일 실패 격리 확인. (`test_source_profile_full_coverage.py`)
+
+### 10.4 Live orchestration smoke (제한적 — live_only=True, force=False, max_items=1)
+
+| source_id | attempted_live | status | items_found | enqueued | skip_reason | notes |
+|---|---|---|---|---|---|---|
+| yna | yes | LIVE_SUCCESS | 120 | yes | - | RSS |
+| hacker_news | yes | LIVE_SUCCESS | 3 | yes | - | community, unconfirmed 유지 |
+| gdelt | yes | RATE_LIMITED | 0 | no | - | 직전 호출 쿨다운(15분) — health gate 정상 차단, no bypass |
+| 그 외 live_eligible=true 14 | no | - | - | - | smoke_scope_limited | 부하/시간 절약, dry-run으로 orchestration 경로 검증됨 |
+| requires_api_key 29 | no | - | - | - | requires_api_key | live skip(키 유무 비검증, 보수적) |
+| conservative 4 | no | - | - | - | conservative_gate | rate-limit/external signal — gate 필수 |
+| disabled 7 | no | - | - | - | blocked/deferred | no bypass |
+
+> live smoke 2/3 LIVE_SUCCESS(적재), gdelt는 일시적 rate-limit(정책상 정상). live_eligible 정책 유효(전부 실패 아님). community(hacker_news)는 enqueue되어도 decision의 confirmation_policy=unconfirmed 유지.
+
+### 10.5 남은 coverage risk (Phase D 이후)
+
+- **requires_api_key 29소스**: 키 존재 시 CORE_READY지만 live smoke 미수행(.env 비검증). 실제 운영 전 키 readiness 확인 필요(V-1).
+- **google_trends_explore**: probe 미연결 → Phase D/별도 라운드에서 runner 연결 또는 registry 등록 결정.
+- **개별 기사 분해**: 현재 source-level seed. article-level 후보화는 Phase D.

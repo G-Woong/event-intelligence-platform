@@ -20,6 +20,9 @@ class StrategyDecision:
     confirmation_policy: str
     risk_level: str
     should_enqueue_success: bool
+    live_eligible: str = "false"        # "true"|"false"|"conservative"
+    profile_status: str = "active"
+    skip_reason: Optional[str] = None
 
 
 def decide_strategy(profile: SourceProfile) -> StrategyDecision:
@@ -30,6 +33,7 @@ def decide_strategy(profile: SourceProfile) -> StrategyDecision:
     - community 소스는 confirmation_policy를 unconfirmed 계열로 보장한다(단독 확정 금지, 09 D-9).
       yaml에서 standard로 남았더라도 보수적으로 보정한다.
     - preferred_strategy는 강제 경로가 아니라 metadata로 그대로 전달(None 안정 처리).
+    - live_eligible/profile_status/skip_reason은 coverage audit 메타로 전달(live smoke 필터용).
     """
     policy = profile.confirmation_policy
     if profile.is_community and policy == "standard":
@@ -42,4 +46,7 @@ def decide_strategy(profile: SourceProfile) -> StrategyDecision:
         confirmation_policy=policy,
         risk_level=profile.risk_level,
         should_enqueue_success=profile.enabled,
+        live_eligible=profile.live_eligible,
+        profile_status=profile.profile_status,
+        skip_reason=profile.skip_reason,
     )

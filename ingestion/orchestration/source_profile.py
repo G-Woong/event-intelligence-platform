@@ -15,10 +15,20 @@ _DEFAULT_PROFILES_PATH = Path(__file__).parent.parent / "configs" / "source_prof
 # community 소스의 기본 확정 정책 — "단독 확정 금지"(09 D-9). standard로 두면 보정한다.
 COMMUNITY_DEFAULT_CONFIRMATION = "unconfirmed_until_corroborated"
 
+# profile_status / live_eligible 허용 enum (Phase C-2 coverage audit).
+PROFILE_STATUS_VALUES = frozenset({
+    "active", "caution", "needs_api_key", "needs_api",
+    "blocked_policy", "disabled", "verify_required",
+})
+LIVE_ELIGIBLE_VALUES = frozenset({"true", "false", "conservative"})
+
 _ALLOWED_FIELDS = frozenset({
     "enabled", "purpose", "freshness_bucket", "min_interval_seconds",
     "risk_level", "preferred_strategy", "requires_api_key", "is_community",
     "confirmation_policy", "notes",
+    # Phase C-2 coverage 필드
+    "profile_status", "live_eligible", "skip_reason", "source_group",
+    "readiness_status",
 })
 
 
@@ -40,6 +50,17 @@ class SourceProfile:
     is_community: bool = False
     confirmation_policy: str = "standard"  # standard|unconfirmed_until_corroborated
     notes: Optional[str] = None
+    # ── Phase C-2 coverage 필드 ──
+    profile_status: str = "active"     # PROFILE_STATUS_VALUES
+    live_eligible: str = "false"       # "true"|"false"|"conservative" — live smoke 적격
+    skip_reason: Optional[str] = None  # requires_api_key|blocked_policy_no_bypass|...
+    source_group: Optional[str] = None # news|community|search|official|trend|market|domain
+    readiness_status: Optional[str] = None  # CORE_READY|READY_WITH_CAUTION|...
+
+
+def is_live_eligible(profile: SourceProfile) -> bool:
+    """live smoke 적격 여부(enabled 또한 만족해야 실제 호출)."""
+    return profile.enabled and profile.live_eligible == "true"
 
 
 def _profile_from_dict(source_id: str, fields: dict) -> SourceProfile:
@@ -48,7 +69,18 @@ def _profile_from_dict(source_id: str, fields: dict) -> SourceProfile:
         raise ValueError(
             f"source profile {source_id!r} has unknown fields: {sorted(unknown)}"
         )
-    return SourceProfile(source_id=source_id, **fields)
+    profile = SourceProfile(source_id=source_id, **fields)
+    if profile.profile_status not in PROFILE_STATUS_VALUES:
+        raise ValueError(
+            f"source profile {source_id!r} has invalid profile_status: "
+            f"{profile.profile_status!r}"
+        )
+    if profile.live_eligible not in LIVE_ELIGIBLE_VALUES:
+        raise ValueError(
+            f"source profile {source_id!r} has invalid live_eligible: "
+            f"{profile.live_eligible!r}"
+        )
+    return profile
 
 
 def load_source_profiles(path: str | Path | None = None) -> list[SourceProfile]:

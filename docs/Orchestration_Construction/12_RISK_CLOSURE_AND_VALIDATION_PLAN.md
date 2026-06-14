@@ -97,6 +97,8 @@ git status --short
 | U-3 | create_raw_event 시그니처 | VERIFY PATH | Phase H 직전 |
 | V-4 | Windows Celery pool | deterministic 우선 | Phase G |
 | D-6 | 브리지 방식 | 별도 어댑터 | Phase H 설계 시 |
+| C2-1 | requires_api_key 29소스 키 readiness | live smoke 보수적 skip(.env 비검증) | 운영 전 V-1 키 확인 |
+| C2-2 | google_trends_explore probe 미연결(registry/_SERVICE_CONFIGS 미등록) | profile verify_required, live 불가 | Phase D/별도 라운드 runner 연결 |
 
 ---
 

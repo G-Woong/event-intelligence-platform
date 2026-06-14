@@ -245,7 +245,16 @@ quality_gate_rejection_reason 품질 게이트 탈락 사유별 분포
 - **C-5 canonical_url**: url_resolver.resolve/resolve_via_browser는 **둘 다 네트워크 호출**(httpx/Playwright) → Phase C에서 연결 안 함(선택 B). canonical_from_html은 순수하나 rendered HTML 필요 → source-level seed에선 불가. **canonical_url=None 유지, Phase D 이월**.
 - 테스트: `test_source_profile.py`(8) + `test_cycle_state.py`(7) + `test_strategy_router.py`(6) = 신규 21.
 
-**Phase D로 넘김**: 개별 기사 분해(artifact 파싱) + canonical_url(url_resolver, 개별 기사 HTML 확보 후) + body extraction resilience cascade + 44 소스 프로파일 확장.
+**Phase C-2 (full coverage audit)** — 신규 설치 0, 회귀 713 passed:
+- `source_profiles.yaml` 8 → **57 전수**(CORE_READY 44 + CAUTION 6 + 제외군 7). 정본 = INGESTION_FINAL.md + source_registry.yaml(결정적 매핑 생성, registry status/known_blockers/type 실측).
+- `SourceProfile` 필드 확장: profile_status/live_eligible/skip_reason/source_group/readiness_status + enum 검증. `is_live_eligible()` 헬퍼.
+- `StrategyDecision`에 live_eligible/profile_status/skip_reason 전달.
+- `run_cycle(live_only=True)`: live_eligible!=true 소스를 SKIPPED(skip_reason)로 기록 — 제한적 live smoke용. CycleReport에 sources_skipped 추가.
+- dry-run 전수: enabled 50 → schedule → due → run_cycle(fake) 전수 통과(`test_source_profile_full_coverage.py`, 19 테스트).
+- live smoke(live_only, force=False): yna(120)/hacker_news(3) LIVE_SUCCESS 적재, gdelt RATE_LIMITED(쿨다운, 정상). requires_api_key 29 + disabled 7은 보수적 skip.
+- 명명 발견: google_trends_explore는 registry/_SERVICE_CONFIGS 미등록(probe 미연결) → verify_required. registry id=_SERVICE_CONFIGS key 일치(56) 실측.
+
+**Phase D로 넘김**: 개별 기사 분해(artifact 파싱) + canonical_url(url_resolver, 개별 기사 HTML 확보 후) + body extraction resilience cascade + requires_api_key 29소스 키 readiness 검증(V-1) + google_trends_explore probe 연결.
 
 ---
 

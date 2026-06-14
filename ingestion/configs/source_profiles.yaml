@@ -1,88 +1,858 @@
-# Orchestration source profiles (Phase C).
-# 수집 엔진의 source_registry.yaml은 수정하지 않는다. 이 파일은 반복 운영(주기/목적/
-# 전략/확정정책) 보강 필드만 담는다. preferred_strategy는 강제 경로가 아니라 metadata다
-# (실제 라우팅은 run_collection_probe). API 키 '값'은 절대 여기 적지 않는다(.env에서만).
-#
-# 범위: Phase C 초기 등록 = 특성이 실측 확인된 대표 소스. 나머지 44 소스는 점진 확장한다
-# (검증 안 된 값을 임의로 채우지 않는다 — 가정 금지).
-version: 1
+# Orchestration source profiles (Phase C-2 full coverage audit).
+# Canonical 출처: docs/ingestion/INGESTION_FINAL.md (CORE_READY 44 + READY_WITH_CAUTION 6)
+#   + ingestion/configs/source_registry.yaml (status/known_blockers/type 실측).
+# 규칙: enabled=CORE_READY/CAUTION true, 제외군(EXCLUDED/DEFERRED) false+skip_reason.
+#   live_eligible=true는 no-key & no terminal blocker만. requires_api_key/blocked는 live skip.
+#   API 키 값은 절대 기록하지 않는다(.env에서만). 키 필요 여부만 표기.
+#   불확실 항목은 notes=VERIFY_REQUIRED. 생성: registry+INGESTION_FINAL 결정적 매핑.
+version: 2
 profiles:
-  # ── news ──
-  gdelt:
-    purpose: news
-    freshness_bucket: short
-    min_interval_seconds: 900        # GDELT DOC API ~15분 갱신
-    risk_level: low
-    preferred_strategy: api_json_fetch
-    requires_api_key: false          # Phase A live로 no-key 작동 확인
-    notes: "GDELT DOC 2.0 public API"
+  # CORE_READY + READY_WITH_CAUTION (orchestration 대상)
+  # -- news --
+  bbc:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "true"
+  ap_news:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "true"
+  techcrunch:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "true"
+  the_verge:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "true"
+  zdnet_korea:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "true"
+  etnews:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "true"
   yna:
-    purpose: news
-    freshness_bucket: near_real_time
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "near_real_time"
+    min_interval_seconds: 900
+    risk_level: "low"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "true"
+  hankyung:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "short"
     min_interval_seconds: 1800
-    risk_level: low
-    preferred_strategy: strategy_loop_fetch
-    requires_api_key: false          # Phase A live로 no-key RSS 작동 확인
-    notes: "연합뉴스 public RSS"
-
-  # ── community (단독 확정 금지 — confirmation_policy unconfirmed) ──
+    risk_level: "low"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "true"
+  maekyung:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "true"
+  aljazeera:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "true"
+  cnbc:
+    enabled: true
+    profile_status: "caution"
+    readiness_status: "READY_WITH_CAUTION"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "medium"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "conservative"
+  guardian:
+    enabled: true
+    profile_status: "caution"
+    readiness_status: "READY_WITH_CAUTION"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "medium"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+    notes: "bucket VERIFY_REQUIRED"
+  nyt:
+    enabled: true
+    profile_status: "caution"
+    readiness_status: "READY_WITH_CAUTION"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "medium"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+    notes: "bucket VERIFY_REQUIRED"
+  # -- community --
   hacker_news:
-    purpose: community
-    freshness_bucket: medium
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "community"
+    purpose: "community"
+    freshness_bucket: "short"
     min_interval_seconds: 1800
-    risk_level: low
-    preferred_strategy: api_json_fetch
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
     requires_api_key: false
     is_community: true
-    confirmation_policy: unconfirmed_until_corroborated
-    notes: "HN Firebase public API"
-  reddit:
-    purpose: community
-    freshness_bucket: medium
-    min_interval_seconds: 1800
-    risk_level: medium
-    preferred_strategy: api_json_fetch
-    requires_api_key: false          # read-only .json, no key
-    is_community: true
-    confirmation_policy: unconfirmed_until_corroborated
-    notes: "read-only .json endpoint; write API excluded"
+    confirmation_policy: "unconfirmed_until_corroborated"
+    live_eligible: "true"
   product_hunt:
-    purpose: community
-    freshness_bucket: daily
-    min_interval_seconds: 21600
-    risk_level: low
-    preferred_strategy: api_json_fetch
-    requires_api_key: true           # PRODUCT_HUNT_ACCESS_TOKEN (bearer)
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "community"
+    purpose: "community"
+    freshness_bucket: "daily"
+    min_interval_seconds: 86400
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
     is_community: true
-    confirmation_policy: unconfirmed_until_corroborated
-    notes: "GraphQL; developer token ~1000 req/day"
+    confirmation_policy: "unconfirmed_until_corroborated"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
   youtube:
-    purpose: community
-    freshness_bucket: medium
-    min_interval_seconds: 3600
-    risk_level: low
-    preferred_strategy: api_json_fetch
-    requires_api_key: true           # YOUTUBE_API_KEY
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "community"
+    purpose: "community"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
     is_community: true
-    confirmation_policy: unconfirmed_until_corroborated
-    notes: "YouTube Data API v3; 10k quota/day"
+    confirmation_policy: "unconfirmed_until_corroborated"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+    notes: "bucket VERIFY_REQUIRED"
   dcinside:
-    purpose: community
-    freshness_bucket: medium
-    min_interval_seconds: 3600
-    risk_level: high                 # CAUTION (playwright, 차단 위험)
-    preferred_strategy: playwright_selector_fetch
+    enabled: true
+    profile_status: "caution"
+    readiness_status: "READY_WITH_CAUTION"
+    source_group: "community"
+    purpose: "community"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "high"
+    preferred_strategy: "playwright_selector_fetch"
     requires_api_key: false
     is_community: true
-    confirmation_policy: unconfirmed_until_corroborated
-    notes: "CAUTION 모니터링 — 공개 HTML, 우회 금지"
+    confirmation_policy: "unconfirmed_until_corroborated"
+    live_eligible: "false"
+    skip_reason: "robots_or_policy_block"
+  # -- search --
+  naver_blog_search:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "search"
+    purpose: "search"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: true
+    confirmation_policy: "unconfirmed_until_corroborated"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+    notes: "bucket VERIFY_REQUIRED"
+  naver_news_search:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "search"
+    purpose: "search"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  serper:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "search"
+    purpose: "search"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  tavily:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "search"
+    purpose: "search"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  exa:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "search"
+    purpose: "search"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  newsapi:
+    enabled: true
+    profile_status: "caution"
+    readiness_status: "READY_WITH_CAUTION"
+    source_group: "search"
+    purpose: "search"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "medium"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+    notes: "bucket VERIFY_REQUIRED"
+  gnews:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "search"
+    purpose: "search"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+    notes: "bucket VERIFY_REQUIRED"
+  # -- official --
+  gdelt:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "official"
+    purpose: "regulatory"
+    freshness_bucket: "near_real_time"
+    min_interval_seconds: 900
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "evidence_required"
+    live_eligible: "true"
+  opendart:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "official"
+    purpose: "regulatory"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "evidence_required"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  sec_edgar:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "official"
+    purpose: "regulatory"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "evidence_required"
+    live_eligible: "true"
+  bok_ecos:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "official"
+    purpose: "regulatory"
+    freshness_bucket: "daily"
+    min_interval_seconds: 86400
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "evidence_required"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  eia:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "official"
+    purpose: "regulatory"
+    freshness_bucket: "daily"
+    min_interval_seconds: 86400
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "evidence_required"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  federal_register:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "official"
+    purpose: "regulatory"
+    freshness_bucket: "daily"
+    min_interval_seconds: 86400
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "evidence_required"
+    live_eligible: "true"
+  eu_press_corner:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "official"
+    purpose: "regulatory"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "low"
+    preferred_strategy: "playwright_selector_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "evidence_required"
+    live_eligible: "true"
+  # -- trend --
+  google_trending_now:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "trend"
+    purpose: "trend"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "medium"
+    preferred_strategy: "playwright_selector_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "unconfirmed_until_corroborated"
+    live_eligible: "conservative"
+  signal_bz:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "trend"
+    purpose: "trend"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "medium"
+    preferred_strategy: "playwright_selector_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "unconfirmed_until_corroborated"
+    live_eligible: "conservative"
+  loword:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "trend"
+    purpose: "trend"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "medium"
+    preferred_strategy: "playwright_selector_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "unconfirmed_until_corroborated"
+    live_eligible: "conservative"
+  google_trends_explore:
+    enabled: true
+    profile_status: "verify_required"
+    readiness_status: "READY_WITH_CAUTION"
+    source_group: "trend"
+    purpose: "trend"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "medium"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "unconfirmed_until_corroborated"
+    live_eligible: "false"
+    skip_reason: "needs_api_integration"
+    notes: "registry/_SERVICE_CONFIGS 미등록 probe 미연결"
+  # -- market --
+  finnhub:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "market"
+    purpose: "numeric"
+    freshness_bucket: "near_real_time"
+    min_interval_seconds: 900
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  twelve_data:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "market"
+    purpose: "numeric"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  alpha_vantage:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "market"
+    purpose: "numeric"
+    freshness_bucket: "daily"
+    min_interval_seconds: 86400
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  polygon:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "market"
+    purpose: "numeric"
+    freshness_bucket: "daily"
+    min_interval_seconds: 86400
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  coinbase_market:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "market"
+    purpose: "numeric"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "true"
+  binance_market:
+    enabled: true
+    profile_status: "active"
+    readiness_status: "CORE_READY"
+    source_group: "market"
+    purpose: "numeric"
+    freshness_bucket: "near_real_time"
+    min_interval_seconds: 900
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "true"
+  # -- domain --
+  kma:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "domain"
+    purpose: "domain"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  tour:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "domain"
+    purpose: "domain"
+    freshness_bucket: "daily"
+    min_interval_seconds: 86400
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  its:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "domain"
+    purpose: "domain"
+    freshness_bucket: "short"
+    min_interval_seconds: 1800
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  kofic:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "domain"
+    purpose: "domain"
+    freshness_bucket: "daily"
+    min_interval_seconds: 86400
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  tmdb:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "domain"
+    purpose: "domain"
+    freshness_bucket: "daily"
+    min_interval_seconds: 86400
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  kopis:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "domain"
+    purpose: "domain"
+    freshness_bucket: "daily"
+    min_interval_seconds: 86400
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  aladin:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "domain"
+    purpose: "domain"
+    freshness_bucket: "daily"
+    min_interval_seconds: 86400
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  igdb:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "domain"
+    purpose: "domain"
+    freshness_bucket: "daily"
+    min_interval_seconds: 86400
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  culture_info:
+    enabled: true
+    profile_status: "needs_api_key"
+    readiness_status: "CORE_READY"
+    source_group: "domain"
+    purpose: "domain"
+    freshness_bucket: "daily"
+    min_interval_seconds: 86400
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "requires_api_key"
+  # 제외군 (DEFERRED / MVP_DEFERRED / MVP_EXCLUDED - enabled=false)
+  reddit:
+    enabled: false
+    profile_status: "disabled"
+    readiness_status: "MVP_DEFERRED"
+    source_group: "community"
+    purpose: "community"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "high"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: false
+    is_community: true
+    confirmation_policy: "unconfirmed_until_corroborated"
+    live_eligible: "false"
+    skip_reason: "disabled_by_policy"
   fmkorea:
-    purpose: community
-    freshness_bucket: medium
-    min_interval_seconds: 3600
-    risk_level: high                 # CAUTION (playwright, 차단 위험)
-    preferred_strategy: playwright_selector_fetch
+    enabled: false
+    profile_status: "disabled"
+    readiness_status: ""
+    source_group: "community"
+    purpose: "community"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "high"
+    preferred_strategy: "playwright_selector_fetch"
     requires_api_key: false
     is_community: true
-    confirmation_policy: unconfirmed_until_corroborated
-    notes: "CAUTION 모니터링 — 공개 HTML, 우회 금지"
+    confirmation_policy: "unconfirmed_until_corroborated"
+    live_eligible: "false"
+    skip_reason: "disabled_by_policy"
+  x:
+    enabled: false
+    profile_status: "blocked_policy"
+    readiness_status: "MVP_EXCLUDED"
+    source_group: "community"
+    purpose: "community"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "high"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: true
+    confirmation_policy: "unconfirmed_until_corroborated"
+    live_eligible: "false"
+    skip_reason: "login_wall_no_bypass"
+  blind:
+    enabled: false
+    profile_status: "blocked_policy"
+    readiness_status: "MVP_EXCLUDED"
+    source_group: "community"
+    purpose: "community"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "high"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: false
+    is_community: true
+    confirmation_policy: "unconfirmed_until_corroborated"
+    live_eligible: "false"
+    skip_reason: "login_wall_no_bypass"
+  krx_kind:
+    enabled: false
+    profile_status: "disabled"
+    readiness_status: ""
+    source_group: "official"
+    purpose: "regulatory"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "low"
+    preferred_strategy: "playwright_selector_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "evidence_required"
+    live_eligible: "false"
+    skip_reason: "needs_api_integration"
+  reuters:
+    enabled: false
+    profile_status: "blocked_policy"
+    readiness_status: "MVP_EXCLUDED"
+    source_group: "news"
+    purpose: "news"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "high"
+    preferred_strategy: "strategy_loop_fetch"
+    requires_api_key: false
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "paywall_no_bypass"
+  google_programmable_search:
+    enabled: false
+    profile_status: "disabled"
+    readiness_status: "DEPRECATED_OR_EXCLUDED"
+    source_group: "search"
+    purpose: "search"
+    freshness_bucket: "medium"
+    min_interval_seconds: 7200
+    risk_level: "low"
+    preferred_strategy: "api_json_fetch"
+    requires_api_key: true
+    is_community: false
+    confirmation_policy: "source_confirmed"
+    live_eligible: "false"
+    skip_reason: "disabled_by_policy"
