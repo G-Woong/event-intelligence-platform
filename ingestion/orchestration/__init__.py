@@ -24,6 +24,14 @@ __all__ = [
     "SourceSchedule",
     "is_due",
     "select_due_sources",
+    "SourceProfile",
+    "load_source_profiles",
+    "profiles_to_schedules",
+    "StrategyDecision",
+    "decide_strategy",
+    "load_last_run_state",
+    "save_last_run_state",
+    "record_last_run",
 ]
 
 _SYMBOL_MODULE = {
@@ -36,6 +44,14 @@ _SYMBOL_MODULE = {
     "SourceSchedule": "cycle_planner",
     "is_due": "cycle_planner",
     "select_due_sources": "cycle_planner",
+    "SourceProfile": "source_profile",
+    "load_source_profiles": "source_profile",
+    "profiles_to_schedules": "source_profile",
+    "StrategyDecision": "strategy_router",
+    "decide_strategy": "strategy_router",
+    "load_last_run_state": "cycle_state",
+    "save_last_run_state": "cycle_state",
+    "record_last_run": "cycle_state",
 }
 
 
@@ -60,9 +76,23 @@ if TYPE_CHECKING:  # 정적 분석/IDE 자동완성용 (런타임 import 아님)
         SUCCESS_STATUSES,
         to_event_seed,
     )
+    from ingestion.orchestration.cycle_state import (  # noqa: F401
+        load_last_run_state,
+        record_last_run,
+        save_last_run_state,
+    )
     from ingestion.orchestration.run_orchestration_cycle import (  # noqa: F401
         DEFAULT_SOURCES,
         CycleReport,
         SourceOutcome,
         run_cycle,
+    )
+    from ingestion.orchestration.source_profile import (  # noqa: F401
+        SourceProfile,
+        load_source_profiles,
+        profiles_to_schedules,
+    )
+    from ingestion.orchestration.strategy_router import (  # noqa: F401
+        StrategyDecision,
+        decide_strategy,
     )

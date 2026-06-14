@@ -1,0 +1,88 @@
+# Orchestration source profiles (Phase C).
+# 수집 엔진의 source_registry.yaml은 수정하지 않는다. 이 파일은 반복 운영(주기/목적/
+# 전략/확정정책) 보강 필드만 담는다. preferred_strategy는 강제 경로가 아니라 metadata다
+# (실제 라우팅은 run_collection_probe). API 키 '값'은 절대 여기 적지 않는다(.env에서만).
+#
+# 범위: Phase C 초기 등록 = 특성이 실측 확인된 대표 소스. 나머지 44 소스는 점진 확장한다
+# (검증 안 된 값을 임의로 채우지 않는다 — 가정 금지).
+version: 1
+profiles:
+  # ── news ──
+  gdelt:
+    purpose: news
+    freshness_bucket: short
+    min_interval_seconds: 900        # GDELT DOC API ~15분 갱신
+    risk_level: low
+    preferred_strategy: api_json_fetch
+    requires_api_key: false          # Phase A live로 no-key 작동 확인
+    notes: "GDELT DOC 2.0 public API"
+  yna:
+    purpose: news
+    freshness_bucket: near_real_time
+    min_interval_seconds: 1800
+    risk_level: low
+    preferred_strategy: strategy_loop_fetch
+    requires_api_key: false          # Phase A live로 no-key RSS 작동 확인
+    notes: "연합뉴스 public RSS"
+
+  # ── community (단독 확정 금지 — confirmation_policy unconfirmed) ──
+  hacker_news:
+    purpose: community
+    freshness_bucket: medium
+    min_interval_seconds: 1800
+    risk_level: low
+    preferred_strategy: api_json_fetch
+    requires_api_key: false
+    is_community: true
+    confirmation_policy: unconfirmed_until_corroborated
+    notes: "HN Firebase public API"
+  reddit:
+    purpose: community
+    freshness_bucket: medium
+    min_interval_seconds: 1800
+    risk_level: medium
+    preferred_strategy: api_json_fetch
+    requires_api_key: false          # read-only .json, no key
+    is_community: true
+    confirmation_policy: unconfirmed_until_corroborated
+    notes: "read-only .json endpoint; write API excluded"
+  product_hunt:
+    purpose: community
+    freshness_bucket: daily
+    min_interval_seconds: 21600
+    risk_level: low
+    preferred_strategy: api_json_fetch
+    requires_api_key: true           # PRODUCT_HUNT_ACCESS_TOKEN (bearer)
+    is_community: true
+    confirmation_policy: unconfirmed_until_corroborated
+    notes: "GraphQL; developer token ~1000 req/day"
+  youtube:
+    purpose: community
+    freshness_bucket: medium
+    min_interval_seconds: 3600
+    risk_level: low
+    preferred_strategy: api_json_fetch
+    requires_api_key: true           # YOUTUBE_API_KEY
+    is_community: true
+    confirmation_policy: unconfirmed_until_corroborated
+    notes: "YouTube Data API v3; 10k quota/day"
+  dcinside:
+    purpose: community
+    freshness_bucket: medium
+    min_interval_seconds: 3600
+    risk_level: high                 # CAUTION (playwright, 차단 위험)
+    preferred_strategy: playwright_selector_fetch
+    requires_api_key: false
+    is_community: true
+    confirmation_policy: unconfirmed_until_corroborated
+    notes: "CAUTION 모니터링 — 공개 HTML, 우회 금지"
+  fmkorea:
+    purpose: community
+    freshness_bucket: medium
+    min_interval_seconds: 3600
+    risk_level: high                 # CAUTION (playwright, 차단 위험)
+    preferred_strategy: playwright_selector_fetch
+    requires_api_key: false
+    is_community: true
+    confirmation_policy: unconfirmed_until_corroborated
+    notes: "CAUTION 모니터링 — 공개 HTML, 우회 금지"

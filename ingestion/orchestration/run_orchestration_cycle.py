@@ -4,12 +4,15 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Optional, Sequence
 
 from ingestion.fetch_strategies.collection_probe import run_collection_probe
 from ingestion.fetch_strategies.models import CollectionProbeResult
 from ingestion.orchestration.cycle_planner import SourceSchedule, select_due_sources
+from ingestion.orchestration.cycle_state import load_last_run_state, record_last_run
 from ingestion.orchestration.event_seed import SUCCESS_STATUSES, to_event_seed
+from ingestion.orchestration.source_profile import SourceProfile, profiles_to_schedules
 from ingestion.pipeline.event_queue import EventQueue
 
 logger = logging.getLogger("ingestion.orchestration.run_orchestration_cycle")
@@ -66,13 +69,15 @@ def run_cycle(
     sources: Sequence[str] | None = None,
     *,
     schedules: Sequence[SourceSchedule] | None = None,
+    profiles: Sequence[SourceProfile] | None = None,
+    state_path: str | Path | None = None,
     queue: EventQueue | None = None,
     probe_fn: ProbeFn = run_collection_probe,
     query: Optional[str] = None,
     max_items: int = 5,
     force: bool = False,
 ) -> CycleReport:
-    """Phase A/B deterministic local orchestration cycle.
+    """Phase A/B/C deterministic local orchestration cycle.
 
     각 소스를 ``run_collection_probe``로 1회 수집하고, 성공(LIVE_SUCCESS/PARTIAL) 결과를
     EventSeedCandidate로 EventQueue(JSONL)에 적재한다. 설계 원칙:
@@ -84,15 +89,23 @@ def run_cycle(
     - **실패 비적재**: 성공만 큐에 넣고 실패는 CycleReport에만 기록(다운스트림 오염 방지).
       health store 갱신은 run_collection_probe 내부(_update_health)가 이미 수행한다.
 
-    소스 선택 우선순위(Phase B):
-    1. ``schedules`` 주어지면 → due(enabled + min_interval 경과)인 소스만 수집.
-    2. ``sources`` 주어지면 → 그 목록 전부.
-    3. 둘 다 None → ``DEFAULT_SOURCES`` (gdelt, yna).
+    소스 선택 우선순위:
+    1. ``schedules`` (Phase B) → due인 소스만 수집.
+    2. ``profiles`` (Phase C) → ``state_path``의 last_run_at으로 schedule 생성 후 due만 수집.
+    3. ``sources`` → 그 목록 전부.
+    4. 모두 None → ``DEFAULT_SOURCES`` (gdelt, yna).
+
+    ``state_path``가 주어지면 **성공한 수집만** last_run_at을 그 파일에 기록한다
+    (실패/차단/쿨다운은 갱신하지 않음 → 다음 cycle에서 즉시 재시도 가능).
 
     ``probe_fn``/``queue``는 주입 가능 → 단위 테스트는 fake로 결정적 검증.
     """
+    now = datetime.now(timezone.utc)
     if schedules is not None:
-        src = tuple(select_due_sources(schedules, datetime.now(timezone.utc)))
+        src = tuple(select_due_sources(schedules, now))
+    elif profiles is not None:
+        last_run = load_last_run_state(state_path)
+        src = tuple(select_due_sources(profiles_to_schedules(profiles, last_run), now))
     elif sources is not None:
         src = tuple(sources)
     else:
@@ -115,6 +128,9 @@ def run_cycle(
                 item_id = q.enqueue(seed)
                 succeeded += 1
                 enqueued_count += 1
+                if state_path is not None:
+                    # 성공한 수집만 last_run_at 갱신(실패는 다음 cycle 즉시 재시도 가능)
+                    record_last_run(state_path, source_id, now)
                 outcomes.append(SourceOutcome(
                     source_id=source_id, status=result.status,
                     items_found=result.items_found, enqueued=True,

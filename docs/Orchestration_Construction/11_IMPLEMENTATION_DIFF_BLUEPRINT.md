@@ -236,7 +236,16 @@ quality_gate_rejection_reason 품질 게이트 탈락 사유별 분포
 - **B-4 RuntimeWarning 제거**: `__init__.py`를 PEP 562 lazy import(`__getattr__`)로 전환 → `python -m ...run_orchestration_cycle` 실행 시 runpy 경고 제거(공개 API 유지). `-W error::RuntimeWarning` 검증 통과.
 - 테스트: `test_cycle_planner.py`(8) + `test_orchestration_persistence.py`(8) + `test_orchestration_cycle.py`(+2) = 신규 18.
 
-**Phase C로 넘김**: SourceProfile/source_profiles.yaml(44소스) + last_run_at 영속·자동 갱신 + StrategyRouter + canonical_url(url_resolver) 연결.
+**Phase C (이번 턴)** — 신규 설치 0, 회귀 695 passed:
+- `ingestion/orchestration/source_profile.py` (신규): `SourceProfile`(dataclass frozen) + `load_source_profiles()`(yaml, 알 수 없는 필드 ValueError) + `profiles_to_schedules()`(→ Phase B SourceSchedule). 필드는 운영 최소셋(enabled/purpose/freshness_bucket/min_interval_seconds/risk_level/preferred_strategy/requires_api_key/is_community/confirmation_policy/notes) — 03 §2 풍부판을 Phase C 범위로 간소화.
+- `ingestion/configs/source_profiles.yaml` (신규): registry 무수정, 보강 필드만. **특성 실측 확인된 8개 대표 소스**(gdelt/yna + community 6: hacker_news/reddit/product_hunt/youtube/dcinside/fmkorea). 44 전수는 점진 확장(검증 안 된 값 임의 기입 안 함). API 키 '값'은 미기입(.env에서만).
+- `ingestion/orchestration/cycle_state.py` (신규): last_run_at local_file JSON 영속. `load/save_last_run_state`, `record_last_run`. 깨진 JSON→빈 상태 안전 처리. Redis/DB 없음.
+- `ingestion/orchestration/strategy_router.py` (신규): `decide_strategy(profile)->StrategyDecision`(순수 함수, read-only metadata). community는 confirmation_policy를 `unconfirmed_until_corroborated`로 보정(단독 확정 금지). 실제 수집 라우팅은 run_collection_probe가 책임(대체 안 함).
+- `run_cycle(profiles=, state_path=)` 추가: profiles→state의 last_run으로 schedule→due 소스만 수집. **성공한 수집만** last_run 기록(실패/차단은 미갱신→즉시 재시도 가능). schedules/sources 경로 불변.
+- **C-5 canonical_url**: url_resolver.resolve/resolve_via_browser는 **둘 다 네트워크 호출**(httpx/Playwright) → Phase C에서 연결 안 함(선택 B). canonical_from_html은 순수하나 rendered HTML 필요 → source-level seed에선 불가. **canonical_url=None 유지, Phase D 이월**.
+- 테스트: `test_source_profile.py`(8) + `test_cycle_state.py`(7) + `test_strategy_router.py`(6) = 신규 21.
+
+**Phase D로 넘김**: 개별 기사 분해(artifact 파싱) + canonical_url(url_resolver, 개별 기사 HTML 확보 후) + body extraction resilience cascade + 44 소스 프로파일 확장.
 
 ---
 

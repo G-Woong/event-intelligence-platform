@@ -89,6 +89,17 @@ class SourceProfile:
 
 **SourceProfile은 어디서 오는가?** — `source_registry.yaml`을 1차 출처로 하고, 부족한 필드(freshness_need, preferred_strategy 등)는 **신규 YAML `source_profiles.yaml`**로 보강한다. registry는 수정하지 않는다(읽기만).
 
+> **Phase C 실제 구현 노트 (2026-06-14)**: 위 §2 스키마는 설계 풍부판이다. 실제 구현
+> (`ingestion/orchestration/source_profile.py`)은 **운영 최소셋**으로 간소화했다:
+> `source_id, enabled, purpose, freshness_bucket, min_interval_seconds, risk_level,
+> preferred_strategy, requires_api_key, is_community, confirmation_policy, notes`.
+> StrategyRouter도 §3 풀버전(health/rate-limit 의존) 대신 **최소 `decide_strategy(profile)
+> -> StrategyDecision`**(순수 함수, read-only metadata)로 구현했다 — community는
+> `confirmation_policy`를 `unconfirmed_until_corroborated`로 보정(단독 확정 금지). 실제 수집
+> 라우팅/재시도는 여전히 `run_collection_probe`가 책임(대체 안 함). `source_profiles.yaml`은
+> 특성이 실측 확인된 8개 대표 소스로 시작하고 44 전수는 점진 확장한다. health/rate-limit
+> 의존 라우팅(§3 풀버전)과 fallback 전략 순회는 Phase D~E/G로 이월.
+
 ---
 
 ## 3. StrategyRouter 설계
