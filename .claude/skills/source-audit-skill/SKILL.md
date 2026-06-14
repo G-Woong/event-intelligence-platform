@@ -16,15 +16,15 @@ allowed-tools: Bash, Read, Grep, Glob
 - "소스 상태 / 수집 점검 / 어떤 소스가 살아있나" 류 요청
 
 ## procedure
-1. **checklist 확인**: `docs/ingestion/70_source_status_master.md` 판정 기준 + `IMPLEMENTATION_TRACE_FINAL.md` §3 (PASS 14 / CONFIRMED_EXTERNAL_RATE_LIMIT 1)
-2. **role/registry 확인**: `source_registry.yaml`, `docs/ingestion/86_source_role_classification_matrix.md`
+1. **checklist 확인**: `docs/ingestion/INGESTION_FINAL.md` §2 판정 기준 + `IMPLEMENTATION_TRACE_FINAL.md` §3 (PASS 14 / CONFIRMED_EXTERNAL_RATE_LIMIT 1)
+2. **role/registry 확인**: `source_registry.yaml`, `docs/ingestion/INGESTION_FINAL.md` §3 (역할 분류)
 3. **rate-limit 정책 확인**: `ingestion/configs/rate_limit_policy.yaml`
    - gdelt: PASS이지만 **min_interval 60s / cooldown 900s** 준수
    - google_trends_explore: **CONFIRMED_EXTERNAL_RATE_LIMIT 유지** (PASS 아님)
 4. **fallback chain 확인**: trends 429 시 `run_trend_fallback_enrichment_audit` 경로
    (google_trending_now → RSS export → serper/naver)
 5. **runner readiness**: `run_runner_orchestration_readiness` JSONL (13/13 agent_ready)
-6. **live call**: 필요할 때만, rate gate 통과 확인 후 1회. 결과를 70번 판정 기준으로 평가
+6. **live call**: 필요할 때만, rate gate 통과 확인 후 1회. 결과를 INGESTION_FINAL.md §2 판정 기준으로 평가
 
 ## commands
 ```powershell

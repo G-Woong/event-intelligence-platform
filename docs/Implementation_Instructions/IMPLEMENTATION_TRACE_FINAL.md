@@ -4,7 +4,7 @@
 - 목적: 흩어진 지시문(00~10) + 진행 문서의 **적용 완료 상태를 하나의 trace로 통합**한다.
   신규 에이전트가 상태를 오해하지 않도록 단일 출처를 제공한다. 원본 지시문은 삭제하지 않고
   APPLIED/SUPERSEDED 배너로 보존한다.
-- 읽는 순서: **이 문서 → docs/ingestion/70·86·92 → runner_orchestration_readiness JSONL**.
+- 읽는 순서: **이 문서 → docs/ingestion/INGESTION_FINAL.md → ingestion/outputs/jsonl/runner_orchestration_readiness_*.jsonl**.
 
 ## 1. 프로젝트 목표 / 원래 문제
 

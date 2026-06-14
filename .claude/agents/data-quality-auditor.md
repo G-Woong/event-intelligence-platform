@@ -23,7 +23,7 @@ tools: Read, Grep, Glob
 ## Required project context
 - `ingestion/outputs/jsonl/` (artifact JSONL)
 - `ingestion/schemas/event_candidate.py`
-- `docs/ingestion/70_source_status_master.md`
+- `docs/ingestion/INGESTION_FINAL.md` (소스 상태 + 판정 기준)
 
 ## Allowed actions
 - artifact JSONL 읽기 및 분석 (Read, Grep, Glob)

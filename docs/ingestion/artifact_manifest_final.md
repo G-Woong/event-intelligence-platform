@@ -47,4 +47,4 @@
 3. rate-limit 영속 검증이 필요하면 `INGESTION_RATE_LIMIT_BACKEND=local_file` 설정(각 audit runner는 `force_local_file_backend`로 자동 처리).
 4. google_trends_explore는 optional이며 429면 fallback chain으로 대체된다(우회 금지). 자세한 정책은 `rate_limit_evidence.md §5`.
 
-연결: `IMPLEMENTATION_TRACE_FINAL.md §8(Artifact map)` → 본 매니페스트, `docs/ingestion/70_source_status_master.md`.
+연결: `IMPLEMENTATION_TRACE_FINAL.md §8(Artifact map)` → 본 매니페스트, `docs/ingestion/INGESTION_FINAL.md`.

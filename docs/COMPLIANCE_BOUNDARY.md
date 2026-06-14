@@ -1,7 +1,7 @@
 # Compliance Boundary
 
 > 갱신: Round 1.5 안정화 + Round 2 구조 반영 (2026-06-03).
-> 상호참조: `docs/ingestion/03_env_and_api_policy.md`
+> 상호참조: `docs/ingestion/INGESTION_FINAL.md` §11 (금지 정책)
 
 ## 절대 금지 (Hard prohibitions)
 

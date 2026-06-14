@@ -21,7 +21,7 @@ tools: Read, Grep, Glob
 
 ## Required project context
 - `ingestion/schemas/event_candidate.py`
-- `docs/ingestion/86_source_role_classification_matrix.md`
+- `docs/ingestion/INGESTION_FINAL.md` (소스 역할 + 수집 주기)
 
 ## Allowed actions
 - 문서 읽기 (Read, Grep, Glob)

@@ -24,7 +24,7 @@ tools: Read, Grep, Glob
 ## Required project context
 - 현재 기능 목록
 - 타겟 시장 가설
-- `docs/ingestion/70_source_status_master.md` (수집 소스 현황)
+- `docs/ingestion/INGESTION_FINAL.md` (수집 소스 현황)
 
 ## Allowed actions
 - 문서 읽기 (Read, Grep, Glob)

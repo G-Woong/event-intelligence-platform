@@ -21,8 +21,7 @@ tools: Read, Grep, Glob
 - UI 설계 → product-ux-strategist
 
 ## Required project context
-- `docs/ingestion/70_source_status_master.md` (수집 소스 현황)
-- `docs/ingestion/86_source_role_classification_matrix.md` (소스 역할)
+- `docs/ingestion/INGESTION_FINAL.md` (수집 소스 현황 + 소스 역할)
 
 ## Allowed actions
 - 문서 읽기 (Read, Grep, Glob)

@@ -26,8 +26,7 @@ tools: Read, Grep, Glob
 반드시 읽을 것:
 - `ingestion/configs/source_registry.yaml`
 - `ingestion/configs/rate_limit_policy.yaml`
-- `docs/ingestion/92_mvp_collection_frequency_draft.md` (수집 bucket)
-- `docs/ingestion/86_source_role_classification_matrix.md` (소스 역할)
+- `docs/ingestion/INGESTION_FINAL.md` (소스 역할 + 수집 bucket + Celery 연결 포인트)
 - `docs/Implementation_Instructions/IMPLEMENTATION_TRACE_FINAL.md` §7 (runner map)
 - `ingestion/runners/` 디렉터리 목록
 

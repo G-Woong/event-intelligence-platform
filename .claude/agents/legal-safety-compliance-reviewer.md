@@ -22,7 +22,7 @@ tools: Read, Grep, Glob
 - 소스 URL
 - 수집 방식
 - 사용 목적 (비상업/상업)
-- `docs/ingestion/70_source_status_master.md`
+- `docs/ingestion/INGESTION_FINAL.md` (소스 상태 + 금지 정책)
 
 ## Allowed actions
 - 약관 문서 읽기 (Read, Grep, Glob)
