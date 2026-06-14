@@ -253,12 +253,55 @@ Phase G. Celery/Redis optional layer (plans/012 §1~8)
    → collect_source task + beat + 재시도 큐 + 격리 + quota guard + EventQueue Redis Stream
    검증: 워커 2개 중복 호출 차단, 재시도 큐 만기 재발행
 
-Phase H. UI/API handoff preparation
-   → event queue → raw_events 브리지 → 기존 다운스트림 파이프라인
-   검증: 수집 1건이 event_cards까지 도달(e2e)
+Phase H. bridge_to_raw_events → raw_events → event_cards (e2e)
+   → event queue → bridge_to_raw_events 어댑터 → 기존 다운스트림 파이프라인
+     (async + RawEventCreate + AsyncSession, Postgres 컨테이너 기동은 승인 후)
+   검증: 수집 1건이 raw_events를 거쳐 event_cards까지 도달(e2e)
+
+Phase I. Future high-level agent layer review (MVP 이후 — 설치/도입 안 함)
+   → Deep Agents(우선)/CrewAI(비교)/MS Agent Framework(장기) 효용성 재평가.
+     Layer 3 = premium analysis / B2B intelligence / research assistant 계층(10 §13).
+   검증: 없음(설계 검토만). 설치는 매출 검증 후 사용자 승인 시.
 ```
 
+> **Phase H 명칭 주의**: 과거 초안에서 Phase H를 "UI/API handoff preparation"으로 부른 적이 있으나, 실제 내용은 **다운스트림 브리지(`bridge_to_raw_events`)**다. 05/07/11/12 문서와 명칭을 `bridge_to_raw_events e2e`로 통일한다.
+
 핵심 통찰: **Phase A~E는 신규 인프라 없이(설치 0) 가능**하다. Celery/Redis(Phase G)는 그 위에 얹는 선택지이지 전제가 아니다. 이것이 plans/012 §4의 "strategy loop 내부 sleep은 단일 프로세스 모드 폴백으로 유지" 설계 의도와 정합한다.
+
+---
+
+## 7.1 Final implementation stance (최종 구현 입장 — 단일 출처)
+
+> 이 표가 Phase별 **설치/인프라 의존성의 단일 출처(single source of truth)**다. 다른 문서가 Phase 정의에서 어긋나면 이 표를 기준으로 정렬한다. (07 §0.5 Phase↔Layer 매핑, 11 §9b 설치 정책표와 정합)
+
+```text
+Phase A:  deterministic local cycle
+          - no new install
+          - EventQueue JSONL
+          - local_file state
+          - no Celery / no Redis server / no LangGraph wrapping / no Deep Agents
+
+Phase B~E: persistence / SourceProfile+PurposeRouter+StrategyRouter / body resilience / quality+safety gates
+          - still no required infra install (모두 신규 설치 0)
+
+Phase F:  optional LangGraph 0.2.76 wrapping
+          - deterministic cycle이 불충분함이 입증될 때만
+          - 설치 0(이미 설치된 0.2.76). checkpointer 영속은 INSTALL_CANDIDATE
+
+Phase G:  Celery / Redis optional scale layer
+          - requires user-confirmed Redis container + Windows worker pool(--pool=solo, V-4)
+          - py 패키지(celery/redis)는 설치됨, 서버 컨테이너는 INSTALL_CANDIDATE
+
+Phase H:  bridge_to_raw_events → raw_events → event_cards
+          - requires Postgres/AsyncSession path (기존 backend 세션 경유 권장)
+          - e2e target: 수집 1건이 event_cards까지 도달
+
+Phase I:  future high-level agent layer review
+          - Deep Agents preferred future candidate / CrewAI comparison / Microsoft Agent Framework long-term
+          - no MVP install (매출 검증 후 사용자 승인 시에만)
+```
+
+**불변 규칙**: Phase G/H의 인프라 의존성(Redis/Postgres 컨테이너)을 Phase A로 끌어오지 않는다. 모든 신규 설치/컨테이너 기동은 `INSTALL_CANDIDATE_REQUIRES_USER_APPROVAL`이며 이번 검토 턴에서는 0건 실행한다.
 
 ---
 
@@ -314,7 +357,7 @@ Phase H. UI/API handoff preparation
 | langgraph 0.2.76을 유지할까? | v1 업그레이드는 스켈레톤 회귀 위험 | 유지(D-3) | No |
 | ingestion→raw_events 브리지를 별도 어댑터로 둘까? | 두 시스템 결합도 최소화 | 별도 어댑터(D-6) | **REVIEW** |
 | Redis/Postgres 컨테이너를 띄울 수 있는가? | Phase G/H 전제 | 사용자 환경 확인(V-2/V-3) | Phase G에서만 |
-| 루트 `gcp-service-account-key.json`이 gitignore에 있는가? | 자격증명 유출 방지 | 즉시 확인 권고(V-9) | Yes(보안) |
+| 루트 `gcp-service-account-key.json`이 gitignore에 있는가? | 자격증명 유출 방지 | ✅ 확인됨(`.gitignore` 포함 + `git ls-files` 미추적, V-9 RESOLVED) | No(해소 — 디스크 파일 백업/권한만 운영 권고) |
 
 ---
 

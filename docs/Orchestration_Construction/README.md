@@ -48,6 +48,7 @@
 - **보안**: 루트 `gcp-service-account-key.json` = `.gitignore` 포함 + git 미추적 확인(V-9 RESOLVED).
 - **원문 5계층**: artifact_store(internal) / EventQueue(JSONL) / raw_events / event_cards / Milvus+OpenSearch — 내부저장 ≠ 외부공개(전문 재배포 금지).
 - **설치 정책**: Phase A~E 신규 설치 0. 모든 신규 설치/컨테이너 기동은 `INSTALL_CANDIDATE_REQUIRES_USER_APPROVAL`.
+- **Phase 정의 단일 출처**: `00 §7.1 Final implementation stance` (Phase A~I 설치/인프라 의존성). 문서 간 Phase 정의가 어긋나면 이 표 기준으로 정렬한다.
 
 ## 다음 구현 턴의 시작 파일
 
