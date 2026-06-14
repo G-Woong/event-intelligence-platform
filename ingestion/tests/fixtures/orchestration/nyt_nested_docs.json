@@ -1,0 +1,20 @@
+{
+  "status": "OK",
+  "response": {
+    "docs": [
+      {
+        "abstract": "Synthetic abstract used as summary snippet.",
+        "web_url": "https://news.test/2026/06/02/synthetic-a?utm_source=feed",
+        "pub_date": "2026-06-02T08:00:00Z",
+        "headline": {"main": "Synthetic Nested Headline One", "kicker": ""},
+        "document_type": "article"
+      },
+      {
+        "abstract": "Second synthetic abstract.",
+        "web_url": "https://news.test/2026/06/02/synthetic-b",
+        "pub_date": "2026-06-02T09:30:00Z",
+        "headline": {"main": "Synthetic Nested Headline Two"}
+      }
+    ]
+  }
+}

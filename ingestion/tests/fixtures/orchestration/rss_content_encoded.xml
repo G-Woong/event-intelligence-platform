@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Synthetic Feed With Content</title>
+    <item>
+      <title>Item With Full Content Body</title>
+      <link>https://feed.test/full/1?utm_source=rss</link>
+      <pubDate>Mon, 02 Jun 2026 09:00:00 +0000</pubDate>
+      <description>Short synthetic snippet only.</description>
+      <content:encoded><![CDATA[<p>This is a synthetic full article body used only for testing the content:encoded extraction path. It is deliberately written to exceed the two hundred character full-body threshold so the body extraction cascade classifies it as present rather than snippet only. No real article text is included.</p>]]></content:encoded>
+    </item>
+    <item>
+      <title>Item Snippet Only</title>
+      <link>https://feed.test/snippet/2</link>
+      <description>Just a short snippet, no content encoded element here.</description>
+    </item>
+  </channel>
+</rss>

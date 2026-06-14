@@ -1,0 +1,27 @@
+{
+  "took": 12,
+  "hits": {
+    "total": {"value": 2},
+    "hits": [
+      {
+        "_index": "edgar_file",
+        "_id": "0000-00-000001",
+        "_source": {
+          "display_names": ["Synthetic Filing Corp (CIK 0000000001)"],
+          "form": "8-K",
+          "file_date": "2026-05-21",
+          "url": "https://filings.test/0000-00-000001"
+        }
+      },
+      {
+        "_index": "edgar_file",
+        "_id": "0000-00-000002",
+        "_source": {
+          "display_names": ["Another Synthetic Trust (CIK 0000000002)"],
+          "form": "NPORT-P",
+          "file_date": "2026-02-23"
+        }
+      }
+    ]
+  }
+}

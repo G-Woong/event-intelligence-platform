@@ -59,6 +59,18 @@ __all__ = [
     "compute_duplicate_key",
     "assess_boilerplate",
     "summarize_pre_gate",
+    # Phase E-1
+    "AuditTraceEvent",
+    "TraceRecorder",
+    "SourceBodyAudit",
+    "SourceBodyAuditResult",
+    "CandidateInspection",
+    "audit_source_body",
+    "summarize_body_audits",
+    "SourceBodyReport",
+    "classify_production_readiness",
+    "build_source_report",
+    "summarize_reports",
 ]
 
 _SYMBOL_MODULE = {
@@ -106,6 +118,18 @@ _SYMBOL_MODULE = {
     "compute_duplicate_key": "quality_pre_gate",
     "assess_boilerplate": "quality_pre_gate",
     "summarize_pre_gate": "quality_pre_gate",
+    # Phase E-1
+    "AuditTraceEvent": "audit_trace",
+    "TraceRecorder": "audit_trace",
+    "SourceBodyAudit": "source_body_audit",
+    "SourceBodyAuditResult": "source_body_audit",
+    "CandidateInspection": "source_body_audit",
+    "audit_source_body": "source_body_audit",
+    "summarize_body_audits": "source_body_audit",
+    "SourceBodyReport": "source_body_report",
+    "classify_production_readiness": "source_body_report",
+    "build_source_report": "source_body_report",
+    "summarize_reports": "source_body_report",
 }
 
 

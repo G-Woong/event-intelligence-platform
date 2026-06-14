@@ -360,3 +360,10 @@ SourceProfile:
 - **분해의 진실**: artifact 존재 49/49이지만 candidate_total 4102 중 numeric_exempt 3633(binance 3600 등 시세 원소). 기사형 본문 `present=0/partial=0` — RSS 뉴스(yna/ap_news 등)는 title/url 100%지만 본문은 description뿐(snippet_only).
 - **21/49 소스 0-candidate**: sec_edgar(중첩 `hits.hits`), hacker_news(id-list), opendart/kma/nyt/guardian/serper/naver_news_search 등. numeric_exempt(정상)와 **parser 미지원 실패**(`no_candidates_from_artifact`)를 risk_flag로 분리. 면제가 아니라 Phase E 소스별 파서 보강 대상.
 - **role/purpose 라우팅 자체는 끊김 없음**: SourceProfile→StrategyDecision→readiness→seed→candidate→pre_gate 전 구간 연결 검증(test_pipeline_connectivity). 병목은 라우팅이 아니라 소스별 artifact 스키마 커버리지.
+
+### Phase E-1 — 소스별 본문 추출 readiness (2026-06-14)
+
+`ingestion.tools.run_source_body_audit`로 enabled 50소스 실측(네트워크 0, 기존 artifact replay). production_readiness 분포:
+- **PRODUCTION_READY_SIGNAL 1**(the_verge, 마커 없는 1건뿐) / **STRUCTURED_SIGNAL_ONLY 6**(market/trend numeric) / **NEEDS_BODY_FETCH 18**(뉴스 대부분 snippet — 전체 기사 fetch 필요) / **NEEDS_PARSER 21**(스키마/필드 미매핑) / **HTML_UNSUPPORTED 2**(etnews/zdnet_korea) / **BLOCKED_NO_BYPASS 1**(dcinside) / **INSUFFICIENT_DATA 1**(google_trends_explore, artifact 없음).
+- **0분해 일부 복구**: nyt(`response.docs`)·sec_edgar(`hits.hits`) 중첩 컨테이너 파서로 분해 회복. opendart/bok_ecos는 에러/카탈로그로 정직 분류.
+- **결론 불변**: 병목은 라우팅이 아니라 (1) 뉴스 본문 fetch 미구현, (2) 공공/도메인 API 소스별 필드 매핑 — 둘 다 Phase E.

@@ -351,4 +351,14 @@ signal_bz/loword)은 이번 라운드 제외.
 
 **Pre-gate 실측 분포(4102 candidate)**: pass 3630 / hold 449 / reject 23. 단 **pass의 ~3631이 numeric_exempt(시세)** — 기사형(~469)은 거의 hold(snippet_only 368/body_missing 81). 합산 pass율(88%)을 article 품질로 읽으면 오도. group별 분리 보고 필수.
 
+### Phase E-1 — 소스별 audit trace/sample 저장 스키마 (2026-06-14)
+
+`run_source_body_audit`의 산출물(전부 gitignored `ingestion/outputs/tmp_source_body_audit/<run_id>/`):
+- `trace.jsonl` — `AuditTraceEvent{run_id,source_id,stage,status,timestamp,message,metrics,error_type}` (stage: profile_loaded→…→source_completed). metrics는 `TraceRecorder._redact`로 키성 필드 마스킹(값 비노출).
+- `summary.json`/`summary.csv` — 소스별 readiness + body_state 분포(group 분리).
+- `source_reports/<id>.json` — `SourceBodyReport`(candidate_count, body_present/snippet/missing, pre_gate, production_readiness, next_action, parser_gap_reason).
+- `samples/<id>/candidate_NNNN.{meta.json,preview.txt,body_sample.txt,raw_ref.txt}` — 내부 디버그용(max_items=1, body 3000자 절단). **공개 게시용 아님**, raw 본문은 outputs에만.
+
+**Pre-gate 재측(35802 candidate)**: pass 3631 / hold 461 / reject 31710. pass의 3630이 numeric, reject의 31584가 its(title 없는 교통 데이터셋). **candidate_total은 구조 데이터셋(its)+numeric(binance)이 지배** — article pass는 0(present 1건은 hold 아님). group/body_state별 분리 없이 단일 숫자 해석 금지.
+
 > 다음 문서: `06_LANGCHAIN_LANGGRAPH_DEEPAGENTS_RESEARCH.md`.

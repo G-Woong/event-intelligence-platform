@@ -293,4 +293,12 @@ extractor) 책임.
 
 **알려진 한계 추가**: `normalize_published_at`는 date-only를 `00:00:00 UTC`로, 타임존 미표기를 UTC로 가정(precision_lost 가능). Unix epoch/`YYYY.MM.DD`/한글 날짜 미지원 → unrecognized(hold). 정밀화는 Phase E.
 
+### Phase E-1 — body cascade 실측·보강 (2026-06-14)
+
+`artifact_parser.py`에 본문 cascade 보강(stdlib, 신규 설치 0): RSS `content:encoded`/Atom `<content>` → `_strip_html`로 본문 회수, 중첩 컨테이너(`response.docs`/`hits.hits`)·`_source` 평탄화·`headline.main`·`pub_date` 매핑.
+
+**실측(enabled 50소스, 네트워크 0)**: body `present=1`, `partial=0`, `snippet_only=376`, `body_missing=31795`, `numeric_exempt=3630`. 그룹별 news{present 1, snippet 363, missing 57} / official{missing 122} / domain{missing 31607(its 교통 데이터셋)} / market·trend{numeric_exempt 3630}.
+
+**긍정편향 자가 교정(핵심)**: the_verge atom content 10건 중 9건이 "Read the full story at The Verge." **발췌**였다 — 길이≥200만으로 present 판정하던 결함을 `body_state._looks_truncated`(excerpt 마커 탐지)로 보강해 present→snippet_only 강등. 결과 present 10→1. **즉 실측 본문 추출 성공은 사실상 0**(남은 1건도 마커 없는 단일 항목). 뉴스 본문은 여전히 canonical_url 기반 **전체 기사 fetch(Phase E)**가 선행조건이다. content:encoded/atom 경로는 *피드가 전문을 실을 때만* 유효하며 the_verge처럼 대부분 발췌다.
+
 > 다음 문서: `05_EVENT_QUEUE_AND_STORAGE_SCHEMA.md`.

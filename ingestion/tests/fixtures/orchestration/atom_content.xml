@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Synthetic Atom Feed</title>
+  <entry>
+    <title>Atom Entry With Content</title>
+    <link href="https://atom.test/entries/1"/>
+    <updated>2026-06-02T10:00:00Z</updated>
+    <summary>Short atom summary snippet.</summary>
+    <content type="html">&lt;p&gt;This is a synthetic atom content body for testing the atom content extraction path. It is intentionally longer than the two hundred character threshold so the cascade marks the body state as present, proving atom content is read as body rather than dropped. Synthetic only.&lt;/p&gt;</content>
+  </entry>
+</feed>
