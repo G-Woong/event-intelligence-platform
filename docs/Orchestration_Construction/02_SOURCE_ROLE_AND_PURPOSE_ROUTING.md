@@ -48,6 +48,7 @@
 - **현재 runner**: hacker_news=API(2차 detail 호출), youtube=API, dcinside=Route 2/검색
 - **목적**: **community_reaction**(사건 발생 후 여론 수집) — **이벤트 트리거 전용, 정기 폴링 비권장**
 - **주기**: short_interval 또는 on-demand
+- **원칙(D-9 확정, 불변)**: 커뮤니티는 **early signal**이지 **confirmed fact가 아니다.** 커뮤니티 **단독으로 사건을 확정·발행하지 않는다.** 공식/뉴스/다중출처 보강 없이 publish 시 `community_signal`/`unconfirmed` 라벨 필수(09 §community_vs_official_balance). hacker_news/youtube/product_hunt는 MVP 포함, dcinside는 CAUTION 모니터링.
 
 ### 1.5 trend/search sources (트렌드·검색, 약 9개)
 - **트렌드**: signal_bz, google_trending_now, loword, (caution: google_trends_explore=CONFIRMED_EXTERNAL_RATE_LIMIT)

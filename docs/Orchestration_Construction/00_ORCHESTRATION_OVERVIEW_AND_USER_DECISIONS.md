@@ -86,6 +86,41 @@ openai==1.108.1            langsmith==0.1.147       playwright==1.48.0
 - pytest 기준선: ingestion 509 passed + 스켈레톤 회귀 108 (별도 트리).
 - runner orchestration readiness: 13/13 agent_ready.
 
+### 1.6 코드 실재 검증 결과 (2026-06-14 재검토 — read-only)
+
+> 본 설계의 전제가 실제 코드와 맞는지 read-only로 재확인했다. **전제 전부 TRUE.**
+
+| 전제 | 검증 방법 | 결과 |
+|---|---|---|
+| 두 시스템(A `ingestion/` ↔ B `backend/workers/agents/frontend`) 공존·미연결 | glob/grep | ✅ TRUE |
+| `run_collection_probe(source_id, query=None, max_items=5, force=False) -> CollectionProbeResult` | grep `collection_probe.py:26` | ✅ 시그니처 정확 |
+| EventQueue JSONL 동작 / Redis Stream stub | `event_queue.py` 정독 | ✅ JSONL 동작, `_redis_*` 4개 `NotImplementedError` |
+| artifact_store raw/extracted 분리 | grep | ✅ `save_raw_html/save_raw_payload` vs `save_extracted_text/save_extracted_payload/save_raw_signal` |
+| rate_limit_store 3 backend + `get_store()` | grep | ✅ InMemory/LocalPersistent/Redis, env `INGESTION_RATE_LIMIT_BACKEND` > yaml > memory |
+| `get_health_store().list_due_for_retry()` | grep | ✅ 존재 |
+| `ingestion/pipeline/` 다운스트림 연결부 stub | grep `NotImplementedError` | ✅ 6파일 9건(event_queue 4 + 나머지 각 1) |
+| 다운스트림 event_processing_graph 11노드 | grep `add_node` | ✅ source_parse/normalize_event/deduplicate_event/entity_linking/theme_sector_mapping/retrieve_past_context/impact_analysis/evidence_check/run_fact_check/final_card_writer/publish_or_hold |
+| 다운스트림 입력 RSS 3개 | grep `workers/collectors/sources.py` | ✅ DEFAULT_SOURCES enabled 3건 |
+| **U-3** `create_raw_event` 시그니처 | grep `raw_event_service.py:49` | ✅ **`async def create_raw_event(session: AsyncSession, payload: RawEventCreate) -> RawEventCreateResponse`** — RawEventCreate 필드: `source_type, url, title?, raw_text, published_at?, content_hash`. **async + pydantic + 세션 요구 → D-6 별도 어댑터 강하게 정당화** |
+| 설치 버전 | `importlib.metadata` | ✅ langgraph 0.2.76 / langchain 0.2.11 / celery 5.5.3 / redis 5.0.0 / playwright 1.48.0 / pymilvus 2.4.4 |
+| gcp 키 보안 | `git ls-files` + `.gitignore` | ✅ gitignore 포함 + 미추적(V-9 RESOLVED) |
+
+**재검토 종합 판정: APPROVE_DIRECTION.** 설계 전제가 실제 코드와 일치하며, 1차 ROI 명제가 코드로 뒷받침된다:
+
+> **오케스트레이션 구축의 1차 ROI는 신규 프레임워크 도입이 아니라, ingestion의 44개 수집 소스를 다운스트림 사건 카드 파이프라인에 `bridge_to_raw_events`로 연결하는 것이다.**
+
+### 1.7 권장 3층 아키텍처 (재검토 확정 — 06 §6 / 07 §0 상세)
+
+```
+Layer 1. Deterministic ingestion orchestration   ← 이번 설계의 본체 (Phase A~E, 설치 0)
+  run_orchestration_cycle → run_collection_probe → SourceProfile → PurposeRouter
+  → StrategyRouter → EventQueue(JSONL) → QualityGate → bridge_to_raw_events
+Layer 2. Existing LangGraph event processing      ← 이미 존재 (0.2.76 유지)
+  raw_events → Redis Stream → agents/graphs/event_processing_graph.py(11노드) → event_cards → Milvus/OpenSearch → frontend
+Layer 3. Future high-level agent layer            ← MVP 이후, 설치/도입 안 함
+  Deep Agents(우선 후보) / CrewAI(역할기반 팀리뷰 비교) / Microsoft Agent Framework(장기 엔터프라이즈)
+```
+
 ---
 
 ## 2. 오케스트레이션 최종 목표
@@ -96,7 +131,7 @@ openai==1.108.1            langsmith==0.1.147       playwright==1.48.0
 
 1. 사람이 손대지 않아도 소스별 주기에 맞춰 수집이 돈다(Celery beat 또는 deterministic local cycle).
 2. 한 소스의 실패가 다른 소스를 막지 않는다(소스당 격리).
-3. 429/차단/쿨다운이 정책대로 처리되고, 우회는 0건이다.
+3. 429/차단/쿨다운이 정책대로 처리되고, 안전한 전략 우회는 가능하되, 위험한 우회는 0건이다.
 4. 수집 결과가 event queue에 쌓이고, 다운스트림이 그것을 소비해 사건 카드로 만든다.
 5. 품질 게이트(본문 길이, 중복, 신뢰도)를 통과한 항목만 다음 단계로 간다.
 6. 비용(외부 API·LLM 호출)이 예측 가능한 상한 안에서 움직인다.
@@ -132,17 +167,19 @@ openai==1.108.1            langsmith==0.1.147       playwright==1.48.0
 
 > 원칙: **이미 설치된 것은 재설치하지 않는다.** 실제 설치 명령은 **사용자 승인 후** 구현 턴에서 실행한다(이번 턴 설치 금지). 모든 설치는 `uv`로 한다(conda 금지).
 
-| 범주 | 패키지/리소스 | 현재 상태 | 비고 |
-|---|---|---|---|
-| **이미 설치됨 (재설치 불필요)** | langgraph 0.2.76, langchain 0.2.11, celery 5.5.3, redis 5.0.0, fastapi, pymilvus 2.4.4, playwright 1.48.0, pydantic 2.11.7 | requirements.txt 핀 고정 | 버전 업그레이드는 별도 결정(§5 D-2) |
-| **Required now (Phase A — deterministic cycle)** | (없음 — 신규 설치 0) | 기존 자산만으로 가능 | Phase A는 `run_collection_probe` 반복 호출 + JSONL queue로 구현 |
-| **Required if Celery phase 시작 (Phase G)** | Redis **서버 컨테이너 가동** | compose에 정의됨, 미가동 | `docker compose up redis` (사용자 환경 확인 필요) |
-| **Required if Playwright 소스 주기 수집** | worker 이미지에 `playwright install chromium` | 로컬엔 설치됨, **worker 컨테이너엔 미확인** | plans/012 §1 전제조건 |
-| **Required if checkpointer 영속 (선택)** | `langgraph-checkpoint-sqlite` 또는 `-postgres` | 미설치 | LangGraph 크래시 복구가 필요할 때만 |
-| **Required if Postgres 브리지 (Phase H)** | Postgres **컨테이너 가동** + psycopg | compose 정의됨 | raw_events 직접 기록 경로 선택 시 |
-| **Deferred** | deepagents, langchain-mcp-adapters | 미설치 | 06 문서 결론상 **미도입** |
+> 표기 규칙: 신규 설치/업그레이드/컨테이너 기동이 필요한 항목은 **`INSTALL_CANDIDATE_REQUIRES_USER_APPROVAL`**로 표시한다. 이번 검토 턴에서는 **어떤 것도 설치하지 않는다** — 명령을 적을 수는 있으나 실행하지 않는다.
 
-> **USER_CONFIRMATION_REQUIRED**: 위 "컨테이너 가동"(Redis/Postgres)은 사용자의 Windows + Docker Desktop 환경에서 실제로 띄울 수 있는지 확인이 필요하다(§6 확인 항목).
+| 범주 | 패키지/리소스 | 현재 상태(2026-06-14 실측) | 비고 |
+|---|---|---|---|
+| **이미 설치됨 (재설치 불필요)** | langgraph **0.2.76**, langchain **0.2.11**, langchain-core 0.2.43, celery **5.5.3**, redis(py) **5.0.0**, fastapi 0.115.14, pymilvus 2.4.4, playwright(py) **1.48.0** | `importlib.metadata` 실측 일치 | 버전 업그레이드 금지(§5 D-3) |
+| **Required now (Phase A — deterministic cycle)** | (없음 — 신규 설치 0) | 기존 자산만으로 가능 | Phase A = `run_collection_probe` 반복 호출 + EventQueue(JSONL) |
+| **Required if Celery phase 시작 (Phase G)** | Redis **서버 컨테이너 기동** | compose 정의됨, **미가동(미검증)** | `INSTALL_CANDIDATE_REQUIRES_USER_APPROVAL` — redis(py)는 설치돼 있으나 서버는 별개 |
+| **Required if Playwright 소스 주기 수집** | worker 컨테이너에 `playwright install chromium` (browser binary) | py 패키지 설치됨, **browser binary는 worker 컨테이너 미확인** | `INSTALL_CANDIDATE_REQUIRES_USER_APPROVAL` — py 패키지 ≠ 브라우저 바이너리 |
+| **Required if Postgres 브리지 (Phase H)** | Postgres **컨테이너 기동** + `psycopg`(미설치 추정) | compose 정의됨 | `INSTALL_CANDIDATE_REQUIRES_USER_APPROVAL` — 단 브리지는 기존 backend async 세션 경유 권장(직접 psycopg 회피 가능, §5 D-6) |
+| **Required if checkpointer 영속 (선택, Phase F 이후)** | `langgraph-checkpoint-sqlite` / `-postgres` | 미설치 | `INSTALL_CANDIDATE_REQUIRES_USER_APPROVAL` — LangGraph 크래시 복구 필요 시만 |
+| **Deferred (future high-level agent layer — §5 D-4, 06 §6)** | deepagents, crewai, agent-framework(MS), langchain-mcp-adapters | 미설치 | **지금 설치 금지.** MVP 이후 Layer 3 후보로만 문서화 |
+
+> **USER_CONFIRMATION_REQUIRED**: "컨테이너 기동"(Redis/Postgres)은 사용자의 Windows + Docker Desktop 환경에서 실제로 띄울 수 있는지 확인 필요(§6 V-2/V-3). **Phase A~E는 이들 없이 신규 설치 0으로 진행 가능** — 컨테이너는 Phase G/H 확장 계층의 전제이지 Phase A의 전제가 아니다.
 
 ---
 
@@ -156,8 +193,8 @@ openai==1.108.1            langsmith==0.1.147       playwright==1.48.0
 | **D-2** | 오케스트레이션 1차 구현 형태 | deterministic local cycle first / Celery+Redis first / LangGraph first | **deterministic local cycle first** (Phase A). Celery는 Phase G, LangGraph 신규 그래프는 보류 | No |
 | **D-3** | langgraph/langchain 버전 | 0.2.76 유지 / v1.0 업그레이드 | **0.2.76 유지** (스켈레톤 11노드가 이 버전에 의존, 업그레이드는 회귀 위험). v1은 별도 평가 | No |
 | **D-4** | Deep Agents 런타임 도입 | 도입 / 미도입 | **미도입** (06 결론: 배치 수집엔 과함) | No |
-| **D-5** | event queue 최소 스키마 | 최소(3필드) / 확장 | **최소: `title_or_keyword, source_url, timestamp` + `source_id, _status`** (05 문서 §event_candidates) | No |
-| **D-6** | 브리지 방식 | EventQueue→raw_events 직접 / 별도 어댑터 | **별도 어댑터 task**(`bridge_to_raw_events`) — 두 시스템 결합도 최소화 | **REVIEW** |
+| **D-5** | event queue 최소 스키마 | 최소(3필드) / 확장 | **MVP 필수: `title_or_keyword, source_url, timestamp, source_id, _status`** + **권장 확장(근거 추적): `raw_artifact_path, extracted_text_ref, canonical_url, collection_status, error_type, body_missing`** (05 §2 분리) | No |
+| **D-6** | 브리지 방식 | EventQueue→raw_events 직접 / 별도 어댑터 | **별도 어댑터 `bridge_to_raw_events`** — ✅ **APPROVE(강화)**. 코드 실측 결과 `create_raw_event`가 **async + `RawEventCreate` pydantic + AsyncSession** 요구 → 직접 결합 불가, 어댑터에서 스키마 변환·dedup·body_missing 처리·로그가 필요(05 §6) | No(APPROVE) |
 | **D-7** | source live call 기본 빈도 | §4 bucket 그대로 / 사용자 조정 | **`04 INGESTION_FINAL §4` bucket 그대로** | No |
 | **D-8** | LLM judge 사용 범위 | 수집 단계부터 / 다운스트림에서만 | **다운스트림에서만**(수집은 deterministic 유지, 비용·비결정성 회피) | No |
 | **D-9** | community 소스 MVP 포함 | 포함 / 제외 | **hacker_news/youtube/product_hunt 포함, dcinside는 CAUTION 모니터링** | No |
@@ -178,7 +215,7 @@ openai==1.108.1            langsmith==0.1.147       playwright==1.48.0
 | **V-6** | hook이 정상 workflow 방해 안 함 | `.claude/settings.json` hook이 git/secret 차단만 하는지 | local-only 결정, 정상 |
 | **V-7** | source live call 허용 시간/빈도 | 사용자가 야간/업무시간 호출 허용 범위 결정 | UNKNOWN |
 | **V-8** | full-text 저장 허용 범위 | publication_policy.yaml 준수, 재배포 금지 소스 식별 | 04 §11 / 09 문서 |
-| **V-9** | 루트 `gcp-service-account-key.json` | 이 파일이 `.gitignore`에 있는지 확인 필요 — **secret 파일이 레포 루트에 존재** | ⚠️ **SECURITY REVIEW** (12 문서 risk) |
+| **V-9** | 루트 `gcp-service-account-key.json` | git 추적/`.gitignore` 확인 | ✅ **RESOLVED (2026-06-14 실측)**: `.gitignore`에 `gcp-service-account-key.json` + `*service-account*.json` + `.env`/`.env.*`(+`!.env.example`) 포함. `git ls-files` 미추적 확인. 값 미열람·미출력. **잔여 권고**: 파일 자체는 디스크에 존재하므로 백업/권한 관리 유의(삭제·이동은 사용자 승인 후) |
 
 ---
 

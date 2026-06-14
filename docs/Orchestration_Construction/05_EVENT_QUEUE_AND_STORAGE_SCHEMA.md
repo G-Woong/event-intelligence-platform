@@ -43,22 +43,28 @@
 ```python
 # EventQueue.enqueue(item: dict) — 현재 구현이 dict를 받으므로 스키마는 dict 계약
 EventSeedCandidate = {
-    "title_or_keyword": str,   # 필수
+    # ── MVP 필수 (Phase A — 이것만으로 큐 동작) ──
+    "title_or_keyword": str,    # 필수
     "source_url": str,          # 필수
     "timestamp": str,           # 필수 (ISO8601)
-    # ── 권장 확장 ──
-    "source_id": str,
+    "source_id": str,           # 필수 (브리지 source_type 매핑)
+    "_status": str,             # 필수 — pending|processing|done (EventQueue 내부 부여)
+    # ── 권장 확장 (Phase B~ — 근거 추적/품질/디버깅) ──
+    "_id": str,                 # uuid4 (EventQueue 내부 부여)
     "purpose": str,             # 02 §2 purpose
-    "body_excerpt": str | None, # preview_only 길이 준수
-    "body_status": str,         # success|partial|body_missing|signal_only
-    "significance": float,      # 0~1 (numeric/trend 신호 강도)
+    "canonical_url": str | None,        # url_resolver 결과 (Google News 등 원본)
+    "body_excerpt": str | None,         # preview_only 길이 준수 (전문 아님)
+    "body_missing": bool,               # 본문 미확보 여부 (04 §10 — 사건은 보존)
+    "collection_status": str,           # LIVE_SUCCESS|RATE_LIMITED|BLOCKED|...
+    "error_type": str | None,           # ErrorType (실패 시)
+    "raw_artifact_path": str | None,    # 계층1 raw payload reference (internal_only)
+    "extracted_text_ref": str | None,   # 계층1 extracted reference (internal_only)
+    "significance": float,              # 0~1 (numeric/trend 신호 강도)
     "language": str | None,
-    "artifact_ref": dict,       # {raw_html_path, extracted_text_path} (internal_only)
-    # ── EventQueue 내부 부여 ──
-    "_id": str,                 # uuid4
-    "_status": str,             # pending|processing|done
 }
 ```
+
+> **D-5 판정: APPROVE(확장 보강).** MVP 필수 5필드만으로 Phase A 큐가 돈다(무겁지 않음). 단 **근거 추적**(B2B evidence link, 09 게이트 참조)을 위해 `raw_artifact_path`/`extracted_text_ref`/`canonical_url`/`body_missing`/`error_type`을 Phase B부터 채운다. 사건 후보만 저장하고 원문 reference가 없으면 나중에 근거를 못 단다.
 
 `ingestion/schemas/event_candidate.py:EventCandidate`(이미 존재: source_id, url, title, summary, event_type, entities, regions, sectors, significance, confidence, published_at, extraction_strategy, llm_judged)는 **다운스트림 후보**다. 큐 항목은 그보다 가벼운 seed이고, 다운스트림에서 EventCandidate로 승격된다.
 
@@ -134,31 +140,57 @@ EventSeedCandidate = {
 
 ---
 
-## 4. 다운스트림 브리지 (event queue → raw_events)
+## 4. 원문 저장소 5계층 (재검토 확정)
 
-> 이것이 두 시스템을 잇는 핵심(D-6). 별도 어댑터 task 권장.
+수집 원문·사건 데이터는 **목적이 다른 5개 계층**에 산다. 내부 보관과 외부 공개를 혼동하면 저작권 사고가 난다.
 
+| # | 계층 | 위치 | 내용 | 공개 정책 |
+|---|---|---|---|---|
+| 1 | **artifact_store** | `ingestion/core/artifact_store.py` (디스크, `.gitignore`) | raw payload(`save_raw_html/save_raw_payload`) + extracted(`save_extracted_text/save_extracted_payload/save_raw_signal`) | **internal_only** (외부 재배포 아님) |
+| 2 | **EventQueue (JSONL)** | `ingestion/pipeline/event_queue.py` → `outputs/jsonl/event_queue.jsonl` | 사건 후보 대기열 + artifact **reference** | internal, Phase A 사용 |
+| 3 | **raw_events (Postgres)** | 다운스트림 | 사건 처리 입력. `raw_text`는 **preview/요약**(전문 아님 권장) | internal |
+| 4 | **event_cards (Postgres)** | 다운스트림 | LangGraph 처리 후 사용자 화면용 결과 | 화면 노출(요약/evidence/source_url) |
+| 5 | **Milvus / OpenSearch** | 다운스트림 | 벡터 유사도 / 키워드 색인 | 검색용 |
+
+> **원칙(불변)**: 원문 **내부 저장**과 원문 **외부 공개**는 다르다. 사용자 화면은 **전문 재배포가 아니라 preview/summary/evidence link/source_url 중심**이어야 한다. raw_html/raw_payload(계층 1)는 절대 외부로 노출하지 않는다. full-text 저장/노출은 `publication_policy.yaml`을 따른다(09 §legal_safety_risk, 04 §7).
+
+artifact reference는 계층 2(EventQueue)와 계층 3(raw_events) 사이를 잇는다 — 사건 후보만 저장하고 원문 reference가 없으면 나중에 근거 추적이 불가능하므로, **확장 필드(§2)에 `raw_artifact_path`/`extracted_text_ref`를 둔다.**
+
+## 4b. 다운스트림 브리지 (event queue → raw_events) — 정확한 contract
+
+> 두 시스템을 잇는 핵심(D-6). **별도 어댑터 강력 권장** — 코드 실측으로 직접 결합 불가가 확인됨.
+
+**실측 시그니처(2026-06-14, U-3 RESOLVED)**:
+```python
+# backend/app/services/raw_event_service.py:49
+async def create_raw_event(session: AsyncSession, payload: RawEventCreate) -> RawEventCreateResponse
+# backend/app/schemas/raw_events.py:9  RawEventCreate 필드:
+#   source_type: str = "rss"   url: str   title: Optional[str]
+#   raw_text: str = ""         published_at: Optional[datetime]   content_hash: str
 ```
-EventQueue(JSONL/Redis)
-   │ dequeue
-   ▼
-bridge_to_raw_events(item):
-   raw = {
-     source_type: item["source_id"],
-     source_name: item["source_id"],
-     url: item["source_url"],
-     title: item["title_or_keyword"],
-     raw_text: item.get("body_excerpt", ""),  # preview_only 준수
-     published_at: item["timestamp"],
-     content_hash: sha256(title+url),
-   }
-   raw_event_service.create_raw_event(raw)   # 기존 다운스트림 함수 (ON CONFLICT DO NOTHING)
-   producer.xadd("stream:raw_events", raw_event_id)  # 기존 큐
+
+→ **async 함수 + pydantic 모델 + AsyncSession**을 요구한다. dict 직접 전달 불가. 따라서 어댑터가 스키마 변환·dedup·body_missing·preview 절단·로그를 담당해야 한다.
+
+```python
+# Proposed adapter contract — DO NOT APPLY IN THIS TURN
+# VERIFY PATH BEFORE APPLY: 신규 ingestion/orchestration/bridge_to_raw_events.py
+async def bridge_to_raw_events(item: dict, session) -> str:
+    payload = RawEventCreate(
+        source_type = item["source_id"],
+        url         = item["source_url"],
+        title       = item.get("title_or_keyword"),
+        raw_text    = _preview(item.get("body_excerpt", ""), policy),  # preview_only 절단
+        published_at= _parse_ts(item["timestamp"]),
+        content_hash= _sha256(item["title_or_keyword"], item["source_url"]),  # dedup 키
+    )
+    resp = await create_raw_event(session, payload)   # 기존 함수, ON CONFLICT 멱등
+    # producer.xadd("stream:raw_events", resp.id)  # 기존 큐(Phase H, Redis 가동 시)
+    return resp.id
 ```
 
-이후는 **기존 다운스트림 파이프라인이 그대로 처리**(정규화 → LangGraph 11노드 → event_cards → 색인 → UI). 즉 브리지 하나로 44개 소스가 다운스트림에 연결된다.
+이후는 **기존 다운스트림 파이프라인이 그대로 처리**(정규화 → LangGraph 11노드 → event_cards → 색인 → UI). 즉 어댑터 하나로 44개 소스가 다운스트림에 연결된다.
 
-> ⚠️ **VERIFY (U-3)**: `raw_event_service.create_raw_event`의 정확한 시그니처/필드는 구현 직전 코드 확인 필요.
+> ⚠️ 어댑터는 **async 컨텍스트**가 필요하다(create_raw_event가 async). Phase A(동기 cycle)에서는 `asyncio.run()`으로 감싸거나, 브리지를 Phase H의 async 경로로 둔다. `psycopg` 직접 사용 대신 **기존 backend AsyncSession을 경유**하면 신규 드라이버 설치를 피할 수 있다(00 §4).
 
 ---
 

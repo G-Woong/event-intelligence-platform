@@ -24,6 +24,48 @@
 
 ---
 
+## 0.5 전체 구조도 (재검토 확정 — end-to-end)
+
+```
+[ Layer 1: Deterministic ingestion orchestration ]   (Phase A~E, 설치 0, LLM 없음)
+  run_orchestration_cycle
+    → SourceProfile + PurposeRouter + StrategyRouter   (결정적 라우팅)
+    → run_collection_probe  (기존 3-way: API / Playwright / strategy loop)
+    → body_cascade          (04: site_selector→trafilatura→readability→dom→render→snippet→body_missing)
+    → QualityGate           (09: 본문/중복/신선도/신뢰/legal)
+    → EventQueue.enqueue    (JSONL → Phase G Redis Stream)
+    → bridge_to_raw_events  (Phase H: async + RawEventCreate + AsyncSession)
+                                   │
+                                   ▼
+[ Layer 2: Existing LangGraph event processing ]      (이미 존재, langgraph 0.2.76 유지)
+  raw_events(Postgres)
+    → stream:raw_events(Redis) → worker 정규화 → stream:to_agent
+    → agents/graphs/event_processing_graph.py  (11노드: REAL 5 / MOCK 6)
+    → FinalEventCard → /api/admin/upsert-event → event_cards(Postgres)
+    → Milvus(벡터) + OpenSearch(키워드) 색인 → FastAPI → Next.js frontend
+
+[ Layer 3: Future high-level agent layer ]            (MVP 이후, 설치 안 함)
+  Deep Agents(우선) / CrewAI(비교) / MS Agent Framework(장기)
+```
+
+### 두 LangGraph 파일의 목적 차이 (혼동 금지 — 코드 실측 확인)
+
+| 파일 | 목적 | 위치 | 비고 |
+|---|---|---|---|
+| `ingestion/agents/graph.py` | **한 소스에서 본문을 잘 뽑는** 크롤링 그래프(14노드, 2개만 LLM) | Layer 1 보조 | 수집 cycle의 일부로 호출 가능(선택) |
+| `agents/graphs/event_processing_graph.py` | **수집된 사건을 카드로 만드는** 처리 그래프(11노드) | Layer 2 | 다운스트림. 이름만 비슷, 목적 다름 |
+
+### Phase ↔ Layer 매핑
+
+| Phase | Layer | 형태 | 설치 |
+|---|---|---|---|
+| A~E | Layer 1 | deterministic 함수 cycle | **0** |
+| F(선택) | Layer 1 | LangGraph 0.2.76 StateGraph(검증되면) | 0(설치된 버전) |
+| G | Layer 1↔2 경계 | Celery/Redis(워커 분산·재시도 큐) | 컨테이너 기동(승인 후) |
+| H | Layer 1→2 브리지 | bridge_to_raw_events e2e | Postgres 기동(승인 후) |
+
+---
+
 ## 1. 노드 목록 (수집 cycle)
 
 | # | 노드 | 책임 | 종류 | 매핑 |

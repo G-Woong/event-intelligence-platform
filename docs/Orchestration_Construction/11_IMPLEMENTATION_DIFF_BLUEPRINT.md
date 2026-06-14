@@ -181,6 +181,43 @@ diff --git a/docs/DOCS_FINAL.md b/docs/DOCS_FINAL.md
 
 ---
 
+## 9b. Phase별 설치/비설치 정책 (재검토 확정)
+
+> 모든 신규 설치/컨테이너 기동은 **`INSTALL_CANDIDATE_REQUIRES_USER_APPROVAL`**. 이번 검토 턴은 설치 0.
+
+| Phase | 신규 설치 | 비고 |
+|---|---|---|
+| A deterministic cycle | **0** | run_collection_probe + EventQueue(JSONL). 기존 설치 자산만 |
+| B persistence | **0** | local_file/JSONL |
+| C strategy router | **0** | 순수 Python |
+| D body resilience | **0** | 기존 extractor 호출 |
+| E quality gates | **0** | 기존 quality_score 재사용 |
+| F LangGraph(선택) | 0(설치된 0.2.76) / checkpointer는 `INSTALL_CANDIDATE`(sqlite saver) | deterministic 동등 검증 후만 |
+| G Celery/Redis | Redis **컨테이너 기동** `INSTALL_CANDIDATE` / Playwright chromium(worker) `INSTALL_CANDIDATE` | py 패키지(celery/redis)는 설치됨 |
+| H 브리지 | Postgres **컨테이너 기동** `INSTALL_CANDIDATE` / psycopg는 **기존 backend AsyncSession 경유로 회피 가능** | bridge_to_raw_events async |
+| (Layer 3, 별도 Phase I 후보) | deepagents/crewai/agent-framework `INSTALL_CANDIDATE` | MVP·매출 검증 후 |
+
+**핵심**: **Phase A~E 신규 설치 0.** 버전 업그레이드(langgraph/langchain v1) 금지. Deep Agents/CrewAI/MS Agent Framework/MCP 지금 설치 금지.
+
+## 9c. 운영 dashboard 지표 (후순위 — D-11)
+
+> dashboard는 MVP 후순위. MVP는 JSONL/log/pytest/smoke로 충분. 단, 추후 dashboard에 넣을 지표를 미리 문서화한다.
+
+```
+source_success_rate         소스별 수집 성공률
+source_failure_rate         소스별 실패율
+rate_limited_count          429 발생 횟수
+body_extraction_success_rate 본문 추출 성공률
+event_candidates_count      큐 적재 사건 후보 수
+raw_events_inserted_count   브리지로 raw_events 적재 수 (Phase H)
+event_cards_created_count   다운스트림 카드 생성 수
+quality_gate_rejection_reason 품질 게이트 탈락 사유별 분포
+```
+
+이 지표들은 Phase A~H 동안 **JSONL/로그로 먼저 산출**되고, dashboard는 그 위에 얹는 시각화 계층이다(별도 frontend STEP).
+
+---
+
 ## 10. 이번 턴(설계)에서 적용하는 변경 (유일)
 
 - `docs/Orchestration_Construction/` 신규 13개 md + README.

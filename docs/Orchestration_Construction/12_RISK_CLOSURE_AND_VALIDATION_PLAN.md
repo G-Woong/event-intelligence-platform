@@ -37,7 +37,9 @@
 | **provider 우회 유혹** | 429/차단 회피 | 약관·법 위반 | grep proxy/bypass | BLOCKED_BY_POLICY(08) | grep 0건 | legal-safety | BLOCKED_BY_POLICY |
 | **asyncio 중첩** | playwright sync+async | 런타임 에러 | smoke | sync 노드/nest_asyncio(06) | Windows smoke | source-ingestion | DEFERRED_WITH_TRIGGER(Phase F/G) |
 | **싱글톤 store fork** | prefork 별도 캐시 | 상태 불일치 | 워커 간 테스트 | local_file/redis backend(00/05) | roundtrip | operations-sre | CLOSED_BY_DESIGN |
-| **gcp 키 노출** | 루트 secret 파일 | 자격증명 유출 | gitignore/scan | 사람 점검(V-9) | scan_secrets | security-guardian | USER_CONFIRMATION_REQUIRED |
+| **gcp 키 노출** | 루트 secret 파일 | 자격증명 유출 | gitignore/`git ls-files` | **실측: `.gitignore` 포함 + 미추적 확인(2026-06-14)** | scan_secrets PASS(1807) + ls-files 미추적 | security-guardian | **CLOSED_BY_TEST_PLAN** (잔여: 디스크 파일 백업/권한 — 운영 권고) |
+| **고수준 프레임워크 조기 도입** | Deep Agents/CrewAI/MS AF를 MVP에 도입 | 비결정성·비용·보안·복잡도 | 설계 grep | Layer 3로 분리, 지금 설치 0(06 §5b) | grep deepagents/crewai install 0 | orchestrator-architect | CLOSED_BY_DESIGN |
+| **버전 업그레이드 회귀** | langgraph/langchain v1로 올림 | 다운스트림 11노드 깨짐 | 회귀 테스트 | 0.2.76 유지(D-3, 실측 핀 확인) | 108 회귀 | test-validation | CLOSED_BY_DESIGN |
 | **rate-limit 인터페이스 오인(U-1)** | policy vs store | 잘못된 import | grep | VERIFY PATH(03/11) | 구현 직전 grep | source-ingestion | DEFERRED_WITH_TRIGGER |
 | **create_raw_event 오인(U-3)** | 시그니처 미확인 | 브리지 실패 | 코드 확인 | VERIFY PATH(05) | 구현 직전 확인 | source-ingestion | DEFERRED_WITH_TRIGGER |
 
@@ -106,7 +108,7 @@ git status --short
 | langgraph 0.2.76 유지? | 회귀 위험 | 유지 | No |
 | Deep Agents/MCP 도입? | 복잡도/정책 | 미도입/future review | Yes(정책) |
 | Redis/Postgres 컨테이너 가동 가능? | Phase G/H | 환경 확인 | Phase G |
-| 루트 gcp 키 gitignore 확인? | 자격증명 | 즉시 확인 | **Yes(보안)** |
+| 루트 gcp 키 gitignore 확인? | 자격증명 | ✅ **확인됨(gitignore+미추적)** — 디스크 파일 백업/권한만 운영 권고 | No(해소) |
 | 브리지 별도 어댑터? | 결합도 | 예 | REVIEW |
 
 ---

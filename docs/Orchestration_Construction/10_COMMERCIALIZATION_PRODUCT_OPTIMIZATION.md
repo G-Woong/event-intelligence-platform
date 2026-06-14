@@ -163,6 +163,20 @@ diff --git a/ingestion/orchestration/event_seed_candidate.py b/...
 
 이 문서 자체가 commercialization impact의 종합이다. 핵심 한 줄: **"이미 만든 44개 소스 수집 자산을 다운스트림에 연결(브리지)하고, 출처 신뢰 라벨을 붙이는 것"이 가장 적은 비용으로 가장 큰 제품 가치를 만든다.** 나머지(LangGraph/Celery/dashboard)는 그 가치를 확인한 뒤 얹는다.
 
+### 13.1 재검토 확정 — 1차 ROI와 고급 에이전트 계층의 분리
+
+> **1차 ROI(MVP)**: 신규 프레임워크 도입이 아니라, **ingestion의 44개 수집 소스를 다운스트림 사건 카드 파이프라인에 `bridge_to_raw_events`로 연결**하는 것. 코드 실측으로 이 명제가 뒷받침됨(수집 엔진·다운스트림 모두 동작, 연결만 없음).
+
+| 계층 | 상업적 위치 | 시점 |
+|---|---|---|
+| Layer 1 수집 연결(브리지) + 신뢰 라벨 | **MVP 핵심 가치** — 소스 다양성×신뢰 | 지금 |
+| Layer 2 LangGraph 사건 처리(mock→real) | 사건 분석 품질 향상 | STEP 014 |
+| **Layer 3 고급 에이전트(Deep Agents 등)** | **premium analysis / B2B intelligence / research assistant** | **MVP·매출 검증 이후** |
+
+- **Deep Agents/CrewAI 등 고수준 agent layer는 MVP 이후 부가가치 계층**이다. "사건 심층 확장 조사", "증거 자동 탐색", "맞춤 리서치 어시스턴트" 같은 **프리미엄/B2B 기능**으로 분리해 매출 검증 후 얹는다. MVP 비용에 넣지 않는다.
+- **전문 재배포 금지 + evidence link 중심**: 제품 가치는 원문 전재가 아니라 "요약 + 출처 링크 + 근거"에서 나온다(저작권 안전 = B2B 판매 가능). 05 §4 원문 5계층의 내부/외부 분리가 이를 보장.
+- **비용 상한(quota guard)**: 외부 API·LLM 일일 상한으로 최악 비용을 못 박아 가격·마진을 설계한다(08 §7).
+
 ---
 
 ## 14. USER_CONFIRMATION_REQUIRED

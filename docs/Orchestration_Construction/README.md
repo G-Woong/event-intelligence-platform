@@ -36,6 +36,19 @@
 
 ---
 
+## 현재 승인된 기본 방향 (2026-06-14 재검토 — APPROVE_DIRECTION)
+
+코드 실재 검증(read-only) 결과 설계 전제가 실제 코드와 **전부 일치**하여 방향성을 승인하고 문서에 반영했다.
+
+- **1차 ROI**: 신규 프레임워크가 아니라 **44개 수집 소스를 다운스트림에 `bridge_to_raw_events`로 연결**(코드로 뒷받침).
+- **3층 아키텍처**: Layer 1 deterministic 수집(Phase A~E, 설치 0) / Layer 2 기존 LangGraph 0.2.76 사건처리 / Layer 3 future 고급 에이전트(Deep Agents 우선·CrewAI 비교·MS Agent Framework 장기 — **지금 설치 안 함**).
+- **D-6 강화**: `create_raw_event`가 async+pydantic+AsyncSession 요구 → 별도 어댑터 확정.
+- **D-5 확장**: MVP 5필드 + 근거추적 확장필드(raw_artifact_path/extracted_text_ref/canonical_url/body_missing/error_type).
+- **버전**: langgraph 0.2.76 / langchain 0.2.11 유지(실측 핀 확인, v1 업그레이드 금지).
+- **보안**: 루트 `gcp-service-account-key.json` = `.gitignore` 포함 + git 미추적 확인(V-9 RESOLVED).
+- **원문 5계층**: artifact_store(internal) / EventQueue(JSONL) / raw_events / event_cards / Milvus+OpenSearch — 내부저장 ≠ 외부공개(전문 재배포 금지).
+- **설치 정책**: Phase A~E 신규 설치 0. 모든 신규 설치/컨테이너 기동은 `INSTALL_CANDIDATE_REQUIRES_USER_APPROVAL`.
+
 ## 다음 구현 턴의 시작 파일
 
 - **Phase A 진입점(신규 생성 예정)**: `ingestion/orchestration/run_orchestration_cycle.py`
