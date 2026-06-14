@@ -85,6 +85,16 @@ __all__ = [
     "check_eventqueue_readiness",
     "classify_final_status",
     "summarize_revival",
+    # Phase E-3
+    "finalize_unresolved_status",
+    "LadderBodyResult",
+    "fetch_body_with_ladder",
+    "SourceStrategyMemory",
+    "save_strategy_memory",
+    "load_strategy_memory",
+    "preferred_strategy_for",
+    "is_known_dead_end",
+    "decide_strategy_with_memory",
 ]
 
 _SYMBOL_MODULE = {
@@ -158,6 +168,16 @@ _SYMBOL_MODULE = {
     "check_eventqueue_readiness": "full_source_revival",
     "classify_final_status": "full_source_revival",
     "summarize_revival": "full_source_revival",
+    # Phase E-3
+    "finalize_unresolved_status": "full_source_revival",
+    "LadderBodyResult": "body_fetch_strategy",
+    "fetch_body_with_ladder": "body_fetch_strategy",
+    "SourceStrategyMemory": "source_strategy_memory",
+    "save_strategy_memory": "source_strategy_memory",
+    "load_strategy_memory": "source_strategy_memory",
+    "preferred_strategy_for": "source_strategy_memory",
+    "is_known_dead_end": "source_strategy_memory",
+    "decide_strategy_with_memory": "strategy_router",
 }
 
 

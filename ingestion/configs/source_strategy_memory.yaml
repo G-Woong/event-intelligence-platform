@@ -1,0 +1,426 @@
+schema_version: 1
+run_id: 20260614T114401Z
+entries:
+- source_id: aladin
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: OFFICIAL_RECORD_ALIVE
+  root_cause_before:
+  - SCHEMA_UNKNOWN
+  root_cause_after: []
+  successful_strategy: adapter:aladin
+  failed_strategies: []
+  preferred_next_strategy: adapter:aladin
+  adapter_name: adapter:aladin
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: adapter:aladin
+- source_id: alpha_vantage
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: STRUCTURED_SIGNAL_ALIVE
+  root_cause_before:
+  - SCHEMA_UNKNOWN
+  root_cause_after: []
+  successful_strategy: adapter:alpha_vantage
+  failed_strategies: []
+  preferred_next_strategy: adapter:alpha_vantage
+  adapter_name: adapter:alpha_vantage
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: adapter:alpha_vantage
+- source_id: ap_news
+  previous_status: NEEDS_BODY_FETCH_UNRESOLVED
+  final_status: ARTICLE_BODY_ALIVE
+  root_cause_before:
+  - BODY_FETCH_REQUIRED
+  root_cause_after: []
+  successful_strategy: body_ladder:trafilatura
+  failed_strategies: []
+  preferred_next_strategy: body_ladder:trafilatura
+  adapter_name: null
+  body_fetch_strategy: trafilatura
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: sha256_16=7310dcf53274e92d len=3054
+- source_id: bok_ecos
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: REQUIRES_VENDOR_SPECIFIC_API_CONTRACT
+  root_cause_before:
+  - SCHEMA_UNKNOWN
+  root_cause_after:
+  - CATALOG_ENDPOINT_NOT_SERIES
+  successful_strategy: null
+  failed_strategies:
+  - prev:SCHEMA_UNKNOWN
+  preferred_next_strategy: call_StatisticSearch_with_statcode_and_period
+  adapter_name: null
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: source_override
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: REQUIRES_VENDOR_SPECIFIC_API_CONTRACT
+- source_id: cnbc
+  previous_status: NEEDS_BODY_FETCH_UNRESOLVED
+  final_status: EXTERNAL_API_ERROR_WITH_EVIDENCE
+  root_cause_before:
+  - BODY_FETCH_REQUIRED
+  root_cause_after:
+  - EXCERPT_ONLY_NO_FULL_BODY
+  successful_strategy: null
+  failed_strategies:
+  - body_ladder:EXCERPT_ONLY
+  - prev:BODY_FETCH_REQUIRED
+  preferred_next_strategy: switch_to_official_feed_or_api
+  adapter_name: null
+  body_fetch_strategy: trafilatura
+  browser_strategy: null
+  parser_notes: external_api_error
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: sha256_16=cb2e9b501e1ed483 len=492
+- source_id: culture_info
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: OFFICIAL_RECORD_ALIVE
+  root_cause_before:
+  - NO_STABLE_URL
+  - NO_TIMESTAMP
+  root_cause_after:
+  - NO_STABLE_URL
+  successful_strategy: adapter:culture_info
+  failed_strategies: []
+  preferred_next_strategy: adapter:culture_info
+  adapter_name: adapter:culture_info
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: adapter:culture_info
+- source_id: eia
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: REQUIRES_VENDOR_SPECIFIC_API_CONTRACT
+  root_cause_before:
+  - SCHEMA_UNKNOWN
+  root_cause_after:
+  - ROUTE_CATALOG_NOT_DATA
+  successful_strategy: null
+  failed_strategies:
+  - prev:SCHEMA_UNKNOWN
+  preferred_next_strategy: call_v2_specific_route_data_with_facets_and_key
+  adapter_name: null
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: source_override
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: REQUIRES_VENDOR_SPECIFIC_API_CONTRACT
+- source_id: etnews
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: ARTICLE_BODY_ALIVE
+  root_cause_before:
+  - HTML_UNSUPPORTED
+  root_cause_after: []
+  successful_strategy: body_ladder:trafilatura
+  failed_strategies: []
+  preferred_next_strategy: body_ladder:trafilatura
+  adapter_name: null
+  body_fetch_strategy: trafilatura
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: sha256_16=976eb4ed2300559d len=1244
+- source_id: gdelt
+  previous_status: EXTERNAL_RATE_LIMITED
+  final_status: EXTERNAL_RATE_LIMITED_WITH_RETRY_POLICY
+  root_cause_before:
+  - RATE_LIMITED
+  root_cause_after:
+  - RATE_LIMITED
+  successful_strategy: null
+  failed_strategies:
+  - prev:RATE_LIMITED
+  preferred_next_strategy: retry_after_cooldown
+  adapter_name: null
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: external_rate_limited
+  cooldown_policy: respect_cooldown
+  safety_policy: no_bypass
+  evidence: EXTERNAL_RATE_LIMITED_WITH_RETRY_POLICY
+- source_id: google_trends_explore
+  previous_status: EXTERNAL_RATE_LIMITED
+  final_status: EXTERNAL_RATE_LIMITED_WITH_RETRY_POLICY
+  root_cause_before:
+  - RATE_LIMITED
+  root_cause_after:
+  - RATE_LIMITED
+  successful_strategy: null
+  failed_strategies:
+  - prev:RATE_LIMITED
+  preferred_next_strategy: retry_after_cooldown
+  adapter_name: null
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: external_rate_limited
+  cooldown_policy: respect_cooldown
+  safety_policy: no_bypass
+  evidence: EXTERNAL_RATE_LIMITED_WITH_RETRY_POLICY
+- source_id: hankyung
+  previous_status: NEEDS_BODY_FETCH_UNRESOLVED
+  final_status: ARTICLE_BODY_ALIVE
+  root_cause_before:
+  - BODY_FETCH_REQUIRED
+  root_cause_after: []
+  successful_strategy: body_ladder:trafilatura
+  failed_strategies: []
+  preferred_next_strategy: body_ladder:trafilatura
+  adapter_name: null
+  body_fetch_strategy: trafilatura
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: sha256_16=982407de4ef0b40e len=3883
+- source_id: its
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: NOT_SERVICE_USEFUL
+  root_cause_before:
+  - NO_TITLE_OR_LABEL
+  root_cause_after:
+  - PER_LINK_TRAFFIC_TELEMETRY_NOT_EVENTS
+  successful_strategy: null
+  failed_strategies:
+  - prev:NO_TITLE_OR_LABEL
+  preferred_next_strategy: disable_recommended_or_reduce_to_national_congestion_index
+  adapter_name: adapter:its
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: source_override
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: adapter:its
+- source_id: kma
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: EXTERNAL_API_ERROR_WITH_EVIDENCE
+  root_cause_before:
+  - SCHEMA_UNKNOWN
+  root_cause_after:
+  - API_RESULT_CODE_10_RANGE
+  successful_strategy: null
+  failed_strategies:
+  - prev:SCHEMA_UNKNOWN
+  preferred_next_strategy: fix_base_date_base_time_nx_ny_params_then_retest
+  adapter_name: null
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: source_override
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: EXTERNAL_API_ERROR_WITH_EVIDENCE
+- source_id: kofic
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: OFFICIAL_RECORD_ALIVE
+  root_cause_before:
+  - SCHEMA_UNKNOWN
+  root_cause_after: []
+  successful_strategy: adapter:kofic
+  failed_strategies: []
+  preferred_next_strategy: adapter:kofic
+  adapter_name: adapter:kofic
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: adapter:kofic
+- source_id: kopis
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: OFFICIAL_RECORD_ALIVE
+  root_cause_before:
+  - EMPTY_PAYLOAD
+  root_cause_after: []
+  successful_strategy: adapter:kopis
+  failed_strategies: []
+  preferred_next_strategy: adapter:kopis
+  adapter_name: adapter:kopis
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: adapter:kopis
+- source_id: maekyung
+  previous_status: NEEDS_BODY_FETCH_UNRESOLVED
+  final_status: ARTICLE_BODY_ALIVE
+  root_cause_before:
+  - BODY_FETCH_REQUIRED
+  root_cause_after: []
+  successful_strategy: body_ladder:trafilatura
+  failed_strategies: []
+  preferred_next_strategy: body_ladder:trafilatura
+  adapter_name: null
+  body_fetch_strategy: trafilatura
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: sha256_16=c35a01404bc39b20 len=5943
+- source_id: nyt
+  previous_status: NEEDS_BODY_FETCH_UNRESOLVED
+  final_status: EXTERNAL_API_ERROR_WITH_EVIDENCE
+  root_cause_before:
+  - BODY_FETCH_FAILED
+  root_cause_after:
+  - HTTP_403_ANTI_BOT
+  successful_strategy: null
+  failed_strategies:
+  - body_ladder:HTTP_ERROR
+  - prev:BODY_FETCH_FAILED
+  preferred_next_strategy: investigate_access_or_official_api
+  adapter_name: null
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: external_api_error
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: EXTERNAL_API_ERROR_WITH_EVIDENCE
+- source_id: product_hunt
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: COMMUNITY_SIGNAL_ALIVE
+  root_cause_before:
+  - SCHEMA_UNKNOWN
+  root_cause_after:
+  - NO_STABLE_URL
+  - NO_TIMESTAMP
+  successful_strategy: adapter:product_hunt
+  failed_strategies: []
+  preferred_next_strategy: adapter:product_hunt
+  adapter_name: adapter:product_hunt
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: adapter:product_hunt
+- source_id: sec_edgar
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: OFFICIAL_RECORD_ALIVE
+  root_cause_before:
+  - NO_TITLE_OR_LABEL
+  root_cause_after: []
+  successful_strategy: adapter:sec_edgar
+  failed_strategies: []
+  preferred_next_strategy: adapter:sec_edgar
+  adapter_name: adapter:sec_edgar
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: adapter:sec_edgar
+- source_id: serper
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: SEARCH_RESULT_ALIVE
+  root_cause_before:
+  - SCHEMA_UNKNOWN
+  root_cause_after: []
+  successful_strategy: adapter:serper
+  failed_strategies: []
+  preferred_next_strategy: adapter:serper
+  adapter_name: adapter:serper
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: adapter:serper
+- source_id: tmdb
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: OFFICIAL_RECORD_ALIVE
+  root_cause_before:
+  - NO_STABLE_URL
+  - NO_TIMESTAMP
+  root_cause_after: []
+  successful_strategy: adapter:tmdb
+  failed_strategies: []
+  preferred_next_strategy: adapter:tmdb
+  adapter_name: adapter:tmdb
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: adapter:tmdb
+- source_id: tour
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: OFFICIAL_RECORD_ALIVE
+  root_cause_before:
+  - SCHEMA_UNKNOWN
+  root_cause_after: []
+  successful_strategy: adapter:tour
+  failed_strategies: []
+  preferred_next_strategy: adapter:tour
+  adapter_name: adapter:tour
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: adapter:tour
+- source_id: twelve_data
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: STRUCTURED_SIGNAL_ALIVE
+  root_cause_before:
+  - SCHEMA_UNKNOWN
+  root_cause_after: []
+  successful_strategy: adapter:twelve_data
+  failed_strategies: []
+  preferred_next_strategy: adapter:twelve_data
+  adapter_name: adapter:twelve_data
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: adapter:twelve_data
+- source_id: youtube
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: COMMUNITY_SIGNAL_ALIVE
+  root_cause_before:
+  - NO_TITLE_OR_LABEL
+  root_cause_after: []
+  successful_strategy: adapter:youtube
+  failed_strategies: []
+  preferred_next_strategy: adapter:youtube
+  adapter_name: adapter:youtube
+  body_fetch_strategy: null
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: adapter:youtube
+- source_id: zdnet_korea
+  previous_status: NEEDS_PARSER_UNRESOLVED
+  final_status: ARTICLE_BODY_ALIVE
+  root_cause_before:
+  - HTML_UNSUPPORTED
+  root_cause_after: []
+  successful_strategy: body_ladder:trafilatura
+  failed_strategies: []
+  preferred_next_strategy: body_ladder:trafilatura
+  adapter_name: null
+  body_fetch_strategy: trafilatura
+  browser_strategy: null
+  parser_notes: data_alive
+  cooldown_policy: null
+  safety_policy: no_bypass
+  evidence: sha256_16=b7942c8fd3ceda71 len=3251

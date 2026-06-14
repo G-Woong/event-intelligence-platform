@@ -339,3 +339,15 @@ new file mode 100644
 | fallback_strategies 기본 깊이(최대 몇 단계)? | 비용·시간 상한 | 최대 3단계 | No |
 
 > 다음 문서: `04_BODY_EXTRACTION_AND_URL_RESILIENCE.md`.
+
+
+## Phase E-3 — Source Strategy Memory (run 20260614T114401Z)
+
+killer 루프가 source별 best/failed 전략을 **학습**해 다음 실행에 반영한다(단순 보고서 아님).
+- 모델: `SourceStrategyMemory`(source_strategy_memory.py) — previous/final status, root_cause
+  before/after, successful_strategy, failed_strategies, preferred_next_strategy, adapter_name,
+  body_fetch_strategy, browser_strategy, parser_notes, cooldown_policy, safety_policy=no_bypass, evidence.
+- 저장: canonical `ingestion/configs/source_strategy_memory.yaml`(커밋, secret 없음 — evidence는
+  sha256/adapter 이름만) + run output `.../source_strategy_memory.learned.yaml`(gitignored).
+- consume: `decide_strategy_with_memory(profile, memory)`가 성공 전략을 preferred_strategy로 덮어쓰고,
+  `is_known_dead_end()`로 terminal(nyt/its 등) 무의미 재시도를 회피한다. 다음 plan이 이를 참조한다.

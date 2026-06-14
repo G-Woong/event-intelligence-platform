@@ -257,3 +257,12 @@ full-revival의 모든 live 호출은 `run_collection_probe`(force=False) 경유
 - root cause taxonomy(RATE_LIMITED/EXTERNAL_API_ERROR/EMPTY_PAYLOAD/...)로 실패를 원자 분류 — "unknown"으로 끝내지 않음.
 
 > 다음 문서: `09_DATA_QUALITY_EVALUATION_AND_RISK_GATES.md`.
+
+
+## Phase E-3 — Rate-limit 재검증 정책 (run 20260614T114401Z)
+
+RATE_LIMITED 2(gdelt/google_trends_explore)를 force=False(쿨다운 존중)로 **1회만** 재검증한다.
+- 쿨다운 해소 시 정상 데이터 → alive 승격(예: gdelt가 회차에 따라 OFFICIAL_RECORD_ALIVE).
+- 여전히 rate-limit이면 `EXTERNAL_RATE_LIMITED_WITH_RETRY_POLICY`로 clean terminal(무한 retry 없음,
+  우회 없음, next_action=retry_after_cooldown). 폭주 방지: source별 strategy attempt ≤5, browser ≤1.
+- HTTP 429는 body ladder에서도 EXTERNAL_RATE_LIMITED_WITH_RETRY_POLICY로 닫는다.

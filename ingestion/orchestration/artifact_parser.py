@@ -234,14 +234,18 @@ def _parse_json(text, *, source_id, collection_status, confirmation_policy,
     except (json.JSONDecodeError, ValueError) as exc:
         return [], "json_malformed", [f"json decode error: {exc}"]
 
-    # list → source-scoped 어댑터(거래소 스냅샷 환원) 우선, 없으면 generic article list
+    # source-scoped 어댑터 **선제** dispatch(E-3): youtube/tmdb/its/sec_edgar처럼 top-level
+    # items/results/hits.hits를 가진 source가 generic 컨테이너로 title-less·인플레 분해되는 것을
+    # 막는다. 미등록 source는 None을 반환하므로 generic 경로에 무영향(소스 격리).
+    from ingestion.orchestration.source_adapters import adapt_source_payload
+    _adapted = adapt_source_payload(
+        source_id, data, collection_status=collection_status,
+        confirmation_policy=confirmation_policy, raw_artifact_path=raw_artifact_path)
+    if _adapted is not None:
+        return _adapted[0], _adapted[1], []
+
+    # list → generic article list(어댑터 미등록 list source)
     if isinstance(data, list):
-        from ingestion.orchestration.source_adapters import adapt_source_payload
-        adapted = adapt_source_payload(
-            source_id, data, collection_status=collection_status,
-            confirmation_policy=confirmation_policy, raw_artifact_path=raw_artifact_path)
-        if adapted is not None:
-            return adapted[0], adapted[1], []
         cands = [
             _article_from_item(it, source_id=source_id, collection_status=collection_status,
                                confirmation_policy=confirmation_policy,
@@ -299,14 +303,7 @@ def _parse_json(text, *, source_id, collection_status, confirmation_policy,
         env = _looks_like_error_envelope(data)
         if env:
             return [], "api_error_payload", [f"api_error_envelope:{env}"]
-        # source-scoped 어댑터(E-2): 전역 키 인플레 없이 특정 소스 스키마만 매핑.
-        from ingestion.orchestration.source_adapters import adapt_source_payload
-        adapted = adapt_source_payload(
-            source_id, data, collection_status=collection_status,
-            confirmation_policy=confirmation_policy, raw_artifact_path=raw_artifact_path)
-        if adapted is not None:
-            return adapted[0], adapted[1], []
-        # 인식 불가한 dict → source-level fallback(빈 후보 아님, 단서 보존 없음 → 보고)
+        # 인식 불가한 dict → source-level fallback(어댑터는 위에서 선제 dispatch됨)
         return [], "json_unrecognized", ["no_article_container_and_not_numeric"]
 
     # 스칼라 JSON(숫자/문자열) → numeric 신호
@@ -324,6 +321,16 @@ def _parse_xml(text, *, source_id, collection_status, confirmation_policy,
         root = ET.fromstring(text)
     except ET.ParseError as exc:
         return [], "xml_malformed", [f"xml parse error: {exc}"]
+
+    # source-scoped XML 어댑터를 **선제** dispatch(E-3): culture_info처럼 <item>을 쓰지만
+    # RSS가 아닌(startDate 등 커스텀 필드) XML이 generic RSS 경로에서 url/date를 잃지 않도록.
+    # 미등록 source는 None → RSS/Atom 경로 그대로(소스 격리).
+    from ingestion.orchestration.source_adapters import adapt_source_xml
+    adapted = adapt_source_xml(
+        source_id, root, collection_status=collection_status,
+        confirmation_policy=confirmation_policy, raw_artifact_path=raw_artifact_path)
+    if adapted is not None:
+        return adapted[0], adapted[1], []
 
     cands: list[ArticleCandidate] = []
     # RSS <item>. content:encoded가 있으면 본문으로 회수(전문 HTML 태그 제거).

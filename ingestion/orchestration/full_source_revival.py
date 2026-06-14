@@ -98,23 +98,48 @@ _NEWS_LIKE_GROUPS = frozenset({"news"})
 _STRUCTURED_GROUPS = frozenset({"market", "trend"})
 _RECORD_GROUPS = frozenset({"official", "domain"})
 
-# COMPLETE 판정에서 alive로 인정되는 final_status(§17).
-ALIVE_STATUSES = frozenset({
-    "ARTICLE_BODY_ALIVE", "ARTICLE_PARTIAL_ALIVE", "OFFICIAL_RECORD_ALIVE",
-    "STRUCTURED_SIGNAL_ALIVE", "COMMUNITY_SIGNAL_ALIVE", "SEARCH_RESULT_ALIVE",
-    "EXCLUDED_BY_USER", "POLICY_BLOCKED_NO_BYPASS",
-    "EXTERNAL_RATE_LIMITED_WITH_RETRY_POLICY",
-})
 # 실제 정보 단위로 살아난(데이터를 산출한) 상태 — 정책 차단/제외와 구분.
 DATA_ALIVE_STATUSES = frozenset({
     "ARTICLE_BODY_ALIVE", "ARTICLE_PARTIAL_ALIVE", "OFFICIAL_RECORD_ALIVE",
     "STRUCTURED_SIGNAL_ALIVE", "COMMUNITY_SIGNAL_ALIVE", "SEARCH_RESULT_ALIVE",
 })
-# COMPLETE를 막는 미해결 상태(§17: 남으면 PARTIAL).
+# E-3: NEEDS_*가 아닌 **clean하게 닫힌** terminal 상태(우회 없음/외부/도구/계약/서비스가치).
+# 이들은 COMPLETE를 막지 않는다(§10·§21: NEEDS_*만 unresolved).
+TERMINAL_BLOCKED_STATUSES = frozenset({
+    "POLICY_BLOCKED_NO_BYPASS", "PAYWALL_BLOCKED_NO_BYPASS",
+    "LOGIN_BLOCKED_NO_BYPASS", "CAPTCHA_BLOCKED_NO_BYPASS",
+    "ROBOTS_BLOCKED_NO_BYPASS", "EXCLUDED_BY_USER",
+    "EXTERNAL_RATE_LIMITED_WITH_RETRY_POLICY", "EXTERNAL_API_ERROR_WITH_EVIDENCE",
+    "TOOL_UNAVAILABLE_FOR_REQUIRED_STRATEGY", "NOT_SERVICE_USEFUL",
+    "DISABLE_RECOMMENDED", "REQUIRES_VENDOR_SPECIFIC_API_CONTRACT",
+    "REQUIRES_TWO_STEP_DETAIL_FETCH", "BLOCKED_ENV_KEY",
+})
+# COMPLETE 판정에서 alive로 인정되는 final_status(§17): data-alive + clean terminal.
+ALIVE_STATUSES = DATA_ALIVE_STATUSES | TERMINAL_BLOCKED_STATUSES | frozenset({
+    # E-2 호환: 구 EXTERNAL_RATE_LIMITED 표기도 alive(차단)로 인정.
+    "EXTERNAL_RATE_LIMITED",
+})
+# COMPLETE를 막는 미해결 상태(§10: NEEDS_*만. E-3 killer는 0으로 만든다).
 UNRESOLVED_STATUSES = frozenset({
     "NEEDS_BODY_FETCH_UNRESOLVED", "NEEDS_PARSER_UNRESOLVED",
-    "EXTERNAL_API_ERROR", "BLOCKED_ENV_KEY", "NOT_SERVICE_USEFUL",
+    "EXTERNAL_API_ERROR", "UNKNOWN",
 })
+
+# E-3: 어댑터로 살릴 수 없는(잘못된 endpoint/계약/서비스가치) source의 terminal 확정.
+# 각 항목: (final_status, root_causes, next_action). live 재검증 후에도 NEEDS_*면 적용.
+_SOURCE_RESOLUTION_OVERRIDE: dict[str, tuple[str, tuple[str, ...], str]] = {
+    "kma": ("EXTERNAL_API_ERROR_WITH_EVIDENCE", ("API_RESULT_CODE_10_RANGE",),
+            "fix_base_date_base_time_nx_ny_params_then_retest"),
+    "eia": ("REQUIRES_VENDOR_SPECIFIC_API_CONTRACT", ("ROUTE_CATALOG_NOT_DATA",),
+            "call_v2_specific_route_data_with_facets_and_key"),
+    "bok_ecos": ("REQUIRES_VENDOR_SPECIFIC_API_CONTRACT", ("CATALOG_ENDPOINT_NOT_SERIES",),
+                 "call_StatisticSearch_with_statcode_and_period"),
+    "its": ("NOT_SERVICE_USEFUL", ("PER_LINK_TRAFFIC_TELEMETRY_NOT_EVENTS",),
+            "disable_recommended_or_reduce_to_national_congestion_index"),
+}
+
+# NEEDS_* (E-3 killer가 terminal로 변환해야 하는 raw 미해결).
+_NEEDS_STATUSES = frozenset({"NEEDS_BODY_FETCH_UNRESOLVED", "NEEDS_PARSER_UNRESOLVED"})
 
 
 @dataclass(frozen=True)
@@ -529,8 +554,16 @@ def classify_final_status(
         return "OFFICIAL_RECORD_ALIVE", tuple(causes), "ready_as_official_record"
 
     if grp == "community":
-        if evidence.title_present > 0 or evidence.url_present > 0:
-            return "COMMUNITY_SIGNAL_ALIVE", (), "ready_as_unconfirmed_signal"
+        # community는 unconfirmed signal — url 또는 시간 anchor가 있으면 alive(필요시 degraded).
+        if evidence.url_present > 0 or evidence.published_present > 0:
+            causes = []
+            if evidence.url_present == 0:
+                causes.append("NO_STABLE_URL")
+            return "COMMUNITY_SIGNAL_ALIVE", tuple(causes), "ready_as_unconfirmed_signal"
+        if evidence.title_present > 0:
+            # title만(url·시간 anchor 부재) → dedup 약함 → degraded community signal로 정직 표기.
+            return ("COMMUNITY_SIGNAL_ALIVE", ("NO_STABLE_URL", "NO_TIMESTAMP"),
+                    "expand_query_for_url_and_date")
         return "NEEDS_PARSER_UNRESOLVED", ("NO_TITLE_OR_LABEL",), "map_post_fields"
 
     if grp == "search":
@@ -551,6 +584,74 @@ def classify_final_status(
     if evidence.title_present > 0 or evidence.url_present > 0:
         return "NEEDS_BODY_FETCH_UNRESOLVED", ("BODY_FETCH_REQUIRED",), "fetch_full_body_from_canonical"
     return "NEEDS_PARSER_UNRESOLVED", ("SCHEMA_UNKNOWN",), "implement_source_adapter"
+
+
+# ── E-3: unresolved → terminal finalization ──────────────────────────────────
+def finalize_unresolved_status(
+    *,
+    source_id: str,
+    source_group: Optional[str],
+    final_status: str,
+    root_causes: tuple[str, ...],
+    next_action: str,
+    ladder_result=None,
+    browser_available: bool = True,
+) -> tuple[str, tuple[str, ...], str, str]:
+    """NEEDS_*를 clean terminal로 확정한다(§10·§21: killer 턴 이후 NEEDS_* 금지).
+
+    반환: (final_status, root_causes, next_action, resolution_class).
+    no bypass: paywall/login/captcha 마커는 우회하지 않고 *_BLOCKED_NO_BYPASS로 닫는다.
+    """
+    if final_status not in _NEEDS_STATUSES:
+        # 이미 alive 또는 이미 terminal — 그대로 둔다.
+        cls = ("data_alive" if final_status in DATA_ALIVE_STATUSES
+               else "terminal" if final_status in TERMINAL_BLOCKED_STATUSES
+               else "external")
+        return final_status, root_causes, next_action, cls
+
+    # 1) source별 명시 resolution override(잘못된 endpoint/계약/서비스가치)
+    if source_id in _SOURCE_RESOLUTION_OVERRIDE:
+        fs, rc, na = _SOURCE_RESOLUTION_OVERRIDE[source_id]
+        return fs, rc, na, "source_override"
+
+    # 2) body fetch ladder 결과 기반(뉴스/HTML)
+    if ladder_result is not None:
+        lr = ladder_result
+        st = getattr(lr, "status", None)
+        if st in ("SUCCESS",):
+            return "ARTICLE_BODY_ALIVE", (), "ready_as_article", "data_alive"
+        if st in ("PARTIAL",):
+            return "ARTICLE_PARTIAL_ALIVE", (), "improve_extraction_optional", "data_alive"
+        if getattr(lr, "captcha_marker", False):
+            return ("CAPTCHA_BLOCKED_NO_BYPASS", ("CAPTCHA_DETECTED",),
+                    "no_bypass_keep_blocked", "captcha")
+        if getattr(lr, "login_marker", False):
+            return ("LOGIN_BLOCKED_NO_BYPASS", ("LOGIN_WALL_DETECTED",),
+                    "no_bypass_keep_blocked", "login")
+        if getattr(lr, "paywall_marker", False):
+            return ("PAYWALL_BLOCKED_NO_BYPASS", ("PAYWALL_DETECTED",),
+                    "no_bypass_keep_blocked", "paywall")
+        if st == "ROBOTS_BLOCKED":
+            return ("ROBOTS_BLOCKED_NO_BYPASS", ("ROBOTS_DISALLOW",),
+                    "no_bypass_keep_blocked", "robots")
+        http = getattr(lr, "http_status", None)
+        if http == 429:
+            return ("EXTERNAL_RATE_LIMITED_WITH_RETRY_POLICY", ("HTTP_429",),
+                    "retry_after_cooldown", "external_rate_limited")
+        if http in (401, 403):
+            return ("EXTERNAL_API_ERROR_WITH_EVIDENCE", (f"HTTP_{http}_ANTI_BOT",),
+                    "investigate_access_or_official_api", "external_api_error")
+        if getattr(lr, "tool_unavailable", False):
+            return ("TOOL_UNAVAILABLE_FOR_REQUIRED_STRATEGY", ("BROWSER_RENDER_UNAVAILABLE",),
+                    "install_or_configure_browser_then_retest", "tool_unavailable")
+        # fetch는 됐으나 본문 추출 실패/발췌만(마커 없음) → 증거 기반 외부 에러로 닫음
+        cause = "EXCERPT_ONLY_NO_FULL_BODY" if st == "EXCERPT_ONLY" else "NO_EXTRACTABLE_BODY"
+        return ("EXTERNAL_API_ERROR_WITH_EVIDENCE", (cause,),
+                "switch_to_official_feed_or_api", "external_api_error")
+
+    # 3) ladder 없는 NEEDS_PARSER 잔여(어댑터 미커버 + override 미지정) → 계약 필요로 닫음
+    return ("REQUIRES_VENDOR_SPECIFIC_API_CONTRACT", root_causes or ("SCHEMA_UNKNOWN",),
+            "implement_source_adapter_or_vendor_contract", "needs_contract")
 
 
 # ── summary ──────────────────────────────────────────────────────────────────

@@ -377,3 +377,20 @@ SourceProfile:
 - **unresolved 23**: NEEDS_PARSER 18(공공/도메인 필드 매핑·sec_edgar title) + NEEDS_BODY_FETCH 5(ap_news/hankyung/maekyung/cnbc/nyt — fetch 실패/excerpt). EXTERNAL_RATE_LIMITED 2(gdelt/google_trends_explore).
 - **라우팅 무중단**: 키 보유 search 6종·market 키소스(finnhub/polygon)·official 키소스(opendart) 전부 live 도달. 키 부재 skip 0(이번 run plan key_missing_skipped=0).
 - alive를 **fully vs degraded로 분리**(F3): 32(정책닫힘 포함) 단일숫자로 과대평가 금지.
+
+
+## Phase E-3 — Unresolved Source Killer (run 20260614T114401Z)
+
+직전 E-2 unresolved 23(NEEDS_PARSER 18 + NEEDS_BODY_FETCH 5) + RATE_LIMITED 2를 source별로 live
+재검증해 **NEEDS_*를 0으로** 확정했다. verdict: `FULL_SOURCE_CLEAN_COMPLETE` (unresolved_after=0).
+
+최종 분포(25 target): ARTICLE_BODY_ALIVE 5(ap_news/zdnet_korea/etnews/hankyung/maekyung),
+COMMUNITY_SIGNAL_ALIVE 2(youtube / product_hunt=degraded), OFFICIAL_RECORD_ALIVE 7(sec_edgar/
+tour/kofic/tmdb/kopis/aladin/culture_info=degraded), SEARCH_RESULT_ALIVE 1(serper),
+STRUCTURED_SIGNAL_ALIVE 2(twelve_data/alpha_vantage) = **data_alive 17**;
+terminal 8 = EXTERNAL_API_ERROR_WITH_EVIDENCE 3(nyt HTTP_403 / kma resultCode10 / cnbc EXCERPT),
+EXTERNAL_RATE_LIMITED_WITH_RETRY_POLICY 2(gdelt/google_trends_explore),
+NOT_SERVICE_USEFUL 1(its: per-link 교통 telemetry), REQUIRES_VENDOR_SPECIFIC_API_CONTRACT
+2(bok_ecos catalog / eia route-catalog endpoint). 제외 8은 killer 대상에서 자연 배제(우회 없음).
+type별 alive 정의는 변함없음(news=본문, official=record, market=signal, search=result,
+community=unconfirmed). 매트릭스: `ingestion/outputs/tmp_unresolved_source_killer/<run>/source_final_matrix.json`.

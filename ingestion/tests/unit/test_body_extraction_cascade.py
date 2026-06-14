@@ -46,8 +46,10 @@ def test_atom_content_extracted_as_body():
 
 
 def test_nested_hits_hits_decomposed():
+    # 어댑터 미등록 source_id로 generic nested(hits.hits) 분해 메커니즘 자체를 검증한다.
+    # (sec_edgar는 E-3에서 전용 adapter가 generic을 선제하므로 별도 테스트로 분리)
     cands, name, _ = parse_artifact_text(
-        _read("es_nested_hits.json"), source_id="sec_edgar", fmt="json")
+        _read("es_nested_hits.json"), source_id="generic_es", fmt="json")
     assert name == "generic_json_nested:hits.hits"
     assert len(cands) == 2
     # _source 평탄화로 nested url 회수

@@ -75,8 +75,10 @@ def test_blocked_policy_no_bypass():
 
 
 def test_titles_missing_is_needs_parser():
-    # 분해되나 title 미매핑(es _source에 표준 title 키 없음) → 필드 매핑 필요
-    a = _audit("es_nested_hits.json", source_id="sec_edgar", purpose="regulatory",
+    # 분해되나 title 미매핑(es _source에 표준 title 키 없음) → 필드 매핑 필요.
+    # 어댑터 미등록 source_id로 generic nested 경로의 title-missing → NEEDS_PARSER를 검증한다
+    # (sec_edgar는 E-3 전용 adapter가 display_names→title을 매핑하므로 더 이상 title-missing 아님).
+    a = _audit("es_nested_hits.json", source_id="generic_official", purpose="regulatory",
                source_group="official", fmt="json")
     readiness, _ = classify_production_readiness(a)
     assert readiness == "NEEDS_PARSER"

@@ -313,3 +313,20 @@ extractor) 책임.
 **소스 어댑터**: 0분해 회복용 `source_adapters.py`(source_id 스코프, 전역 인플레 회피) — opendart(`list`→공시 record), coinbase(`products`→단일 numeric), binance(`[ticker…]`→단일 numeric). artifact 다중 후보 중 **가장 많이 분해되는 것 선택**(`_select_best_artifact`, hacker_news raw=id리스트 vs extracted={items} 문제 해결).
 
 > 다음 문서: `05_EVENT_QUEUE_AND_STORAGE_SCHEMA.md`.
+
+
+## Phase E-3 — Body Fetch Strategy Ladder (run 20260614T114401Z)
+
+`body_fetch_strategy.fetch_body_with_ladder`: robots_check → httpx → trafilatura → readability →
+bs4(static <article>/<p>) → (policy-safe) browser render → body_state. 저장 raw_html을 직접 주입하면
+재fetch 없이 추출(zdnet/etnews). 신규 설치 0(기존 httpx/trafilatura/readability/bs4/selenium 재사용).
+
+긍정편향 차단(리뷰 흡수):
+- **confident_full** = present + (length ≥ 600 또는 title content 토큰이 본문에 등장). present이지만
+  짧고 title과 무관한 본문(예: cnbc Pro 프로모션 492자)은 SUCCESS로 둔갑하지 않고 EXCERPT_ONLY.
+  title overlap은 불용어(from/than/news 등)를 제외해 우연 매칭을 막는다.
+- **no bypass**: paywall/login/captcha 마커는 **구체 문구만**(footer의 일반 'subscribe'/'구독'/script의
+  'recaptcha' 제외). 마커 감지 시 browser 렌더를 시도하지 않고 *_BLOCKED_NO_BYPASS로 닫는다.
+  단 실제 full body를 서빙된 HTML에서 확보했으면(우회 아님) SUCCESS 인정.
+- 실측: ap_news 3054 / zdnet 3251 / etnews 1244 / hankyung 3883 / maekyung 5943자(trafilatura 실본문,
+  sha256 보존). nyt=HTTP_403(우회 없이 닫음), cnbc=EXCERPT_ONLY(Pro 프로모션, 본문 아님).

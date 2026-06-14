@@ -371,3 +371,13 @@ signal_bz/loword)은 이번 라운드 제외.
 **Pre-gate 재측(인플레 제거)**: candidate_total **32216**(its 31587 교통행이 지배, NEEDS_PARSER로 성공 아님). **structured_signal 7 / pre_gate_pass 8** — E-1의 binance 3600행 인플레를 단일-신호 어댑터로 환원해 제거(pre_gate_pass 3607→8). body_present 1(audit 단계, fetch 전), live fetch promote 5는 source_matrix `body_fetch_status=SUCCESS`로 추적. **알려진 한계**: opendart 공시 title은 cp949 소스 가능 → 인코딩 협상 미구현(품질 CAUTION).
 
 > 다음 문서: `06_LANGCHAIN_LANGGRAPH_DEEPAGENTS_RESEARCH.md`.
+
+
+## Phase E-3 — Unresolved Killer Event Queue (run 20260614T114401Z)
+
+살아난 source만 audit 큐 `ingestion/outputs/jsonl/unresolved_killer_event_queue.jsonl`에 적재(15 record).
+필드에 `source_strategy_used`(adapter 이름/body_ladder/collection_probe) 추가.
+**evidence는 외부 검증 가능한 URL만 인정**한다 — 로컬 artifact 파일 경로를 evidence로 둔갑시키지
+않는다(리뷰 흡수). 따라서 url 없는 record(product_hunt/culture_info degraded, twelve_data/
+alpha_vantage signal)는 eventqueue_ready=0으로 정직 표기. record_type: article_candidate/
+official_record/structured_signal/search_result/community_signal. REDIS_URL 무관 JSONL 명시(기본 큐 미접촉).

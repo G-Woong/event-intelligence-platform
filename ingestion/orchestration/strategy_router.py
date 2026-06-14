@@ -50,3 +50,26 @@ def decide_strategy(profile: SourceProfile) -> StrategyDecision:
         profile_status=profile.profile_status,
         skip_reason=profile.skip_reason,
     )
+
+
+def decide_strategy_with_memory(profile: SourceProfile, memory: Optional[dict] = None) -> StrategyDecision:
+    """decide_strategy + 학습된 SourceStrategyMemory 반영(E-3 consumer 진입점).
+
+    이전 killer 루프에서 성공한 전략이 있으면 ``preferred_strategy``를 그것으로 덮어쓴다
+    (다음 plan이 같은 전략을 자동 선택 → 무의미한 ladder 재탐색 회피). memory가 없으면
+    decide_strategy와 동일하게 동작한다(하위 호환).
+    """
+    base = decide_strategy(profile)
+    if not memory:
+        return base
+    from ingestion.orchestration.source_strategy_memory import preferred_strategy_for
+    learned = preferred_strategy_for(profile.source_id, memory)
+    if learned and learned != base.preferred_strategy:
+        return StrategyDecision(
+            source_id=base.source_id, purpose=base.purpose,
+            preferred_strategy=learned, confirmation_policy=base.confirmation_policy,
+            risk_level=base.risk_level, should_enqueue_success=base.should_enqueue_success,
+            live_eligible=base.live_eligible, profile_status=base.profile_status,
+            skip_reason=base.skip_reason,
+        )
+    return base

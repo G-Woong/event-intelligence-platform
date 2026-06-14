@@ -35,6 +35,7 @@ from ingestion.orchestration.source_body_report import (
 from ingestion.orchestration.source_profile import load_source_profiles
 from ingestion.orchestration.artifact_parser import parse_artifact_text
 from ingestion.orchestration.full_source_revival import (
+    DATA_ALIVE_STATUSES,
     RevivalEvidence,
     StrategyAttemptRecord,
     build_eventqueue_record,
@@ -760,11 +761,380 @@ def run_full_revival(args: argparse.Namespace) -> dict:
     return summary
 
 
+def _load_unresolved_before() -> tuple[dict, Optional[str]]:
+    """직전 full_source_revival 최신 run의 NEEDS_*/RATE_LIMITED source를 unresolved-before로 로드.
+
+    반환: ({source_id: {previous_status, previous_root_cause}}, matrix_path). 없으면 ({}, None).
+    """
+    base = _REPO_ROOT / "ingestion" / "outputs" / "tmp_full_source_revival"
+    if not base.is_dir():
+        return {}, None
+    runs = sorted([p for p in base.iterdir() if p.is_dir()], key=lambda p: p.name)
+    for run in reversed(runs):
+        mx = run / "source_matrix.json"
+        if not mx.is_file():
+            continue
+        try:
+            rows = json.loads(mx.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        out: dict = {}
+        for r in rows:
+            fs = str(r.get("final_status", ""))
+            if "UNRESOLVED" in fs or "RATE_LIMITED" in fs:
+                out[r["source_id"]] = {
+                    "previous_status": fs,
+                    "previous_root_cause": r.get("root_cause", ""),
+                }
+        if out:
+            return out, str(mx)
+    return {}, None
+
+
+def _read_probe_html(probe_result, source_id: str, outputs_dir: Path) -> Optional[str]:
+    """probe가 저장한 raw_html(zdnet/etnews 등)을 읽어 ladder에 직접 주입(재fetch 없이)."""
+    ap = getattr(probe_result, "artifact_paths", None)
+    p = getattr(ap, "raw_html", None) if ap is not None else None
+    if not p:
+        disk = outputs_dir / "raw_html" / source_id
+        if disk.is_dir():
+            files = sorted(disk.glob("*"), key=lambda x: x.stat().st_mtime)
+            p = files[-1] if files else None
+    if p and Path(p).is_file():
+        try:
+            return Path(p).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+    return None
+
+
+def run_unresolved_killer(args: argparse.Namespace) -> dict:
+    """Phase E-3 unresolved source killer 루프.
+
+    직전 unresolved(NEEDS_PARSER/NEEDS_BODY_FETCH/RATE_LIMITED)를 source별로 다시 live 검증하고,
+    어댑터/본문 ladder/finalize로 **NEEDS_*를 0으로** 만든다(살리거나 clean terminal로 닫음).
+    소스별 best/failed 전략을 SourceStrategyMemory에 학습 저장한다.
+    """
+    from ingestion.fetch_strategies.collection_probe import run_collection_probe
+    from ingestion.fetch_strategies.selenium_strategy import selenium_env_status
+    from ingestion.orchestration.api_readiness import audit_api_key_readiness
+    from ingestion.orchestration.body_fetch_strategy import fetch_body_with_ladder
+    from ingestion.orchestration.full_source_revival import finalize_unresolved_status
+    from ingestion.orchestration.source_strategy_memory import (
+        SourceStrategyMemory,
+        load_strategy_memory,
+        preferred_strategy_for,
+        save_strategy_memory,
+    )
+    from ingestion.orchestration.strategy_router import decide_strategy_with_memory
+
+    outputs_dir = _REPO_ROOT / "ingestion" / "outputs"
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    out_root = Path(args.output_dir) / run_id
+    out_root.mkdir(parents=True, exist_ok=True)
+    recorder = TraceRecorder(run_id, jsonl_path=out_root / "trace.jsonl",
+                             console=not args.no_console)
+
+    unresolved_before, before_matrix = _load_unresolved_before()
+    profiles = load_source_profiles()
+    by_id = {p.source_id: p for p in profiles}
+    # scope: 기본 unresolved(직전 NEEDS_*/RATE_LIMITED). --source로 좁힐 수 있음.
+    target_ids = list(unresolved_before.keys())
+    if args.source:
+        target_ids = [s for s in target_ids if s in args.source] or list(args.source)
+    target_profiles = [by_id[s] for s in target_ids if s in by_id]
+
+    readiness_by_id = {r.source_id: r
+                       for r in audit_api_key_readiness(target_profiles)}
+    # 기존 학습 메모리 consume(있으면 다음 plan에 반영 — 무의미 전략 반복 회피).
+    canonical_mem_path = _REPO_ROOT / "ingestion" / "configs" / "source_strategy_memory.yaml"
+    prior_memory = load_strategy_memory(canonical_mem_path)
+
+    sel_env = selenium_env_status()
+    browser_available = bool(sel_env.get("ready")) and bool(args.allow_browser_render)
+
+    body_targets = [s for s in target_ids
+                    if (by_id.get(s) and (by_id[s].source_group or "news") == "news")]
+    parser_targets = [s for s in target_ids
+                      if (by_id.get(s) and (by_id[s].source_group or "news") != "news"
+                          and str(unresolved_before[s]["previous_status"]).startswith("NEEDS_PARSER"))]
+    rate_targets = [s for s in target_ids
+                    if "RATE_LIMITED" in str(unresolved_before[s]["previous_status"])]
+
+    plan_block = {
+        "run_id": run_id,
+        "phase": "E-3 unresolved-killer",
+        "unresolved_before": len(unresolved_before),
+        "before_matrix": before_matrix,
+        "target_sources": len(target_profiles),
+        "body_fetch_targets": body_targets,
+        "parser_targets": parser_targets,
+        "rate_limited_targets": rate_targets,
+        "prior_memory_entries": len(prior_memory),
+        "browser_available": browser_available,
+        "selenium_ready": bool(sel_env.get("ready")),
+        "force": False,
+        "no_bypass": True,
+        "max_strategy_attempts_per_source": args.max_strategy_attempts_per_source,
+        "output_dir": str(out_root),
+    }
+    print("UNRESOLVED_KILLER_PLAN:")
+    print(json.dumps(plan_block, ensure_ascii=False, indent=2))
+    (out_root / "plan.json").write_text(
+        json.dumps(plan_block, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out_root / "unresolved_before.json").write_text(
+        json.dumps(unresolved_before, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    samples_root = out_root / "samples"
+    reports_root = out_root / "source_reports"
+    reports_root.mkdir(parents=True, exist_ok=True)
+    eq_queue_path = outputs_dir / "jsonl" / "unresolved_killer_event_queue.jsonl"
+    eq_queue_path.parent.mkdir(parents=True, exist_ok=True)
+
+    matrix_rows: list[dict] = []
+    memory_entries: list[SourceStrategyMemory] = []
+    attempts_records: list[StrategyAttemptRecord] = []
+    eq_lines: list[str] = []
+    eq_type_dist: dict[str, int] = {}
+    status_dist: dict[str, int] = {}
+
+    for p in target_profiles:
+        sid = p.source_id
+        grp = p.source_group or "news"
+        prev = unresolved_before.get(sid, {})
+        prev_status = prev.get("previous_status", "")
+        prev_rc = prev.get("previous_root_cause", "")
+        # memory consume: 이전에 학습된 선호 전략(있으면 로그).
+        learned_pref = preferred_strategy_for(sid, prior_memory)
+        decision = decide_strategy_with_memory(p, prior_memory)
+        recorder.record(sid, "killer_plan", "ok", timestamp=_now_iso(),
+                        metrics={"prev_status": prev_status,
+                                 "learned_pref": learned_pref or "",
+                                 "router_pref": decision.preferred_strategy or ""})
+
+        # 1차: live probe + adapter parse + classify (E-2 경로 재사용, simple fetch는 끔)
+        one = _revive_one_source(
+            p, readiness=readiness_by_id.get(sid), outputs_dir=outputs_dir,
+            recorder=recorder, probe_fn=run_collection_probe,
+            allow_body_fetch=False, max_items=args.max_items,
+        )
+        res = one["result"]
+        attempts_records.extend(res.attempts)
+        final_status = res.final_status
+        root_causes = res.root_causes
+        next_action = res.next_action
+        inspections = one["inspections"]
+        adapter_name = one["audit"].parser_name if one["audit"].parser_name and one["audit"].parser_name.startswith("adapter:") else None
+
+        # 2차: 뉴스/HTML이 여전히 NEEDS_*면 본문 ladder(저장 raw_html 또는 candidate URL)
+        ladder = None
+        body_fetch_strategy = None
+        browser_strategy = None
+        if final_status in ("NEEDS_BODY_FETCH_UNRESOLVED", "NEEDS_PARSER_UNRESOLVED") and grp == "news":
+            url = None
+            cand_title = None
+            if inspections:
+                c0 = inspections[0].candidate
+                url = c0.canonical_url or c0.source_url
+                cand_title = c0.title
+            stored_html = None
+            pr = one.get("_probe_result")
+            # _revive_one_source는 probe 객체를 직접 반환하지 않으므로 disk에서 raw_html 회수.
+            stored_html = _read_probe_html(pr, sid, outputs_dir)
+            if url or stored_html:
+                recorder.record(sid, "body_ladder_started", "ok", timestamp=_now_iso(),
+                                metrics={"has_url": bool(url), "has_stored_html": bool(stored_html),
+                                         "browser_available": browser_available})
+                ladder = fetch_body_with_ladder(
+                    url, source_id=sid, title=cand_title, html=stored_html,
+                    allow_browser=browser_available, browser_available=browser_available)
+                body_fetch_strategy = ladder.extractor_used
+                if ladder.browser_used:
+                    browser_strategy = "selenium_render"
+                recorder.record(sid, "body_ladder_finished",
+                                "ok" if ladder.status in ("SUCCESS", "PARTIAL") else "warn",
+                                timestamp=_now_iso(),
+                                metrics={"status": ladder.status, "length": ladder.body_length,
+                                         "extractor": ladder.extractor_used or "",
+                                         "paywall": ladder.paywall_marker,
+                                         "login": ladder.login_marker})
+
+        # 3차: finalize — NEEDS_*를 clean terminal로 확정(rate-limit 표기 정규화 포함)
+        if final_status == "EXTERNAL_RATE_LIMITED":
+            final_status, root_causes, next_action = (
+                "EXTERNAL_RATE_LIMITED_WITH_RETRY_POLICY", ("RATE_LIMITED",), "retry_after_cooldown")
+            resolution_class = "external_rate_limited"
+        else:
+            final_status, root_causes, next_action, resolution_class = finalize_unresolved_status(
+                source_id=sid, source_group=grp, final_status=final_status,
+                root_causes=root_causes, next_action=next_action,
+                ladder_result=ladder, browser_available=browser_available)
+
+        recorder.record(sid, "killer_finalized",
+                        "ok" if final_status in DATA_ALIVE_STATUSES else "warn",
+                        timestamp=_now_iso(),
+                        metrics={"final_status": final_status, "class": resolution_class})
+        status_dist[final_status] = status_dist.get(final_status, 0) + 1
+
+        # body sample + 본문 증거(F2 호환): ladder가 본문을 확보했으면 internal_only sample.
+        sample_path = None
+        if args.save_samples and ladder is not None and ladder.body_text:
+            ev_dir = samples_root / sid
+            ev_dir.mkdir(parents=True, exist_ok=True)
+            sha = hashlib.sha256(ladder.body_text.encode("utf-8")).hexdigest()[:16]
+            (ev_dir / "attempt_01.meta.json").write_text(json.dumps({
+                "source_id": sid, "url": ladder.url, "status": ladder.status,
+                "http_status": ladder.http_status, "extractor": ladder.extractor_used,
+                "body_length": ladder.body_length, "body_state": ladder.body_state,
+                "sha256_16": sha, "browser_used": ladder.browser_used,
+                "paywall_marker": ladder.paywall_marker, "login_marker": ladder.login_marker,
+                "captcha_marker": ladder.captcha_marker,
+                "strategies_tried": list(ladder.strategies_tried),
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+            (ev_dir / "attempt_01.body_sample.txt").write_text(
+                ladder.body_text[:args.sample_body_chars], encoding="utf-8")
+            sample_path = str(ev_dir)
+        elif args.save_samples and inspections:
+            sample_path = str(_write_samples(
+                SourceBodyAuditResult(audit=one["audit"], inspections=inspections),
+                samples_root, max_items=args.max_items, body_chars=args.sample_body_chars))
+
+        # event queue record(데이터로 살아난 source만 적재)
+        eq_ready = 0
+        if final_status in DATA_ALIVE_STATUSES and inspections:
+            c = inspections[0].candidate
+            rt = _record_type_for(grp)
+            rec = build_eventqueue_record(
+                record_type=rt, source_id=sid, title_or_label=c.title,
+                # 외부 검증 가능한 URL만 evidence로 인정한다(로컬 artifact 경로 둔갑 금지 — 리뷰 흡수).
+                source_url_or_evidence=c.source_url or c.canonical_url,
+                canonical_url=c.canonical_url, published_at_or_observed_at=c.published_at,
+                body_state_or_signal=(ladder.body_state if ladder else inspections[0].body_state.extraction_status),
+                confirmation_policy=c.confirmation_policy,
+                quality_pre_gate_decision=inspections[0].pre_gate.decision,
+            )
+            rec["source_strategy_used"] = adapter_name or body_fetch_strategy or "collection_probe"
+            ready, _gaps = check_eventqueue_readiness(rec)
+            eq_ready = 1 if ready else 0
+            eq_lines.append(json.dumps(rec, ensure_ascii=False))
+            eq_type_dist[rt] = eq_type_dist.get(rt, 0) + 1
+
+        # strategy memory entry
+        successful = None
+        failed: list[str] = []
+        if final_status in DATA_ALIVE_STATUSES:
+            successful = adapter_name or (f"body_ladder:{body_fetch_strategy}" if body_fetch_strategy else "collection_probe")
+        else:
+            if ladder is not None:
+                failed.append(f"body_ladder:{ladder.status}")
+            if str(prev_rc):
+                failed.append(f"prev:{prev_rc}")
+        memory_entries.append(SourceStrategyMemory(
+            source_id=sid, previous_status=prev_status, final_status=final_status,
+            root_cause_before=tuple(x for x in str(prev_rc).split(";") if x),
+            root_cause_after=tuple(root_causes),
+            successful_strategy=successful, failed_strategies=tuple(failed),
+            preferred_next_strategy=(successful or next_action),
+            adapter_name=adapter_name,
+            body_fetch_strategy=body_fetch_strategy, browser_strategy=browser_strategy,
+            parser_notes=resolution_class, cooldown_policy=("respect_cooldown" if "RATE_LIMITED" in final_status else None),
+            safety_policy="no_bypass",
+            evidence=(f"sha256_16={hashlib.sha256(ladder.body_text.encode('utf-8')).hexdigest()[:16]} len={ladder.body_length}"
+                      if (ladder and ladder.body_text) else (adapter_name or final_status)),
+        ))
+
+        row = {
+            "source_id": sid, "source_group": grp,
+            "previous_status": prev_status, "previous_root_cause": prev_rc,
+            "final_status": final_status, "alive_type": (final_status if final_status in DATA_ALIVE_STATUSES else ""),
+            "resolution_class": resolution_class,
+            "candidate_count": one["audit"].candidate_count,
+            "adapter_name": adapter_name or "",
+            "body_fetch_status": (ladder.status if ladder else ""),
+            "body_fetch_length": (ladder.body_length if ladder else 0),
+            "body_fetch_extractor": (ladder.extractor_used or "" if ladder else ""),
+            "browser_used": (ladder.browser_used if ladder else False),
+            "paywall_marker": (ladder.paywall_marker if ladder else False),
+            "eventqueue_ready": eq_ready,
+            "successful_strategy": successful or "",
+            "root_cause_after": ";".join(root_causes),
+            "next_action": next_action,
+            "sample_path": sample_path or "",
+        }
+        matrix_rows.append(row)
+        (reports_root / f"{sid}.json").write_text(
+            json.dumps(row, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # write outputs
+    learned_mem_path = out_root / "source_strategy_memory.learned.yaml"
+    save_strategy_memory(memory_entries, learned_mem_path, run_id=run_id)
+    # canonical config(커밋 대상) — 학습 결과를 다음 실행이 consume.
+    save_strategy_memory(memory_entries, canonical_mem_path, run_id=run_id)
+
+    if eq_lines:
+        with eq_queue_path.open("w", encoding="utf-8") as f:
+            f.write("\n".join(eq_lines) + "\n")
+        (out_root / "event_queue_preview.jsonl").write_text(
+            "\n".join(eq_lines[:50]) + "\n", encoding="utf-8")
+
+    with (out_root / "strategy_attempts.jsonl").open("w", encoding="utf-8") as f:
+        for a in attempts_records:
+            f.write(json.dumps(asdict(a), ensure_ascii=False) + "\n")
+
+    (out_root / "source_final_matrix.json").write_text(
+        json.dumps(matrix_rows, ensure_ascii=False, indent=2), encoding="utf-8")
+    if matrix_rows:
+        with (out_root / "source_final_matrix.csv").open("w", encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(matrix_rows[0].keys()))
+            w.writeheader()
+            for r in matrix_rows:
+                w.writerow(r)
+
+    needs_after = sum(1 for r in matrix_rows if "NEEDS_" in r["final_status"])
+    data_alive = sum(1 for r in matrix_rows if r["final_status"] in DATA_ALIVE_STATUSES)
+    summary = {
+        "run_id": run_id, "plan": plan_block,
+        "unresolved_before": len(unresolved_before),
+        "unresolved_after": needs_after,
+        "data_alive": data_alive,
+        "final_status_distribution": status_dist,
+        "eventqueue": {"queue_path": str(eq_queue_path), "records": len(eq_lines),
+                       "record_type_distribution": eq_type_dist},
+        "memory": {"learned_path": str(learned_mem_path),
+                   "canonical_path": str(canonical_mem_path), "entries": len(memory_entries)},
+        "trace_stage_counts": recorder.stage_counts(),
+    }
+    (out_root / "summary.json").write_text(
+        json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    result_block = {
+        "run_id": run_id,
+        "sources_total": len(matrix_rows),
+        "alive_count": sum(1 for r in matrix_rows if r["final_status"] in DATA_ALIVE_STATUSES),
+        "policy_blocked_count": sum(1 for r in matrix_rows if "BLOCKED_NO_BYPASS" in r["final_status"]),
+        "external_blocked_count": sum(1 for r in matrix_rows if r["final_status"].startswith("EXTERNAL_")),
+        "not_service_useful_count": sum(1 for r in matrix_rows if r["final_status"] in ("NOT_SERVICE_USEFUL", "DISABLE_RECOMMENDED")),
+        "tool_unavailable_count": sum(1 for r in matrix_rows if "TOOL_UNAVAILABLE" in r["final_status"]),
+        "vendor_contract_count": sum(1 for r in matrix_rows if "VENDOR_SPECIFIC" in r["final_status"]),
+        "unresolved_remaining": needs_after,
+        "body_alive_count": sum(1 for r in matrix_rows if r["final_status"] in ("ARTICLE_BODY_ALIVE", "ARTICLE_PARTIAL_ALIVE")),
+        "official_record_alive_count": sum(1 for r in matrix_rows if r["final_status"] == "OFFICIAL_RECORD_ALIVE"),
+        "structured_signal_alive_count": sum(1 for r in matrix_rows if r["final_status"] == "STRUCTURED_SIGNAL_ALIVE"),
+        "search_result_alive_count": sum(1 for r in matrix_rows if r["final_status"] in ("SEARCH_RESULT_ALIVE", "COMMUNITY_SIGNAL_ALIVE")),
+        "eventqueue_records": len(eq_lines),
+        "verdict": ("FULL_SOURCE_CLEAN_COMPLETE" if needs_after == 0 else "FULL_SOURCE_CLEAN_PARTIAL"),
+    }
+    print("UNRESOLVED_KILLER_RESULT:")
+    print(json.dumps(result_block, ensure_ascii=False, indent=2))
+    return summary
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(
-        description="Phase E-1 replay audit / E-2 live full-source revival")
-    ap.add_argument("--mode", default="audit", choices=["audit", "full-revival"],
-                    help="audit=replay(E-1, network 0) / full-revival=live(E-2)")
+        description="Phase E-1 replay audit / E-2 live full-source revival / E-3 unresolved killer")
+    ap.add_argument("--mode", default="audit",
+                    choices=["audit", "full-revival", "unresolved-killer"],
+                    help="audit=replay(E-1) / full-revival=live(E-2) / unresolved-killer=live(E-3)")
     ap.add_argument("--scope", default="enabled",
                     choices=["enabled", "live_eligible", "all", "target"])
     ap.add_argument("--source", action="append", default=[],
@@ -777,6 +1147,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--allow-network-body-fetch", action="store_true")
     ap.add_argument("--respect-rate-limit", default="true",
                     help="(full-revival) rate-limit 존중 — 항상 true(force=False 고정)")
+    ap.add_argument("--allow-browser-render", action="store_true",
+                    help="(unresolved-killer) policy-safe browser render 허용(설치 시)")
+    ap.add_argument("--max-strategy-attempts-per-source", type=int, default=5)
     ap.add_argument("--no-console", action="store_true",
                     help="trace를 콘솔에 출력하지 않음(JSONL만)")
     args = ap.parse_args(argv)
@@ -785,6 +1158,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             args.output_dir = str(
                 _REPO_ROOT / "ingestion" / "outputs" / "tmp_full_source_revival")
         run_full_revival(args)
+    elif args.mode == "unresolved-killer":
+        if args.output_dir.endswith("tmp_source_body_audit"):
+            args.output_dir = str(
+                _REPO_ROOT / "ingestion" / "outputs" / "tmp_unresolved_source_killer")
+        run_unresolved_killer(args)
     else:
         run(args)
     return 0
