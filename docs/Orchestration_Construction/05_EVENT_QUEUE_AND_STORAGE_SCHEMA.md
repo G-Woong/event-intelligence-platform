@@ -56,12 +56,21 @@ EventSeedCandidate = {
     "body_excerpt": str | None,         # preview_only 길이 준수 (전문 아님)
     "body_missing": bool,               # 본문 미확보 여부 (04 §10 — 사건은 보존)
     "collection_status": str,           # LIVE_SUCCESS|RATE_LIMITED|BLOCKED|...
+    "items_found": int,                 # 수집 항목 개수 (Phase A/B 구현 반영)
+    "items_extracted": int | None,      # ProbeResult.items_extracted (없으면 None)
+    "strategy_used": str,               # api|playwright_site_spec|... (라우팅 결과)
     "error_type": str | None,           # ErrorType (실패 시)
     "raw_artifact_path": str | None,    # 계층1 raw payload reference (internal_only)
     "extracted_text_ref": str | None,   # 계층1 extracted reference (internal_only)
-    "significance": float,              # 0~1 (numeric/trend 신호 강도)
-    "language": str | None,
+    "canonical_url": str | None,        # 개별 기사 URL (Phase C/D url_resolver, 현재 None)
+    "significance": float,              # 0~1 (numeric/trend 신호 강도, Phase D~)
+    "language": str | None,             # (Phase D~)
 }
+
+> **Phase A/B 구현 노트**: 위 필드 중 `title_or_keyword~error_type, raw_artifact_path,
+> extracted_text_ref, items_extracted, canonical_url(None), cycle_id`는 실제 적용됨
+> (`ingestion/orchestration/event_seed.py`). `significance`/`language`는 개별 사건 분해가
+> 들어오는 Phase D~ 대상이다. `_id`/`_status`는 EventQueue가 부여한다.
 ```
 
 > **D-5 판정: APPROVE(확장 보강).** MVP 필수 5필드만으로 Phase A 큐가 돈다(무겁지 않음). 단 **근거 추적**(B2B evidence link, 09 게이트 참조)을 위해 `raw_artifact_path`/`extracted_text_ref`/`canonical_url`/`body_missing`/`error_type`을 Phase B부터 채운다. 사건 후보만 저장하고 원문 reference가 없으면 나중에 근거를 못 단다.

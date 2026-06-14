@@ -147,3 +147,38 @@ def test_to_event_seed_title_falls_back_to_source_id():
 
     seed = to_event_seed(_ok("gdelt"), query=None, cycle_id="c1", timestamp="t")
     assert seed["title_or_keyword"] == "gdelt"
+
+
+def test_run_cycle_with_schedules_collects_only_due_sources():
+    """Phase B: schedules 주면 due 소스만 수집한다(Phase A sources 경로는 불변)."""
+    from datetime import datetime, timezone
+
+    from ingestion.orchestration.cycle_planner import SourceSchedule
+    from ingestion.orchestration.run_orchestration_cycle import run_cycle
+
+    q = FakeQueue()
+    now = datetime.now(timezone.utc)
+    schedules = [
+        SourceSchedule("gdelt", 300, last_run_at=None),  # due(never)
+        SourceSchedule("yna", 300, last_run_at=now),     # not due(방금 수집)
+    ]
+    report = run_cycle(schedules=schedules, queue=q, probe_fn=lambda sid, **kw: _ok(sid))
+
+    assert report.sources_attempted == 1
+    assert [i["source_id"] for i in q.items] == ["gdelt"]
+
+
+def test_run_cycle_schedules_all_not_due_enqueues_nothing():
+    from datetime import datetime, timezone
+
+    from ingestion.orchestration.cycle_planner import SourceSchedule
+    from ingestion.orchestration.run_orchestration_cycle import run_cycle
+
+    q = FakeQueue()
+    now = datetime.now(timezone.utc)
+    schedules = [SourceSchedule("gdelt", 300, last_run_at=now)]
+    report = run_cycle(schedules=schedules, queue=q, probe_fn=lambda sid, **kw: _ok(sid))
+
+    assert report.sources_attempted == 0
+    assert report.items_enqueued == 0
+    assert q.items == []

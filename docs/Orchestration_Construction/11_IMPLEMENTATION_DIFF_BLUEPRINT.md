@@ -218,6 +218,28 @@ quality_gate_rejection_reason 품질 게이트 탈락 사유별 분포
 
 ---
 
+## 9d. Phase A/B 실제 구현 현황 (2026-06-14, 설계→코드 반영)
+
+> 이 절은 blueprint가 아니라 **실제 적용된 코드**다. §1 표는 설계 예측이며, 실제 생성 파일은 아래가 정본이다.
+
+**Phase A (commit 1bfcff5)** — 신규 설치 0, 회귀 656 passed:
+- `ingestion/orchestration/__init__.py` / `event_seed.py` / `run_orchestration_cycle.py`
+- `run_cycle()`: 소스별 `run_collection_probe` 1회 → 성공만 EventSeedCandidate로 EventQueue(JSONL) 적재. 소스 격리/probe 경유만/force=False(no bypass)/실패 비적재.
+- 코드 실측 교정: `CollectionProbeResult`/`ProbeResult`에 개별 기사 리스트 없음(items_found=개수 + artifact 참조뿐) → Phase A seed = "소스별 1 수집결과". 개별 사건 분해는 Phase D/다운스트림.
+- live smoke: gdelt(3)+yna(120) LIVE_SUCCESS, JSONL 2건 적재.
+
+**Phase B (이번 턴)** — 신규 설치 0, 회귀 674 passed:
+- `ingestion/orchestration/cycle_planner.py` (신규): `SourceSchedule` + `is_due()` + `select_due_sources()`. cron/Celery/Redis 없는 순수 due 판정. timezone-aware(naive→UTC 간주), last_run None→due, disabled→not due.
+- `run_orchestration_cycle.run_cycle(schedules=...)` 옵션 추가: schedules 주면 due 소스만, 없으면 기존 sources/DEFAULT(Phase A 동작 불변).
+- `event_seed.to_event_seed()` 확장필드 보강: `items_extracted`(ProbeResult, 없으면 None), `canonical_url`(None — Phase C/D url_resolver), artifact 경로 없을 때 None 안정 처리.
+- **B-1 local_file 영속**: 기존 store 코드 수정 없이 검증만 — `LocalFileSourceHealthStore`는 이미 local_file **기본**, `LocalPersistentRateLimitStore`는 path 주입으로 영속. roundtrip 테스트(새 인스턴스=프로세스 재시작 모사)로 확인. **반복 운영 시 rate_limit backend는 `INGESTION_RATE_LIMIT_BACKEND=local_file` 권장**(기본 memory는 비영속).
+- **B-4 RuntimeWarning 제거**: `__init__.py`를 PEP 562 lazy import(`__getattr__`)로 전환 → `python -m ...run_orchestration_cycle` 실행 시 runpy 경고 제거(공개 API 유지). `-W error::RuntimeWarning` 검증 통과.
+- 테스트: `test_cycle_planner.py`(8) + `test_orchestration_persistence.py`(8) + `test_orchestration_cycle.py`(+2) = 신규 18.
+
+**Phase C로 넘김**: SourceProfile/source_profiles.yaml(44소스) + last_run_at 영속·자동 갱신 + StrategyRouter + canonical_url(url_resolver) 연결.
+
+---
+
 ## 10. 이번 턴(설계)에서 적용하는 변경 (유일)
 
 - `docs/Orchestration_Construction/` 신규 13개 md + README.

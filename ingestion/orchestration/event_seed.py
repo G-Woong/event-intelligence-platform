@@ -39,6 +39,9 @@ def to_event_seed(
     ``_id``/``_status``는 EventQueue가 부여하므로 여기서 넣지 않는다.
     """
     ap = result.artifact_paths
+    pr = result.probe_result
+    # items_extracted는 ProbeResult에만 존재(CollectionProbeResult에는 없음). 없으면 None.
+    items_extracted = pr.items_extracted if pr is not None else None
     body_missing = result.items_found == 0
     return {
         # ── MVP 필수 5필드 (Phase A — 이것만으로 큐 동작) ──
@@ -50,9 +53,14 @@ def to_event_seed(
         "cycle_id": cycle_id,
         "collection_status": result.status,
         "items_found": result.items_found,
+        "items_extracted": items_extracted,
         "strategy_used": result.strategy_used,
         "error_type": result.error_category,
         "body_missing": body_missing,
+        # raw/extracted artifact가 없으면 None(없는 데이터를 만들지 않는다).
         "raw_artifact_path": ap.raw_payload or ap.raw_html or ap.raw_signal,
         "extracted_text_ref": ap.extracted_payload,
+        # 개별 기사 URL은 source-level seed 단계에서 미상 → None.
+        # url_resolver 연결은 Phase C/D(개별 사건 분해 시).
+        "canonical_url": None,
     }

@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional, Sequence
 
 from ingestion.fetch_strategies.collection_probe import run_collection_probe
 from ingestion.fetch_strategies.models import CollectionProbeResult
+from ingestion.orchestration.cycle_planner import SourceSchedule, select_due_sources
 from ingestion.orchestration.event_seed import SUCCESS_STATUSES, to_event_seed
 from ingestion.pipeline.event_queue import EventQueue
 
@@ -64,13 +65,14 @@ def _now_iso() -> str:
 def run_cycle(
     sources: Sequence[str] | None = None,
     *,
+    schedules: Sequence[SourceSchedule] | None = None,
     queue: EventQueue | None = None,
     probe_fn: ProbeFn = run_collection_probe,
     query: Optional[str] = None,
     max_items: int = 5,
     force: bool = False,
 ) -> CycleReport:
-    """Phase A deterministic local orchestration cycle.
+    """Phase A/B deterministic local orchestration cycle.
 
     각 소스를 ``run_collection_probe``로 1회 수집하고, 성공(LIVE_SUCCESS/PARTIAL) 결과를
     EventSeedCandidate로 EventQueue(JSONL)에 적재한다. 설계 원칙:
@@ -82,9 +84,19 @@ def run_cycle(
     - **실패 비적재**: 성공만 큐에 넣고 실패는 CycleReport에만 기록(다운스트림 오염 방지).
       health store 갱신은 run_collection_probe 내부(_update_health)가 이미 수행한다.
 
+    소스 선택 우선순위(Phase B):
+    1. ``schedules`` 주어지면 → due(enabled + min_interval 경과)인 소스만 수집.
+    2. ``sources`` 주어지면 → 그 목록 전부.
+    3. 둘 다 None → ``DEFAULT_SOURCES`` (gdelt, yna).
+
     ``probe_fn``/``queue``는 주입 가능 → 단위 테스트는 fake로 결정적 검증.
     """
-    src = tuple(sources) if sources is not None else DEFAULT_SOURCES
+    if schedules is not None:
+        src = tuple(select_due_sources(schedules, datetime.now(timezone.utc)))
+    elif sources is not None:
+        src = tuple(sources)
+    else:
+        src = DEFAULT_SOURCES
     q = queue if queue is not None else EventQueue()
     cycle_id = str(uuid.uuid4())
     started = _now_iso()
