@@ -311,3 +311,14 @@ body-fetch 반복은 alt strategy 시도 후 quarantine.
 - **dcinside — robots-allowed path만, 차단 감지 시 즉시 중단(최종 등급 DEGRADED)**. robots 허용 갤러리에 한해 generic UA static GET하며, **Cloudflare 챌린지/CAPTCHA/login 감지 즉시 `*_BLOCKED_NO_BYPASS`로 중단**한다(렌더 강행·우회 없음). 이는 08의 "CAPTCHA/login/paywall은 BLOCKED, 우회 안 함" 원칙의 정확한 실행이다. registry known_blockers `[cloudflare,anti_bot]`는 실측 결과 챌린지가 없어 `[]`로 정정. 다만 사이트가 AI 크롤러를 robots에서 전면 차단한 상태를 generic UA로 접근한 점(AI_CRAWLER_ROBOTS_BLOCK_HONORED_GENERIC_UA)과 ToS 자동수집 조항 미검증(TOS_AUTOMATED_USE_UNVERIFIED, legal-safety review pending)을 정책 리스크로 남겨, 최종 등급은 clean READY가 아니라 **PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY(=production_state DEGRADED)**로 강등했다.
 
 검증: 전체 회귀 1130 passed, secret scan PASS(210), 신규 설치 0, no bypass.
+
+## Phase G-3 — Final Source Closure
+
+**판정: PARTIAL_WITH_VERIFIED_HARD_BLOCKERS**. retry/rate-limit 관점의 핵심 산출은 **gdelt를 Colab-parity로 검증하고도 provider throttle를 우회 없이 pending_resume로 정직히 닫은 것**이다.
+
+- **gdelt — Colab-parity 확인**. 현재 오케스트레이션의 endpoint(`api.gdeltproject.org/api/v2/doc/doc`)/params(mode=ArtList, format=json, maxrecords, timespan)/parse(articles[])가 Colab DOC 2.0 ArtList와 **코드 레벨 동일**(`test_gdelt_colab_parity`로 검증). 즉 우리 호출 방식 자체는 정상이며, 실패 원인은 코드가 아니라 provider IP throttle다.
+- **RateLimitGovernor host-level lock + pending_resume**. 라이브에서 12초 spaced 단발 probe는 fresh article 1건 반환에 성공했으나, 세션 누적 호출로 throttle가 지속되어 closure run들에서는 429 반복 → governor가 host-level lock으로 cooldown_until을 영속 저장하고 **pending_resume로 빠진다**. 무한 retry 0, 우회 0, 다음 run 자동 재개.
+- **정직성 표기**: 응답 레벨 diff는 저장본이 없어 **UNVERIFIED로 정직 표기**(저장하지 않은 것을 검증됐다고 주장하지 않음). production_state는 `EXTERNAL_RATE_LIMITED_PENDING_RESUME → EXTERNAL_RATE_LIMITED`로 매핑, 0-record를 READY로 둔갑시키지 않음.
+- **남은 정책 공백(정직)**: gdelt 비-throttle 윈도 재수집 + 연속 pending escalation 카운터는 여전히 미구현(무한 pending 침묵 위험). 프록시 로테이션·내부 RPC 회피책은 채택하지 않는다.
+
+검증: 전체 회귀 **1179 passed**, secret scan **PASS**, net-0 주입 테스트, no bypass.

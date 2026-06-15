@@ -44,8 +44,16 @@ def test_body_fetch_source_uses_body_ladder():
 
 
 def test_evidence_anchor_uses_adapter_fix():
-    d = decide_rescue(_gap("culture_info", EVIDENCE_ANCHOR))
+    # vendorless EVIDENCE_ANCHOR source(tmdb)는 adapter anchor fix로 라우팅.
+    # (culture_info는 Phase G-3에서 period2->detail2 vendor route를 갖게 되어 아래 별도 테스트로 이동.)
+    d = decide_rescue(_gap("tmdb", EVIDENCE_ANCHOR))
     assert d.rescue_strategy == SOURCE_ADAPTER_FIX
+
+
+def test_culture_info_evidence_anchor_now_uses_vendor_route():
+    # Phase G-3: culture_info가 vendor route(period2->detail2 실 url)로 anchor를 해결 → vendor_route_fix.
+    d = decide_rescue(_gap("culture_info", EVIDENCE_ANCHOR))
+    assert d.rescue_strategy == VENDOR_ROUTE_FIX
 
 
 def test_source_value_uses_disable_even_if_vendorless():

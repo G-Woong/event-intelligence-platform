@@ -225,6 +225,7 @@ profiles:
     confirmation_policy: "unconfirmed_until_corroborated"
     live_eligible: "false"
     skip_reason: "requires_api_key"
+    notes: "Phase G-3: GraphQL expanded query returns real url+createdAt (no synthetic slug); anchor live-verified -> promoted DEGRADED to PRODUCTION_READY"
   youtube:
     enabled: true
     profile_status: "needs_api_key"
@@ -750,6 +751,7 @@ profiles:
     confirmation_policy: "source_confirmed"
     live_eligible: "false"
     skip_reason: "requires_api_key"
+    notes: "Phase G-3: data.go.kr period2 -> detail2(seq) returns real external url + startDate (dead culture.go.kr detailView shell discarded); anchor live-verified -> promoted DEGRADED to PRODUCTION_READY"
   # 제외군 (DEFERRED / MVP_DEFERRED / MVP_EXCLUDED - enabled=false)
   reddit:
     enabled: false

@@ -433,3 +433,25 @@ LangGraph 미호출 — raw_events가 Phase H로의 handoff 경계.
 - `production_state.py` — 매핑 2건 추가(EXTERNAL_RATE_LIMITED_PENDING_RESUME→EXTERNAL_RATE_LIMITED, g_trends→requires_official_api_or_contract).
 
 테스트/검증: 전체 회귀 **1130 passed**, secret scan **PASS(210)**, 신규 설치 **0**, no bypass(robots 허용 path만·cooldown 존중·차단 감지 시 중단), 전 outputs gitignored.
+
+## Phase G-3 — Final Source Closure
+
+**판정: PARTIAL_WITH_VERIFIED_HARD_BLOCKERS**. 구현 diff 관점에서 이번 단계가 생성/수정한 파일 목록(기존 수집 코드는 직접 미수정, 흡수 라우팅 신설).
+
+신규 모듈(6):
+- `source_capability.py` — 소스별 능력 선언(역할·허용 전략·정책 불변식) 1급 객체.
+- `strategy_graph.py` — 전략 노드 그래프 빌드. unsafe 전략은 빌드 시점 거부.
+- `tool_plan.py` — policy/rate-limit/secret 불변식 강제(secret **값** 미포함, 정책 이름만).
+- `evidence_gate.py` — known synthetic/dead URL + local path 거부 + shape 검사(liveness는 fetcher).
+- `final_source_closure.py` — closure 오케스트레이션 본체.
+- `run_final_source_closure.py` — 실행 엔트리.
+
+vendor route 2종(`ingestion/orchestration/vendor_api_routes.py`):
+- `fetch_product_hunt` — GraphQL 확장(`url slug createdAt featuredAt id`)로 실 url+createdAt, 합성 slug 제거.
+- `fetch_culture_info` — data.go.kr `period2`→`detail2`로 실 전시 url, placeUrl 폴백 제거. (`audit_dcinside_detail_body`도 추가 — detail body ALIVE 확인, 정책상 미저장.)
+
+기타: 신규 6모듈 `__init__` 등록, 테스트 **9파일(net-0 주입)** 추가.
+
+분포 변화(G-2→G-3): DEGRADED 3→1, clean READY 44→46(culture_info+product_hunt 승격). 최종 PRODUCTION_READY 46 / DEGRADED 1(dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9 = 57.
+
+테스트/검증: 전체 회귀 **1179 passed**, secret scan **PASS**, 신규 설치 0, no bypass, 전 outputs gitignored.

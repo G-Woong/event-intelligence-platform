@@ -437,3 +437,14 @@ Body는 대부분 snippet_only(RSS summary) — 정직하게 기록하며 full b
 - **dcinside — EventQueue 30 + raw_events 30(bridge contract pass), 단 source 등급은 DEGRADED**. live 수집한 30 community_signal이 전부 title+url+ISO time anchor를 갖춰 큐에 적재되고, 동수 30건이 raw_events로 mirror됐다. bridge contract 자체는 통과했으나, 이 레코드들이 **body 없는 list preview(LIST_PREVIEW_ONLY_NO_BODY)**이고 stockus 단일 갤러리(SCOPE_SINGLE_GALLERY_STOCKUS) 범위라 source production_state는 clean READY가 아닌 **PRODUCTION_READY_DEGRADED**로 표기된다. 이 항목들은 **structured/community signal이지 article이 아니다** — raw_text는 full body가 아닌 list preview 메타데이터이며, article로 둔갑시키지 않는다(05 스키마의 "structured_signal을 article로 위장 금지" 원칙과 정합). 익명 갤러리 제목은 unconfirmed_until_corroborated 플래그로만 적재하고 작성자 닉네임(PII)은 스키마에 저장하지 않는다. content_hash 기반 dedup index가 re-run 시 collapse를 보장하므로 idempotency가 유지된다.
 - **gdelt — 큐에 신규 기록 0(cooldown 영속)**. 429로 신선 record가 없어 큐에 아무것도 추가하지 않는다. 다만 `RateLimitGovernor`의 cooldown_until이 **governor state 파일에 영속**되어 다음 run에서 자동 재개된다 — 이는 05의 "수집 상태(rate-limit/health)는 local_file로 영속" 결정과 정합하는 패턴이다. 큐 점유 없이 상태만 영속한다.
 - **production_state 매핑 추가(2건)**: 스토리지/상태 계층에 `EXTERNAL_RATE_LIMITED_PENDING_RESUME → EXTERNAL_RATE_LIMITED` 매핑을 추가해 fresh data 0건을 READY로 둔갑시키지 못하게 했다. google_trends_explore는 requires_official_api_or_contract로 매핑되어 큐 적재 대상에서 제외된다. 전 outputs는 gitignored.
+
+## Phase G-3 — Final Source Closure
+
+**판정: PARTIAL_WITH_VERIFIED_HARD_BLOCKERS**. 큐/스토리지 관점에서 이번 단계는 **3개 소스의 라이브 레코드가 EventQueue→raw_events bridge contract를 통과**한 것이 핵심이다.
+
+- **EventQueue/raw_events bridge 결과**: dcinside 26건(community_signal, list-level) + culture_info 5건 + product_hunt 5건이 큐에 적재되고 동수로 raw_events에 mirror됐다. bridge contract pass.
+- **dedup**: `canonical_url#seq` 기반 dedup index로 re-run 시 collapse 보장(culture_info는 seq stable id, product_hunt는 canonical url, dcinside는 list anchor). idempotency 유지.
+- **레코드 태깅**: dcinside/product_hunt community_signal 레코드는 `confirmation_policy=unconfirmed_until_corroborated`로 태깅된다(투자 펌핑 콘텐츠가 confirmed event로 직행하지 않도록 — 단, 이를 소비하는 하위 corroboration 게이트는 아직 미구현, 09/12 launch blocker 참조). dcinside 본문은 ALIVE이나 정책상 미저장 → raw_text는 list preview 메타데이터(article로 둔갑 금지).
+- **gdelt**: 큐 신규 기록 0(429 cooldown). `RateLimitGovernor` cooldown_until만 governor state 파일에 영속, 큐 점유 없이 다음 run 자동 재개.
+
+production_state 재산출(api_key_ready 반영): PRODUCTION_READY 46 / DEGRADED 1(dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9 = 57. 전 outputs gitignored.

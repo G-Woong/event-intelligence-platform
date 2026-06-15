@@ -18,13 +18,15 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from ingestion.core.env_loader import load_env
 from ingestion.orchestration.full_source_revival import build_eventqueue_record
 
 # http_get(url, params) -> (status_code, json_obj|None, text|None)
 HttpGet = Callable[..., "tuple[Optional[int], Optional[dict], Optional[str]]"]
+# http_post(url, *, json, headers_policy) -> (status_code, json_obj|None, text|None)
+HttpPost = Callable[..., "tuple[Optional[int], Optional[dict], Optional[str]]"]
 
 
 @dataclass(frozen=True)
@@ -305,6 +307,192 @@ def fetch_gdelt(*, env=None, http_get: HttpGet = _default_http_get,
                              "official_record", tuple(records), None, len(records))
 
 
+# ── product_hunt: GraphQL(공식 API, bearer). 실 url/createdAt 확보(합성 제거) ──────
+_PH_ENDPOINT = "https://api.producthunt.com/v2/api/graphql"
+_PH_QUERY = ("{ posts(first: %d) { edges { node { id name tagline slug url "
+             "createdAt featuredAt votesCount } } } }")
+
+
+def _default_http_post(url, *, json_body=None, bearer=None):
+    """httpx POST(JSON). (status, json|None, text|None). bearer는 호출 시점에만 헤더로 사용."""
+    import httpx
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    if bearer:
+        headers["Authorization"] = f"Bearer {bearer}"
+    r = httpx.post(url, json=json_body, headers=headers, timeout=25.0)
+    try:
+        return r.status_code, r.json(), None
+    except Exception:
+        return r.status_code, None, r.text
+
+
+def _canonical_ph_url(url: Optional[str]) -> Optional[str]:
+    """utm 등 추적 쿼리를 제거한 안정 product URL(외부 식별 + 재현 가능)."""
+    if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+        return None
+    parts = urlsplit(url)
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+
+
+def fetch_product_hunt(*, env=None, http_post: HttpPost = None, limit: int = 5) -> VendorRouteResult:
+    """Product Hunt GraphQL — 확장 쿼리로 실 url/createdAt 확보. 합성 slug 사용 안 함.
+
+    bearer token은 env_loader로만 읽고 요청 헤더에만 사용(로그/직렬화 금지). url의 추적 쿼리는
+    canonical에서 제거. url 없는 노드는 스킵(둔갑 금지).
+    """
+    tok = _resolve_key("PRODUCT_HUNT_ACCESS_TOKEN", "PRODUCT_HUNT_API_KEY", env=env)
+    if not tok:
+        return VendorRouteResult("product_hunt", "ph_graphql_posts", False, None,
+                                 "community_signal", (), "key_missing", 0)
+    post = http_post or (lambda url, **kw: _default_http_post(url, **kw))
+    body = {"query": _PH_QUERY % max(1, int(limit))}
+    try:
+        status, j, text = post(_PH_ENDPOINT, json_body=body, bearer=tok)
+    except Exception as exc:
+        return VendorRouteResult("product_hunt", "ph_graphql_posts", False, None,
+                                 "community_signal", (), f"fetch_error:{type(exc).__name__}", 0)
+    if status == 429:
+        return VendorRouteResult("product_hunt", "ph_graphql_posts", False, 429,
+                                 "community_signal", (), "provider_rate_limited", 0)
+    edges = ((((j or {}).get("data") or {}).get("posts") or {}).get("edges")) if j else None
+    if status != 200 or not edges:
+        err = "graphql_errors" if (j and j.get("errors")) else f"http_{status}_no_edges"
+        return VendorRouteResult("product_hunt", "ph_graphql_posts", False, status,
+                                 "community_signal", (), err, 0)
+    records = []
+    for e in edges:
+        node = e.get("node") if isinstance(e, dict) else None
+        if not isinstance(node, dict):
+            continue
+        canon = _canonical_ph_url(node.get("url"))
+        created = node.get("createdAt") or node.get("featuredAt")
+        if not canon or not created:
+            continue   # 실 url/시간 없으면 스킵(합성/둔갑 금지)
+        records.append(build_eventqueue_record(
+            record_type="community_signal", source_id="product_hunt",
+            title_or_label=node.get("name"), source_url_or_evidence=canon, canonical_url=canon,
+            published_at_or_observed_at=created, body_state_or_signal="community_signal",
+            confirmation_policy="unconfirmed_until_corroborated", quality_pre_gate_decision="pass",
+        ))
+    if not records:
+        return VendorRouteResult("product_hunt", "ph_graphql_posts", False, status,
+                                 "community_signal", (), "no_real_url_or_date", 0)
+    return VendorRouteResult("product_hunt", "ph_graphql_posts", True, status,
+                             "community_signal", tuple(records), None, len(records))
+
+
+# ── culture_info: data.go.kr period2(list) → detail2(seq→실 url) ──────────────
+_CULTURE_LIST = "https://apis.data.go.kr/B553457/cultureinfo/period2"
+_CULTURE_DETAIL = "https://apis.data.go.kr/B553457/cultureinfo/detail2"
+
+
+def _culture_date_iso(d: Optional[str]) -> Optional[str]:
+    """YYYYMMDD → YYYY-MM-DD. 형식 외면 원본 유지."""
+    if d and len(d) == 8 and d.isdigit():
+        return f"{d[:4]}-{d[4:6]}-{d[6:8]}"
+    return d or None
+
+
+def fetch_culture_info(*, env=None, http_get: HttpGet = None, limit: int = 5,
+                       from_date: Optional[str] = None, to_date: Optional[str] = None,
+                       now: Optional[datetime] = None) -> VendorRouteResult:
+    """문화포털 공식 open API. list(period2)로 seq 확보 후 detail2로 실 외부 url 매핑.
+
+    detail2가 주는 실 url(전시/공연 공식 페이지)을 사용 — culture.go.kr 합성 detailView 죽은
+    shell을 쓰지 않는다. url 없는 항목은 스킵. serviceKey는 env로만 읽고 evidence URL에서 제거.
+    """
+    key = _resolve_key("CULTURE_INFO_API_KEY", "CULTURE_INFO_KEY", env=env)
+    if not key:
+        return VendorRouteResult("culture_info", "culture_period2_detail2", False, None,
+                                 "official_record", (), "key_missing", 0)
+    get = http_get or (lambda url, params=None: _culture_xml_get(url, params))
+    now = now or datetime.now(timezone.utc)
+    frm = from_date or (now - timedelta(days=3)).strftime("%Y%m%d")
+    to = to_date or (now + timedelta(days=40)).strftime("%Y%m%d")
+    list_params = {"serviceKey": key, "from": frm, "to": to, "rows": str(limit), "cPage": "1"}
+    try:
+        status, _, text = get(_CULTURE_LIST, list_params)
+    except Exception as exc:
+        return VendorRouteResult("culture_info", "culture_period2_detail2", False, None,
+                                 "official_record", (), f"fetch_error:{type(exc).__name__}", 0)
+    seqs = _culture_parse_list(text)
+    if status != 200 or not seqs:
+        return VendorRouteResult("culture_info", "culture_period2_detail2", False, status,
+                                 "official_record", (), f"http_{status}_no_items", 0)
+    records = []
+    for seq in seqs[:limit]:
+        try:
+            dstatus, _, dtext = get(_CULTURE_DETAIL, {"serviceKey": key, "seq": seq})
+        except Exception:
+            continue
+        if dstatus != 200 or not dtext:
+            continue
+        item = _culture_parse_detail(dtext)
+        if not item:
+            continue
+        url = item.get("url")
+        if not (isinstance(url, str) and url.startswith(("http://", "https://"))):
+            continue   # 실 외부 url 없으면 스킵(합성 금지)
+        start = _culture_date_iso(item.get("startDate"))
+        records.append(build_eventqueue_record(
+            record_type="official_record", source_id="culture_info",
+            title_or_label=item.get("title"), source_url_or_evidence=url,
+            canonical_url=f"{url}#seq={seq}", published_at_or_observed_at=start,
+            body_state_or_signal="official_record",
+            confirmation_policy="source_confirmed", quality_pre_gate_decision="pass",
+        ))
+    if not records:
+        return VendorRouteResult("culture_info", "culture_period2_detail2", False, status,
+                                 "official_record", (), "no_detail_url", 0)
+    return VendorRouteResult("culture_info", "culture_period2_detail2", True, status,
+                             "official_record", tuple(records), None, len(records))
+
+
+def _culture_xml_get(url, params=None):
+    """httpx GET, XML은 text로 반환. (status, None, text)."""
+    import httpx
+    r = httpx.get(url, params=params, timeout=20.0)
+    return r.status_code, None, r.text
+
+
+def _culture_parse_list(text: Optional[str]) -> list[str]:
+    """period2 XML → seq 목록."""
+    if not text:
+        return []
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(text)
+    except Exception:
+        return []
+    out = []
+    for it in (root.findall(".//items/item") or root.findall(".//item")):
+        seq = it.findtext("seq") or it.findtext("serviceId")
+        if seq:
+            out.append(seq.strip())
+    return out
+
+
+def _culture_parse_detail(text: Optional[str]) -> Optional[dict]:
+    """detail2 XML → {title,startDate,url,place} (첫 item)."""
+    if not text:
+        return None
+    import xml.etree.ElementTree as ET
+    try:
+        root = ET.fromstring(text)
+    except Exception:
+        return None
+    it = root.find(".//items/item") or root.find(".//item")
+    if it is None:
+        return None
+    # 적대 리뷰 흡수(HIGH-3): placeUrl(장소 홈페이지) 폴백 금지 — 전시/공연 고유 url이 없으면
+    # 무관한 venue 홈을 evidence로 둔갑시키지 않고 None(상위에서 스킵). 고유 url만 stable evidence.
+    return {
+        "title": it.findtext("title"), "startDate": it.findtext("startDate"),
+        "endDate": it.findtext("endDate"), "place": it.findtext("place"),
+        "url": (it.findtext("url") or "").strip() or None,
+    }
+
+
 # ── dispatch ─────────────────────────────────────────────────────────────────
 VENDOR_ROUTES: dict[str, Callable[..., VendorRouteResult]] = {
     "bok_ecos": fetch_bok_ecos,
@@ -312,6 +500,8 @@ VENDOR_ROUTES: dict[str, Callable[..., VendorRouteResult]] = {
     "kma": fetch_kma,
     "nyt": fetch_nyt,
     "gdelt": fetch_gdelt,
+    "product_hunt": fetch_product_hunt,
+    "culture_info": fetch_culture_info,
 }
 
 

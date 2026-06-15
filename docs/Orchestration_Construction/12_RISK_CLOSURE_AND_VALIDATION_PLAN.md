@@ -345,3 +345,22 @@ Launch blockers: ingestion contract에는 없음. raw_events DB migration이 Pha
 - google_trends_explore — 상용화 전 공식 API/계약 확보.
 
 검증: 전체 회귀 **1130 passed**, secret scan **PASS(210)**, 신규 설치 0, no bypass(robots 허용 path·cooldown 존중·CAPTCHA/login/cloudflare 감지 시 중단), 전 outputs gitignored. 최종 상태 분포: PRODUCTION_READY 44 / PRODUCTION_READY_DEGRADED 3(culture_info, product_hunt, dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9, non_excluded_not_ready 4(gdelt pending + culture_info/product_hunt/dcinside degraded).
+
+## Phase G-3 — Final Source Closure
+
+**판정: PARTIAL_WITH_VERIFIED_HARD_BLOCKERS**. 남은 비제외 4개 소스(POLICY_EXCLUDED 9 미접촉)의 risk를 status enum으로 최종 closure했다. culture_info/product_hunt는 합성/죽은 url을 실 url로 해소해 READY 승격, dcinside/gdelt는 검증된 하드 블로커로 정직히 닫았다.
+
+| source | 원인 | 완화 | status |
+|---|---|---|---|
+| **product_hunt** | name 합성 slug url(NO_STABLE_URL/NO_TIMESTAMP) | GraphQL 확장(`url slug createdAt`)로 실 canonical url+createdAt 확보, 합성 제거. live 1건 실증. | CLOSED → PRODUCTION_READY |
+| **culture_info** | 죽은 detailView shell(909B) 합성 | data.go.kr period2→detail2 실 전시 url + startDate + seq. placeUrl 폴백 제거(HIGH-3). live 5건. | CLOSED → PRODUCTION_READY |
+| **dcinside** | 본문 ALIVE이나 정책/법무 리스크 | list community_signal만 수집·detail 미저장·AI 크롤러 robots를 generic UA로 존중·ToS 미검증·단일 갤러리. | PARTIAL_CLOSED (DEGRADED 유지) |
+| **gdelt** | provider IP throttle(429) | Colab-parity 코드 동일 확인, RateLimitGovernor cooldown 영속 + pending_resume(자동 재개, 무한 retry 0). 응답 diff UNVERIFIED 정직표기. | DEFERRED_WITH_TRIGGER (자동 재개) |
+
+**적대 리뷰 흡수**: (1) culture_info placeUrl(무관 venue url) 폴백 **제거**. (2) EvidenceGate를 "모든 신선도 보장"이 아닌 shape+known-dead 가드로 **정직 명명**(liveness는 fetcher). (3) gdelt 응답 diff 저장본 없음을 **UNVERIFIED로 정직화**(검증됐다고 과장 안 함).
+
+**남은 launch blocker(미해소, 정직)**: (1) dcinside ToS 자동수집/재배포 조항 legal-safety 검토 → 통과 전 DEGRADED 유지. (2) **community_signal(dcinside/product_hunt) corroboration/펌핑 차단 게이트 미구현** — unconfirmed_until_corroborated 태그를 소비하는 하위 quality/safety 게이트 부재. 단일 소스 신호를 confirmed event로 게시 전 corroboration 게이트 구현 필수(투자 펌핑 직행 방지, CLAUDE.md 원칙1). (3) gdelt 비-throttle 윈도 재수집 + 연속 pending escalation 카운터.
+
+**NEXT_STEP**: dcinside→legal-safety-compliance-reviewer 핸드오프. community_signal→corroboration 게이트 구현(quality/safety 계층). gdelt→비-throttle 재수집 + escalation 카운터.
+
+검증: 전체 회귀 **1179 passed**, secret scan **PASS**, net-0 주입 9테스트, no bypass, 전 outputs gitignored. 최종 분포: PRODUCTION_READY 46 / PRODUCTION_READY_DEGRADED 1(dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9 = 57. unknown 0, critical_alerts 0, non_excluded_not_ready 2(dcinside/gdelt).

@@ -445,3 +445,14 @@ degraded = root_cause_after 비어있지 않음(product_hunt/culture_info).
 - **dcinside → community_signal 역할로 편입하되 PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY(=production_state PRODUCTION_READY_DEGRADED)**. robots.txt 실측 결과, "AI 학습 크롤러 차단" 섹션(ClaudeBot/anthropic-ai/Claude-Web 등에 Disallow:/)과 별개로 `User-agent:*`는 Allow:/ 이며 특정 갤러리 15개(stock_new 등)만 Disallow다. 사용자 결정(2026-06-15)에 따라 **robots-allowed 갤러리에 한해** generic UA로 제한 수집한다(AI-학습 차단 의도는 generic UA로 존중, 우회 없음). 이 소스의 **목적은 event_discovery가 아니라 community_signal**이다 — 사건을 단정하는 1차 출처가 아니라, 사건 전후 커뮤니티 반응의 신호일 뿐이다. 실데이터 30건(EventQueue/raw_events bridge)을 수집한 것은 사실이나 **clean PRODUCTION_READY로 올리지 않고 DEGRADED로 정직히 강등**했다: (a) 본문 없이 list 메타데이터만(LIST_PREVIEW_ONLY_NO_BODY), (b) 사이트가 AI 크롤러를 robots에서 전면 차단했고 우리는 generic UA로 접근(AI_CRAWLER_ROBOTS_BLOCK_HONORED_GENERIC_UA), (c) ToS 자동수집 조항 미검증(TOS_AUTOMATED_USE_UNVERIFIED, legal-safety review pending), (d) 검증 범위는 stockus 단일 갤러리(SCOPE_SINGLE_GALLERY_STOCKUS). 이는 cnbc/nyt를 preview-only로 강등한 선례와 일관된 자세다. 익명 갤러리 제목은 **unconfirmed_until_corroborated**로만 싣고(투자조언 경계), 작성자 닉네임(PII)은 수집하지 않는다. full article body는 수집하지 않는다(저작권 보수). registry known_blockers `[cloudflare,anti_bot]`는 실측으로 `[]`로 정정, readiness MVP_EXCLUDED→CORE_READY, preferred_strategy=robots_allowed_static_list_fetch.
 - **google_trends_explore → trending 역할은 이미 다른 소스가 커버**. 이 소스의 의도된 목적(trending 발견)은 compliant source `google_trending_now`가 이미 담당하므로, explore 엔드포인트는 라우팅 상 **중복 역할**이다. 공식 API 부재 + 우회 금지로 compliant 자동 경로가 없어 REQUIRES_OFFICIAL_API_OR_CONTRACT blocker로 문서화(skip_reason: needs_api_integration→requires_official_api_or_contract). 역할 공백은 없다.
 - **gdelt → 신호/이벤트 발견 라우트는 유지하되 EXTERNAL_RATE_LIMITED**. 라우트는 wired(공개 DOC 2.0 API)이나 이번 live probe가 429라 신선 데이터 0건 → production_ready로 둔갑시키지 않고 pending_resume로 유지.
+
+## Phase G-3 — Final Source Closure
+
+**판정: PARTIAL_WITH_VERIFIED_HARD_BLOCKERS**. POLICY_EXCLUDED 9는 손대지 않고, 남은 비제외 4개 소스(dcinside/culture_info/product_hunt/gdelt)를 목적별 라우팅 관점에서 최종 closure했다. 능력 선언을 `SourceCapability`로 1급 객체화해, 각 소스의 역할·허용 전략·정책 불변식을 라우터가 코드로 읽도록 했다.
+
+- **product_hunt → PRODUCTION_READY 승격(event_discovery 역할 확정)**. 합성 slug URL을 만들던 adapter를 GraphQL 확장(`url slug createdAt featuredAt id`)으로 교체해 실제 url+createdAt 확보 → 역할이 "합성 참조"에서 "검증된 제품 출시 신호"로 정상화.
+- **culture_info → PRODUCTION_READY 승격(전시/문화 이벤트 역할)**. 죽은 detailView shell 합성을 data.go.kr 공식 API(period2→detail2)의 실 외부 전시 url로 대체해, event_discovery 역할로 라우팅 가능해졌다.
+- **dcinside → community_signal 역할 유지·DEGRADED 유지**. 본문은 ALIVE이나 강등 근거는 기술이 아니라 정책/법무(ToS 미검증·AI 크롤러 robots를 generic UA로 존중·list-only 정책·단일 갤러리 범위). 역할은 1차 사건 단정원이 아닌 신호.
+- **gdelt → 신호 라우트 유지·EXTERNAL_RATE_LIMITED_PENDING_RESUME(자동 재개)**.
+
+**최종 status 매트릭스(SourceCapability 기준)**: PRODUCTION_READY 46 / PRODUCTION_READY_DEGRADED 1(dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9 = 57. unknown 0, source_without_state 0, non_excluded_not_ready 2(dcinside/gdelt). 라우팅 안전 체인: SourceCapability → StrategyGraph → ToolPlan → EvidenceGate → records.

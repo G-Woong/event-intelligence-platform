@@ -1,5 +1,5 @@
 schema_version: 1
-run_id: 20260615T121631Z
+run_id: 20260615T131635Z
 entries:
 - source_id: aladin
   previous_status: NEEDS_PARSER_UNRESOLVED
@@ -82,30 +82,29 @@ entries:
   safety_policy: no_bypass
   evidence: rss_references=10
 - source_id: culture_info
-  previous_status: NEEDS_PARSER_UNRESOLVED
+  previous_status: PRODUCTION_READY_DEGRADED
   final_status: OFFICIAL_RECORD_ALIVE
   root_cause_before:
   - NO_STABLE_URL
   - NO_TIMESTAMP
-  root_cause_after:
-  - NO_STABLE_URL
-  successful_strategy: adapter:culture_info
+  root_cause_after: []
+  successful_strategy: period2_detail2_real_url
   failed_strategies: []
-  preferred_next_strategy: adapter:culture_info
-  adapter_name: adapter:culture_info
+  preferred_next_strategy: period2_detail2_real_url
+  adapter_name: vendor_route:culture_period2_detail2
   body_fetch_strategy: null
   browser_strategy: null
-  parser_notes: data_alive
+  parser_notes: detail2_real_external_url;startDate_time_anchor
   cooldown_policy: null
   safety_policy: no_bypass
-  evidence: adapter:culture_info
+  evidence: items=5;detail2_real_url;startDate_anchor;seq_stable_id
 - source_id: dcinside
-  previous_status: MVP_EXCLUDED
+  previous_status: PRODUCTION_READY_DEGRADED
   final_status: COMMUNITY_SIGNAL_ALIVE
   root_cause_before:
   - ROBOTS_OR_POLICY_BLOCK_OVERCAUTIOUS
   root_cause_after:
-  - LIST_PREVIEW_ONLY_NO_BODY
+  - LIST_PREVIEW_ONLY_NO_BODY_BY_POLICY
   - AI_CRAWLER_ROBOTS_BLOCK_HONORED_GENERIC_UA
   - TOS_AUTOMATED_USE_UNVERIFIED
   - SCOPE_SINGLE_GALLERY_STOCKUS
@@ -115,10 +114,10 @@ entries:
   adapter_name: null
   body_fetch_strategy: null
   browser_strategy: null
-  parser_notes: dcinside_list_community_signal;no_pii_nickname;list_meta_only
+  parser_notes: dcinside_list_community_signal;no_pii_nickname;list_meta_only;detail_audit=DETAIL_BODY_ALIVE(best_body_chars=230)
   cooldown_policy: respect_min_interval
   safety_policy: no_bypass
-  evidence: gallery=stockus_only;items=30;robots_user_agent_star_allow;ai_training_crawler_block_honored_via_generic_ua;tos_automated_use_unverified;list_preview_only_no_body;no_bypass
+  evidence: gallery=stockus_only;items=30;robots_user_agent_star_allow;ai_training_crawler_block_honored_via_generic_ua;tos_automated_use_unverified;detail_body_static=DETAIL_BODY_ALIVE;no_bypass
 - source_id: eia
   previous_status: VENDOR_CONTRACT_REQUIRED
   final_status: STRUCTURED_SIGNAL_ALIVE
@@ -157,17 +156,17 @@ entries:
   root_cause_before:
   - RATE_LIMITED
   root_cause_after:
-  - PROVIDER_429_THROTTLE
+  - NO_RECORDS_COOLDOWN_ACTIVE_GDELT_PROVIDER_429
   successful_strategy: null
   failed_strategies: []
-  preferred_next_strategy: rate_limit_cooldown_resume
+  preferred_next_strategy: host_rate_limit_spaced_probe
   adapter_name: null
   body_fetch_strategy: null
   browser_strategy: null
   parser_notes: null
-  cooldown_policy: respect_cooldown_until:2026-06-15T12:31:31Z
+  cooldown_policy: respect_cooldown_until:2026-06-15T13:28:05Z
   safety_policy: no_bypass
-  evidence: attempts=broad;next_resume_at=2026-06-15T12:31:31Z
+  evidence: attempts=cooldown_active;cause=no_records:cooldown_active:gdelt_provider_429;next_resume_at=2026-06-15T13:28:05Z;colab_parity:code_identical(endpoint+params+parse,test-verified);response_diff=UNVERIFIED
 - source_id: google_trends_explore
   previous_status: MVP_DEFERRED
   final_status: REQUIRES_OFFICIAL_API_KEY_OR_CONTRACT
@@ -303,23 +302,22 @@ entries:
   safety_policy: no_bypass
   evidence: items=10;preview_only;non_commercial;commercial_license_required_for_redistribution
 - source_id: product_hunt
-  previous_status: NEEDS_PARSER_UNRESOLVED
+  previous_status: PRODUCTION_READY_DEGRADED
   final_status: COMMUNITY_SIGNAL_ALIVE
   root_cause_before:
-  - SCHEMA_UNKNOWN
-  root_cause_after:
   - NO_STABLE_URL
   - NO_TIMESTAMP
-  successful_strategy: adapter:product_hunt
+  root_cause_after: []
+  successful_strategy: ph_graphql_real_url_createdAt
   failed_strategies: []
-  preferred_next_strategy: adapter:product_hunt
-  adapter_name: adapter:product_hunt
+  preferred_next_strategy: ph_graphql_real_url_createdAt
+  adapter_name: vendor_route:ph_graphql_posts
   body_fetch_strategy: null
   browser_strategy: null
-  parser_notes: data_alive
+  parser_notes: real_url_createdAt;no_synthetic_slug
   cooldown_policy: null
   safety_policy: no_bypass
-  evidence: adapter:product_hunt
+  evidence: items=5;real_url;real_createdAt;utm_stripped_canonical
 - source_id: sec_edgar
   previous_status: NEEDS_PARSER_UNRESOLVED
   final_status: OFFICIAL_RECORD_ALIVE

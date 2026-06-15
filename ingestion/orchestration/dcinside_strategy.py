@@ -123,6 +123,92 @@ def _detect_block(body: str) -> Optional[str]:
     return None
 
 
+# dcinside 게시글 detail 본문 후보 selector(우선순위). 실측: static HTML에 본문 텍스트 부재
+# (JS/이미지 렌더) → 아래 selector가 매칭돼도 text가 비어있음.
+_DETAIL_BODY_SELECTORS = (".write_div", ".writing_view_box", ".gallview_contents", "div[itemprop=articleBody]")
+_MIN_BODY_CHARS = 120   # 의미있는 본문 최소 길이(이하이면 preview-only)
+
+
+@dataclass(frozen=True)
+class DCInsideDetailAudit:
+    source_id: str
+    detail_urls_tested: tuple[str, ...]
+    fetched: int
+    status_codes: tuple[int, ...]
+    block_marker: Optional[str]
+    best_body_selector: Optional[str]
+    best_body_chars: int
+    body_available: bool
+    conclusion: str    # DETAIL_BODY_ALIVE / DETAIL_BODY_EMPTY_STATIC / BLOCKED_NO_BYPASS / NO_DETAIL_URLS
+
+
+def audit_dcinside_detail_body(
+    *,
+    detail_urls: list[str],
+    robots_allows_detail: bool = True,
+    http_get: HttpGet = _default_http_get,
+    max_fetch: int = 3,
+) -> DCInsideDetailAudit:
+    """list에서 뽑은 detail URL들에 대해 본문 추출 가능성을 감사(우회 없음).
+
+    robots 허용 + 차단 마커 없음 + static 본문 selector text가 _MIN_BODY_CHARS 이상이면
+    DETAIL_BODY_ALIVE. 마커 있으면 BLOCKED_NO_BYPASS. static에 본문 텍스트가 없으면
+    DETAIL_BODY_EMPTY_STATIC(= preview-only 유지 근거). 우회/browser 강행하지 않는다.
+    """
+    if not detail_urls:
+        return DCInsideDetailAudit("dcinside", (), 0, (), None, None, 0, False, "NO_DETAIL_URLS")
+    if not robots_allows_detail:
+        return DCInsideDetailAudit("dcinside", tuple(detail_urls[:max_fetch]), 0, (), None,
+                                   None, 0, False, "BLOCKED_NO_BYPASS")
+    try:
+        from bs4 import BeautifulSoup
+    except Exception:
+        BeautifulSoup = None  # type: ignore
+    tested, statuses = [], []
+    best_sel, best_chars = None, 0
+    block_marker = None
+    for url in detail_urls[:max_fetch]:
+        tested.append(url)
+        try:
+            status, body = http_get(url)
+        except Exception:
+            continue
+        statuses.append(status or 0)
+        if status != 200 or not body:
+            continue
+        bm = _detect_block(body)
+        if bm:
+            block_marker = bm
+            continue
+        if BeautifulSoup is None:
+            continue
+        soup = BeautifulSoup(body, "lxml")
+        for sel in _DETAIL_BODY_SELECTORS:
+            el = soup.select_one(sel)
+            if el is None:
+                continue
+            txt = el.get_text(" ", strip=True)
+            if len(txt) > best_chars:
+                best_chars, best_sel = len(txt), sel
+    if block_marker:
+        return DCInsideDetailAudit("dcinside", tuple(tested), len(statuses), tuple(statuses),
+                                   block_marker, None, 0, False, "BLOCKED_NO_BYPASS")
+    body_available = best_chars >= _MIN_BODY_CHARS
+    conclusion = "DETAIL_BODY_ALIVE" if body_available else "DETAIL_BODY_EMPTY_STATIC"
+    return DCInsideDetailAudit("dcinside", tuple(tested), len(statuses), tuple(statuses),
+                               None, best_sel, best_chars, body_available, conclusion)
+
+
+def detail_urls_from_records(records) -> list[str]:
+    """community_signal record 목록 → detail(board/view) URL 목록."""
+    out = []
+    for r in records:
+        u = r.get("source_url_or_evidence") if isinstance(r, dict) else None
+        if isinstance(u, str) and _VIEW_RE.search(u):
+            out.append(u)
+    return out
+
+
 def collect_dcinside(
     *,
     gallery_id: str = "stockus",

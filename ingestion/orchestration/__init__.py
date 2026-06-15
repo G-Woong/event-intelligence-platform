@@ -153,6 +153,21 @@ __all__ = [
     "SourceSupervisorDecision",
     "LastChanceSourceResurrection",
     "classify_resurrection",
+    # Phase G-3
+    "SourceCapability",
+    "capability_for",
+    "StrategyGraph",
+    "StrategyNode",
+    "build_strategy_graph",
+    "reject_unsafe",
+    "ToolPlan",
+    "build_tool_plan",
+    "EvidenceGateResult",
+    "evaluate_evidence",
+    "gate_records",
+    "FinalSourceClosure",
+    "decide_final_status",
+    "classify_final_closure",
 ]
 
 _SYMBOL_MODULE = {
@@ -294,6 +309,21 @@ _SYMBOL_MODULE = {
     "SourceSupervisorDecision": "source_supervisor",
     "LastChanceSourceResurrection": "last_chance_source_resurrection",
     "classify_resurrection": "last_chance_source_resurrection",
+    # Phase G-3
+    "SourceCapability": "source_capability",
+    "capability_for": "source_capability",
+    "StrategyGraph": "strategy_graph",
+    "StrategyNode": "strategy_graph",
+    "build_strategy_graph": "strategy_graph",
+    "reject_unsafe": "strategy_graph",
+    "ToolPlan": "tool_plan",
+    "build_tool_plan": "tool_plan",
+    "EvidenceGateResult": "evidence_gate",
+    "evaluate_evidence": "evidence_gate",
+    "gate_records": "evidence_gate",
+    "FinalSourceClosure": "final_source_closure",
+    "decide_final_status": "final_source_closure",
+    "classify_final_closure": "final_source_closure",
 }
 
 

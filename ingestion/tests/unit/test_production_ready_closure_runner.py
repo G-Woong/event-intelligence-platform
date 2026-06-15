@@ -95,11 +95,13 @@ def test_real_configs_honest_holdovers_only():
     assert r["unknown"] == 0 and r["source_without_state"] == 0
     assert r["critical_alerts"] == 0
     # non-ready는 known 홀드오버의 부분집합(과대 평가/은폐 금지).
-    # Phase G-2: dcinside는 robots-allowed static fetch로 실데이터 수집하나 list-preview-only +
-    # AI-차단/ToS 미검증 caveat로 DEGRADED(적대 리뷰 흡수) → 4번째 정직한 홀드오버.
+    # Phase G-3: culture_info(period2->detail2 실 url)와 product_hunt(GraphQL 실 url+createdAt)는
+    # live anchor 검증으로 DEGRADED 해제 → PRODUCTION_READY 승격. 남은 정직한 홀드오버는
+    #   - dcinside: list community_signal은 alive지만 detail 본문 static 부재 + ToS 미검증 → DEGRADED
+    #   - gdelt   : provider 429 throttle → EXTERNAL_RATE_LIMITED_PENDING_RESUME(자동 재개)
     holdovers = {g.source_id for g in r["gaps"]}
-    assert holdovers.issubset({"gdelt", "culture_info", "product_hunt", "dcinside"})
-    assert r["non_excluded_not_ready"] <= 4
+    assert holdovers.issubset({"gdelt", "dcinside"})
+    assert r["non_excluded_not_ready"] <= 2
 
 
 def test_disabled_sources_are_excluded_in_profiles():
