@@ -283,3 +283,16 @@ RSS snippet_only는 body로 계수하지 않는다.
 
 Monitoring secret-scan은 작성된 모든 record를 커버한다(샘플 아님) →
 CRITICAL secret_exposure_suspected가 exit을 게이트한다.
+
+## Phase G — Force Production-Ready Source Closure
+
+**판정: PARTIAL_WITH_HARD_BLOCKERS** (ALL_READY 아님). 팀 리뷰가 과장 주장을 강제 하향.
+
+데이터 품질·리스크 게이트 흡수 사항:
+- **snippet ≠ body(정직성)**: cnbc는 ARTICLE_PARTIAL_ALIVE이나 snippet_only preview이며 full body가 아니다. RSS snippet은 body_present로 계수하지 않는다(assess_body_state=="present"만 계수).
+- **nyt 법무**: ARTICLE_PARTIAL_ALIVE로 승격하되 preview_only / non_commercial / commercial_license_required 단서를 evidence에 보존. Legal APPROVED_WITH_CONDITIONS. 동일 자세 guardian/newsapi/aladin 적용.
+- **product_hunt anchor 주의**: slug→post URL 폴백은 dedup-collapse 위험을 동반 → 실제 url을 선호. degraded는 라이브 재검증 부재로 미해소.
+- **DataQuality 리뷰 CLEAN**: bok_ecos title spacing 수정, product_hunt slug collapse 위험 명시.
+- **Security SECURE**: API key가 eq/raw_events/memory에서 stripped, secret scan PASS(269).
+
+Adversarial 리뷰 결과: 주장된 ALL_READY → 정직한 PARTIAL로 강제 하향(gdelt 0-record 승격 철회, degraded는 라이브 재검증 없이 유지).

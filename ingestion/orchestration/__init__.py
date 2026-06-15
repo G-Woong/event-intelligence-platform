@@ -127,6 +127,20 @@ __all__ = [
     "Alert",
     "build_monitoring_summary",
     "write_monitoring_report",
+    # Phase G
+    "VendorRouteResult",
+    "fetch_vendor",
+    "has_vendor_route",
+    "SourceReadinessGap",
+    "build_gap_matrix",
+    "summarize_gaps",
+    "RescueDecision",
+    "decide_rescue",
+    "route_all",
+    "BodyRescueResult",
+    "rescue_news_body",
+    "SourceValueDecision",
+    "decide_source_value",
 ]
 
 _SYMBOL_MODULE = {
@@ -242,6 +256,20 @@ _SYMBOL_MODULE = {
     "Alert": "monitoring",
     "build_monitoring_summary": "monitoring",
     "write_monitoring_report": "monitoring",
+    # Phase G
+    "VendorRouteResult": "vendor_api_routes",
+    "fetch_vendor": "vendor_api_routes",
+    "has_vendor_route": "vendor_api_routes",
+    "SourceReadinessGap": "source_readiness_closure",
+    "build_gap_matrix": "source_readiness_closure",
+    "summarize_gaps": "source_readiness_closure",
+    "RescueDecision": "rescue_router",
+    "decide_rescue": "rescue_router",
+    "route_all": "rescue_router",
+    "BodyRescueResult": "body_rescue_ladder",
+    "rescue_news_body": "body_rescue_ladder",
+    "SourceValueDecision": "source_value_policy",
+    "decide_source_value": "source_value_policy",
 }
 
 

@@ -301,3 +301,23 @@ STILL OPEN(next):
 - cross-source possible_duplicate는 report-only(auto-collapse 안 함).
 
 Launch blockers: ingestion contract에는 없음. raw_events DB migration이 Phase H 전제조건.
+
+## Phase G — Force Production-Ready Source Closure
+
+**최종 판정: PARTIAL_WITH_HARD_BLOCKERS** — ALL_READY 아님. Adversarial 리뷰가 과장 주장을 강제 하향했다.
+
+상태 분포(총 57): PRODUCTION_READY 44 / PRODUCTION_READY_DEGRADED 2 / EXTERNAL_RATE_LIMITED 1 / POLICY_EXCLUDED 10. unknown=0, source_without_state=0, critical_alerts=0.
+
+**HARD BLOCKERS(숨기지 않음)**:
+1. **gdelt** — provider rate-limit(HTTP 429 "one every 5 seconds"). 라우트 wired·cooldown 자동관리·자가회복형이나 이번 런에 신선 데이터 0 → production_ready 주장 안 함, EXTERNAL_RATE_LIMITED 유지(우회 금지 정합).
+2. **culture_info** — anchor 수정(seq→detail URL) 커밋됐으나 라이브 재검증 부재로 degraded 유지.
+3. **product_hunt** — anchor 수정(slug→post URL) 커밋됐으나 재검증 부재 + slug 폴백 dedup-collapse 위험으로 degraded 유지(실제 url 선호).
+
+**법무 조건(Legal APPROVED_WITH_CONDITIONS)**: nyt preview_only / non_commercial / commercial_license_required(evidence에 보존). guardian/newsapi/aladin 동일.
+
+**STILL OPEN(next)**:
+- culture_info / product_hunt를 토큰·쿼리로 라이브 재검증해 degraded 해소.
+- gdelt를 provider non-throttled 윈도에서 재수집.
+- 상업 런칭 전 nyt commercial license 확보.
+
+검증: 전체 회귀 1098 passed, secret scan PASS(269), 신규 설치 0. 리뷰 — Security SECURE, Legal APPROVED_WITH_CONDITIONS, DataQuality CLEAN.

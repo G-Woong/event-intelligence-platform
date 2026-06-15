@@ -1,5 +1,5 @@
 schema_version: 1
-run_id: 20260614T114401Z
+run_id: 20260615T111854Z
 entries:
 - source_id: aladin
   previous_status: NEEDS_PARSER_UNRESOLVED
@@ -50,42 +50,37 @@ entries:
   safety_policy: no_bypass
   evidence: sha256_16=7310dcf53274e92d len=3054
 - source_id: bok_ecos
-  previous_status: NEEDS_PARSER_UNRESOLVED
-  final_status: REQUIRES_VENDOR_SPECIFIC_API_CONTRACT
+  previous_status: VENDOR_CONTRACT_REQUIRED
+  final_status: STRUCTURED_SIGNAL_ALIVE
   root_cause_before:
-  - SCHEMA_UNKNOWN
-  root_cause_after:
   - CATALOG_ENDPOINT_NOT_SERIES
-  successful_strategy: null
-  failed_strategies:
-  - prev:SCHEMA_UNKNOWN
-  preferred_next_strategy: call_StatisticSearch_with_statcode_and_period
+  root_cause_after: []
+  successful_strategy: vendor_route:ecos_statistic_search
+  failed_strategies: []
+  preferred_next_strategy: vendor_route:ecos_statistic_search
   adapter_name: null
   body_fetch_strategy: null
   browser_strategy: null
-  parser_notes: source_override
+  parser_notes: readiness_closure
   cooldown_policy: null
   safety_policy: no_bypass
-  evidence: REQUIRES_VENDOR_SPECIFIC_API_CONTRACT
+  evidence: items=5
 - source_id: cnbc
-  previous_status: NEEDS_BODY_FETCH_UNRESOLVED
-  final_status: EXTERNAL_API_ERROR_WITH_EVIDENCE
+  previous_status: EXTERNAL_API_ERROR
+  final_status: ARTICLE_PARTIAL_ALIVE
   root_cause_before:
-  - BODY_FETCH_REQUIRED
-  root_cause_after:
   - EXCERPT_ONLY_NO_FULL_BODY
-  successful_strategy: null
-  failed_strategies:
-  - body_ladder:EXCERPT_ONLY
-  - prev:BODY_FETCH_REQUIRED
-  preferred_next_strategy: switch_to_official_feed_or_api
+  root_cause_after: []
+  successful_strategy: rss_reference_preview_only
+  failed_strategies: []
+  preferred_next_strategy: rss_reference_preview_only
   adapter_name: null
-  body_fetch_strategy: trafilatura
+  body_fetch_strategy: null
   browser_strategy: null
-  parser_notes: external_api_error
+  parser_notes: readiness_closure
   cooldown_policy: null
   safety_policy: no_bypass
-  evidence: sha256_16=cb2e9b501e1ed483 len=492
+  evidence: rss_references=10
 - source_id: culture_info
   previous_status: NEEDS_PARSER_UNRESOLVED
   final_status: OFFICIAL_RECORD_ALIVE
@@ -105,23 +100,21 @@ entries:
   safety_policy: no_bypass
   evidence: adapter:culture_info
 - source_id: eia
-  previous_status: NEEDS_PARSER_UNRESOLVED
-  final_status: REQUIRES_VENDOR_SPECIFIC_API_CONTRACT
+  previous_status: VENDOR_CONTRACT_REQUIRED
+  final_status: STRUCTURED_SIGNAL_ALIVE
   root_cause_before:
-  - SCHEMA_UNKNOWN
-  root_cause_after:
   - ROUTE_CATALOG_NOT_DATA
-  successful_strategy: null
-  failed_strategies:
-  - prev:SCHEMA_UNKNOWN
-  preferred_next_strategy: call_v2_specific_route_data_with_facets_and_key
+  root_cause_after: []
+  successful_strategy: vendor_route:eia_v2_data
+  failed_strategies: []
+  preferred_next_strategy: vendor_route:eia_v2_data
   adapter_name: null
   body_fetch_strategy: null
   browser_strategy: null
-  parser_notes: source_override
+  parser_notes: readiness_closure
   cooldown_policy: null
   safety_policy: no_bypass
-  evidence: REQUIRES_VENDOR_SPECIFIC_API_CONTRACT
+  evidence: items=5
 - source_id: etnews
   previous_status: NEEDS_PARSER_UNRESOLVED
   final_status: ARTICLE_BODY_ALIVE
@@ -209,23 +202,21 @@ entries:
   safety_policy: no_bypass
   evidence: adapter:its
 - source_id: kma
-  previous_status: NEEDS_PARSER_UNRESOLVED
-  final_status: EXTERNAL_API_ERROR_WITH_EVIDENCE
+  previous_status: EXTERNAL_API_ERROR
+  final_status: STRUCTURED_SIGNAL_ALIVE
   root_cause_before:
-  - SCHEMA_UNKNOWN
-  root_cause_after:
   - API_RESULT_CODE_10_RANGE
-  successful_strategy: null
-  failed_strategies:
-  - prev:SCHEMA_UNKNOWN
-  preferred_next_strategy: fix_base_date_base_time_nx_ny_params_then_retest
+  root_cause_after: []
+  successful_strategy: vendor_route:kma_ultra_srt_ncst
+  failed_strategies: []
+  preferred_next_strategy: vendor_route:kma_ultra_srt_ncst
   adapter_name: null
   body_fetch_strategy: null
   browser_strategy: null
-  parser_notes: source_override
+  parser_notes: readiness_closure
   cooldown_policy: null
   safety_policy: no_bypass
-  evidence: EXTERNAL_API_ERROR_WITH_EVIDENCE
+  evidence: items=8
 - source_id: kofic
   previous_status: NEEDS_PARSER_UNRESOLVED
   final_status: OFFICIAL_RECORD_ALIVE
@@ -275,24 +266,21 @@ entries:
   safety_policy: no_bypass
   evidence: sha256_16=c35a01404bc39b20 len=5943
 - source_id: nyt
-  previous_status: NEEDS_BODY_FETCH_UNRESOLVED
-  final_status: EXTERNAL_API_ERROR_WITH_EVIDENCE
+  previous_status: EXTERNAL_API_ERROR
+  final_status: ARTICLE_PARTIAL_ALIVE
   root_cause_before:
-  - BODY_FETCH_FAILED
-  root_cause_after:
   - HTTP_403_ANTI_BOT
-  successful_strategy: null
-  failed_strategies:
-  - body_ladder:HTTP_ERROR
-  - prev:BODY_FETCH_FAILED
-  preferred_next_strategy: investigate_access_or_official_api
+  root_cause_after: []
+  successful_strategy: vendor_route:nyt_article_search
+  failed_strategies: []
+  preferred_next_strategy: vendor_route:nyt_article_search
   adapter_name: null
   body_fetch_strategy: null
   browser_strategy: null
-  parser_notes: external_api_error
+  parser_notes: readiness_closure
   cooldown_policy: null
   safety_policy: no_bypass
-  evidence: EXTERNAL_API_ERROR_WITH_EVIDENCE
+  evidence: items=10;preview_only;non_commercial;commercial_license_required_for_redistribution
 - source_id: product_hunt
   previous_status: NEEDS_PARSER_UNRESOLVED
   final_status: COMMUNITY_SIGNAL_ALIVE

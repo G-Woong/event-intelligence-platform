@@ -242,9 +242,9 @@ profiles:
     skip_reason: "requires_api_key"
     notes: "bucket VERIFY_REQUIRED"
   dcinside:
-    enabled: true
-    profile_status: "caution"
-    readiness_status: "READY_WITH_CAUTION"
+    enabled: false  # Phase G: robots/policy block, no-bypass → excluded
+    profile_status: "disabled"
+    readiness_status: "MVP_EXCLUDED"
     source_group: "community"
     purpose: "community"
     freshness_bucket: "short"
@@ -511,9 +511,9 @@ profiles:
     confirmation_policy: "unconfirmed_until_corroborated"
     live_eligible: "conservative"
   google_trends_explore:
-    enabled: true
-    profile_status: "verify_required"
-    readiness_status: "READY_WITH_CAUTION"
+    enabled: false  # Phase G: no API key + probe unwired + rate-limited → disabled until operator integration
+    profile_status: "disabled"
+    readiness_status: "MVP_DEFERRED"
     source_group: "trend"
     purpose: "trend"
     freshness_bucket: "medium"
@@ -646,9 +646,9 @@ profiles:
     live_eligible: "false"
     skip_reason: "requires_api_key"
   its:
-    enabled: true
-    profile_status: "needs_api_key"
-    readiness_status: "CORE_READY"
+    enabled: false  # Phase G: per-link road-speed telemetry, not event-grade → disabled (not service useful)
+    profile_status: "disabled"
+    readiness_status: "DISABLED_LOW_VALUE"
     source_group: "domain"
     purpose: "domain"
     freshness_bucket: "short"
@@ -659,7 +659,7 @@ profiles:
     is_community: false
     confirmation_policy: "source_confirmed"
     live_eligible: "false"
-    skip_reason: "requires_api_key"
+    skip_reason: "not_service_useful"
   kofic:
     enabled: true
     profile_status: "needs_api_key"

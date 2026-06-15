@@ -416,3 +416,22 @@ COOLDOWN, DEAD_END_SKIPPED, NEEDS_OPERATOR_REVIEW, UNKNOWN.
 
 source_without_state=0, unknown=0. memory final_status(E-3)가 static skip_reason보다 우선한다.
 degraded = root_cause_after 비어있지 않음(product_hunt/culture_info).
+
+## Phase G — Force Production-Ready Source Closure
+
+**판정: PARTIAL_WITH_HARD_BLOCKERS** (ALL_READY 아님 — adversarial 리뷰가 과장 주장을 강제 하향).
+
+최종 상태 분포(총 57):
+- PRODUCTION_READY 44
+- PRODUCTION_READY_DEGRADED 2 (culture_info, product_hunt)
+- EXTERNAL_RATE_LIMITED 1 (gdelt)
+- POLICY_EXCLUDED 10
+- unknown=0, source_without_state=0, critical_alerts=0
+
+정정(정직성): Phase F 시작을 "28 ready"로 오보했으나 실제 시작은 **39 ready**였다(api key 존재 → needs_operator_review 0). Phase G는 진짜 비준비/degraded/제외 대상 **11개**만 겨냥했다.
+
+목적별 라우팅 관점의 홀드오버(숨기지 않음):
+- gdelt = 신호/이벤트 발견 라우트는 wired(GDELT DOC)이고 cooldown 자동관리·자가회복형이나, 이번 런에 신선 데이터가 없어 production_ready로 주장하지 않고 EXTERNAL_RATE_LIMITED로 유지(우회 금지 원칙과 정합).
+- culture_info / product_hunt = 정보 확장 라우트의 anchor 수정(culture_info seq→detail URL, product_hunt slug→post URL)은 커밋되었으나 **라이브 재검증 부재**로 degraded 미해소. product_hunt slug 폴백은 dedup-collapse 위험을 동반하므로 실제 url을 선호한다.
+
+신규로 공식 API 라우트(우회 아님)로 승격된 소스: bok_ecos, eia, kma, nyt, cnbc. 명시적 제외(task §5.2 준거): its(not_service_useful), dcinside(robots/policy), google_trends_explore(no key + probe unwired → needs_api_integration). source_profiles.yaml enabled=false에 반영.

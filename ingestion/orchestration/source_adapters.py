@@ -234,10 +234,24 @@ def _product_hunt(data: dict, **kw) -> Optional[list[ArticleCandidate]]:
         node = e.get("node") if isinstance(e, dict) else None
         if not isinstance(node, dict):
             continue
+        # G-5 anchor 보강: url 우선, 없으면 slug 기반 결정적 post URL(NO_STABLE_URL 해소).
+        url = node.get("url")
+        slug = node.get("slug") or _slugify(node.get("name"))
+        if not url and slug:
+            url = f"https://www.producthunt.com/posts/{slug}"
         out.append(_cand("product_hunt", "adapter:product_hunt", title=node.get("name"),
-                         source_url=node.get("url"), published_at=node.get("createdAt"),
+                         source_url=url, published_at=node.get("createdAt") or node.get("featuredAt"),
                          summary=node.get("tagline"), **kw))
     return out or None
+
+
+def _slugify(name: Optional[str]) -> Optional[str]:
+    """name → producthunt slug 근사(소문자/공백→하이픈/영숫자만)."""
+    if not name:
+        return None
+    import re as _re
+    s = _re.sub(r"[^a-z0-9]+", "-", str(name).lower()).strip("-")
+    return s or None
 
 
 # ── E-3: 대량 numeric 환원 어댑터 ─────────────────────────────────────────────
@@ -307,8 +321,13 @@ def _xml_culture_info(root, **kw) -> Optional[list[ArticleCandidate]]:
         return None
     out: list[ArticleCandidate] = []
     for it in items:
+        # G-5 anchor 보강: 실제 url 우선, 없으면 seq 기반 결정적 detail URL(NO_STABLE_URL 해소).
+        url = it.findtext("url") or it.findtext("referenceUrl") or None
+        seq = it.findtext("seq") or it.findtext("serviceId")
+        if not url and seq:
+            url = f"https://www.culture.go.kr/wantU/detailView.do?seq={seq}"
         out.append(_cand("culture_info", "adapter:culture_info", title=it.findtext("title"),
-                         source_url=None, published_at=it.findtext("startDate"),
+                         source_url=url, published_at=it.findtext("startDate"),
                          summary=it.findtext("place"), **kw))
     return out or None
 

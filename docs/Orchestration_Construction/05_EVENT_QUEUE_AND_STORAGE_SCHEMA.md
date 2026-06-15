@@ -409,3 +409,21 @@ index가 re-run collapse를 제공(backend on_conflict_do_nothing(content_hash)�
 Live 20260614T124243Z: 4 sources → 130 EventQueue records → 130 mirror raw_events.
 Post-fix 6-source run: 128 records → 125 raw_events (3 held: 외부 URL 없음).
 Body는 대부분 snippet_only(RSS summary) — 정직하게 기록하며 full body로 둔갑시키지 않는다.
+
+## Phase G — Force Production-Ready Source Closure
+
+**판정: PARTIAL_WITH_HARD_BLOCKERS** (ALL_READY 아님).
+
+벤더 공식 API 5개(bok_ecos/eia/kma/nyt/cnbc)에서 라이브 데이터를 record_type=**structured_signal**로 기록:
+- bok_ecos → economic_indicator
+- eia → energy_price
+- kma → weather_observation (getUltraSrtNcst, base_date/time 파라미터 수정)
+- nyt/cnbc → article 계열(preview/snippet)
+
+초기 closure: 5 sources, **38 EventQueue records → 38 raw_events mirror**. re-run 시 persisted dedup index를 통해 collapse(content_hash 기준) → **idempotency 입증**(backend on_conflict_do_nothing(content_hash)와 정합).
+
+스키마/보안 정합:
+- structured_signal은 절대 article로 둔갑시키지 않는다(raw_text="", numeric_payload는 raw_metadata).
+- **evidence URL은 key-free** — `vendor_api_routes.py`가 API key를 env에서만 읽고 eq/raw_events/memory에 기록되는 URL에서 stripped. Security 리뷰 SECURE(키 누출 없음), secret scan PASS(269).
+
+홀드오버: gdelt는 이번 런에 신선 record 0 → 큐에 신규 기록 없음(EXTERNAL_RATE_LIMITED 유지). culture_info/product_hunt는 라이브 재검증 부재로 degraded 유지(product_hunt slug 폴백은 dedup-collapse 위험으로 실제 url 선호).

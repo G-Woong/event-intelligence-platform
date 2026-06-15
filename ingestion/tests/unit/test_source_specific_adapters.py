@@ -94,11 +94,21 @@ def test_its_reduces_to_single_signal_no_inflation():
     assert cands[0].numeric_payload_exempt is True
 
 
-def test_product_hunt_degraded_community_name_only():
-    data = {"data": {"posts": {"edges": [{"node": {"name": "Tool", "tagline": "t"}}]}}}
+def test_product_hunt_anchor_from_slug_when_url_absent():
+    # Phase G-5: url 미요청 시 slug 기반 결정적 post URL anchor 생성(NO_STABLE_URL 해소)
+    data = {"data": {"posts": {"edges": [{"node": {"name": "Cool Tool", "tagline": "t"}}]}}}
     cands, name = _adapt("product_hunt", data)
-    assert cands[0].title == "Tool"
-    assert cands[0].source_url is None  # url/date 미요청 → degraded(없는 값 안 만듦)
+    assert cands[0].title == "Cool Tool"
+    assert cands[0].source_url == "https://www.producthunt.com/posts/cool-tool"
+
+
+def test_product_hunt_prefers_real_url_and_date():
+    data = {"data": {"posts": {"edges": [{"node": {
+        "name": "Tool", "url": "https://www.producthunt.com/posts/tool",
+        "createdAt": "2026-06-15T00:00:00Z", "tagline": "t"}}]}}}
+    cands, name = _adapt("product_hunt", data)
+    assert cands[0].source_url == "https://www.producthunt.com/posts/tool"
+    assert cands[0].published_at == "2026-06-15T00:00:00Z"
 
 
 def test_kopis_xml_adapter():

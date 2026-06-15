@@ -391,3 +391,24 @@ Outputs(전부 gitignored):
 
 신규 설치 0. Redis/Celery/Postgres 미사용(로컬 durable mirror가 동일 contract를 검증).
 LangGraph 미호출 — raw_events가 Phase H로의 handoff 경계.
+
+## Phase G — Force Production-Ready Source Closure
+
+**판정: PARTIAL_WITH_HARD_BLOCKERS** (ALL_READY 아님).
+
+신규 모듈:
+- `vendor_api_routes.py` — bok_ecos/eia/kma/nyt/gdelt 공식 라우트. key는 env에서만, evidence URL에서 stripped.
+- `source_readiness_closure.py` — 소스별 gap matrix.
+- `rescue_router.py` — 비준비 소스 재라우팅.
+- `body_rescue_ladder.py` — 본문 보강 ladder(현재 RSS snippet).
+- `source_value_policy.py` — not_service_useful/policy 제외 판정.
+- `run_source_readiness_closure.py` — closure 러너 CLI.
+
+테스트/검증:
+- +6 test 파일. 전체 회귀 **1098 passed**. secret scan **PASS(269)**. 신규 설치 없음.
+
+산출물:
+- source_profiles.yaml(its/dcinside/google_trends_explore enabled=false 반영).
+- 5 sources, 38 EventQueue records → 38 raw_events mirror(re-run dedup으로 idempotency 입증).
+
+홀드오버(정직): gdelt EXTERNAL_RATE_LIMITED 유지(신선 데이터 0), culture_info/product_hunt anchor 수정 커밋됐으나 라이브 재검증 부재로 PRODUCTION_READY_DEGRADED 유지.
