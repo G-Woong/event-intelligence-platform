@@ -296,3 +296,15 @@ CRITICAL secret_exposure_suspected가 exit을 게이트한다.
 - **Security SECURE**: API key가 eq/raw_events/memory에서 stripped, secret scan PASS(269).
 
 Adversarial 리뷰 결과: 주장된 ALL_READY → 정직한 PARTIAL로 강제 하향(gdelt 0-record 승격 철회, degraded는 라이브 재검증 없이 유지).
+
+---
+
+## Phase G-2 — Last-Chance Source Resurrection (dcinside / google_trends_explore / gdelt)
+
+**판정: PARTIAL_MIXED_PENDING_AND_BLOCKERS** (3개 중 1 승격, 1 pending, 1 blocker). 품질·안전 게이트 관점에서 이번 단계의 핵심은 **dcinside community_signal에 대한 신뢰도·저작권 게이트 적용**과 **fresh data 0건을 READY로 둔갑시키지 않는 정직성 게이트**다.
+
+- **dcinside — community_signal 신뢰도·강등 게이트(최종 DEGRADED)**. 30건은 전부 title+url+ISO time anchor를 갖췄으나, 이는 **익명 커뮤니티 신호**이므로 09의 reliability 게이트 원칙(익명 커뮤니티 글 1개로 사건 단정 금지)에 따라 사건 단정 1차 근거가 아닌 **unconfirmed_until_corroborated** 신호로만 취급한다(투자조언 경계 — 익명 갤러리 제목으로 시장 판단을 내리지 않는다). 작성자 닉네임(PII)은 수집하지 않는다. 저작권 게이트: list 메타데이터 preview만 수집하고 **full article body는 미수집**(저작권 보수) → full-text 복제 위험 게이트를 원천 차단한다. 이 preview는 body_present로 계수하지 않는다(snippet ≠ body 원칙과 정합). 본문 부재(LIST_PREVIEW_ONLY_NO_BODY) + AI 크롤러 robots 전면 차단을 generic UA로 접근(AI_CRAWLER_ROBOTS_BLOCK_HONORED_GENERIC_UA) + ToS 자동수집 미검증(TOS_AUTOMATED_USE_UNVERIFIED) + 단일 갤러리 범위(SCOPE_SINGLE_GALLERY_STOCKUS)로, 품질·안전 게이트가 clean READY 주장을 차단하고 **PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY(=production_state DEGRADED)**로 강등했다(cnbc/nyt preview-only 강등 선례와 일관).
+- **gdelt — fresh data 0건 정직성 게이트**. live probe 429로 신선 데이터가 없으므로 production_ready 주장을 게이트가 차단한다. production_state 매핑 `EXTERNAL_RATE_LIMITED_PENDING_RESUME → EXTERNAL_RATE_LIMITED`로 0-record를 READY로 둔갑시키지 못하게 강제(Phase F의 gdelt 0-record 승격 철회와 동일한 정직성 자세).
+- **google_trends_explore — 검증된 evidence 게이트(추측 disable 금지)**. "no key라서 막연히 disable"이 아니라, robots 비차단·공식 API 부재·anti-abuse 429·우회 금지라는 **검증된 evidence**로 requires_official_api_or_contract blocker를 확정했다. trending 역할은 compliant source google_trending_now가 커버하므로 품질 공백 없음.
+
+검증: 전체 회귀 1130 passed, secret scan PASS(210), 신규 설치 0, 전 outputs gitignored. 최종 상태 분포: PRODUCTION_READY 44 / PRODUCTION_READY_DEGRADED 3(culture_info, product_hunt, dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9, non_excluded_not_ready 4.

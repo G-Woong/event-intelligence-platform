@@ -427,3 +427,13 @@ Body는 대부분 snippet_only(RSS summary) — 정직하게 기록하며 full b
 - **evidence URL은 key-free** — `vendor_api_routes.py`가 API key를 env에서만 읽고 eq/raw_events/memory에 기록되는 URL에서 stripped. Security 리뷰 SECURE(키 누출 없음), secret scan PASS(269).
 
 홀드오버: gdelt는 이번 런에 신선 record 0 → 큐에 신규 기록 없음(EXTERNAL_RATE_LIMITED 유지). culture_info/product_hunt는 라이브 재검증 부재로 degraded 유지(product_hunt slug 폴백은 dedup-collapse 위험으로 실제 url 선호).
+
+---
+
+## Phase G-2 — Last-Chance Source Resurrection (dcinside / google_trends_explore / gdelt)
+
+**판정: PARTIAL_MIXED_PENDING_AND_BLOCKERS**. 큐/스토리지 관점에서 이번 단계는 **dcinside의 community_signal 30건이 EventQueue→raw_events bridge contract를 통과**한 것이 핵심 산출이다.
+
+- **dcinside — EventQueue 30 + raw_events 30(bridge contract pass), 단 source 등급은 DEGRADED**. live 수집한 30 community_signal이 전부 title+url+ISO time anchor를 갖춰 큐에 적재되고, 동수 30건이 raw_events로 mirror됐다. bridge contract 자체는 통과했으나, 이 레코드들이 **body 없는 list preview(LIST_PREVIEW_ONLY_NO_BODY)**이고 stockus 단일 갤러리(SCOPE_SINGLE_GALLERY_STOCKUS) 범위라 source production_state는 clean READY가 아닌 **PRODUCTION_READY_DEGRADED**로 표기된다. 이 항목들은 **structured/community signal이지 article이 아니다** — raw_text는 full body가 아닌 list preview 메타데이터이며, article로 둔갑시키지 않는다(05 스키마의 "structured_signal을 article로 위장 금지" 원칙과 정합). 익명 갤러리 제목은 unconfirmed_until_corroborated 플래그로만 적재하고 작성자 닉네임(PII)은 스키마에 저장하지 않는다. content_hash 기반 dedup index가 re-run 시 collapse를 보장하므로 idempotency가 유지된다.
+- **gdelt — 큐에 신규 기록 0(cooldown 영속)**. 429로 신선 record가 없어 큐에 아무것도 추가하지 않는다. 다만 `RateLimitGovernor`의 cooldown_until이 **governor state 파일에 영속**되어 다음 run에서 자동 재개된다 — 이는 05의 "수집 상태(rate-limit/health)는 local_file로 영속" 결정과 정합하는 패턴이다. 큐 점유 없이 상태만 영속한다.
+- **production_state 매핑 추가(2건)**: 스토리지/상태 계층에 `EXTERNAL_RATE_LIMITED_PENDING_RESUME → EXTERNAL_RATE_LIMITED` 매핑을 추가해 fresh data 0건을 READY로 둔갑시키지 못하게 했다. google_trends_explore는 requires_official_api_or_contract로 매핑되어 큐 적재 대상에서 제외된다. 전 outputs는 gitignored.

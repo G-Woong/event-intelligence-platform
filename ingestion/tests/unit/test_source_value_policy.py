@@ -3,8 +3,7 @@ from __future__ import annotations
 
 from ingestion.orchestration.source_value_policy import (
     DISABLE_NOT_SERVICE_USEFUL,
-    NEEDS_API_INTEGRATION,
-    POLICY_EXCLUDED,
+    REQUIRES_OFFICIAL_API_OR_CONTRACT,
     decide_source_value,
     is_disabled_decision,
 )
@@ -18,18 +17,17 @@ def test_its_disabled_not_service_useful():
     assert is_disabled_decision(d)
 
 
-def test_dcinside_policy_excluded():
-    d = decide_source_value("dcinside")
-    assert d.decision == POLICY_EXCLUDED
-    assert d.profile_patch["enabled"] is False
-    assert "robots" in d.profile_patch["skip_reason"]
+def test_dcinside_rescued_no_disable_decision():
+    # Phase G-2: dcinside는 robots 허용 갤러리 static fetch로 복구됨 → disable 결정 없음(keep_active)
+    assert decide_source_value("dcinside") is None
 
 
-def test_google_trends_needs_api_integration():
+def test_google_trends_requires_official_api_or_contract():
+    # Phase G-2: needs_api_integration(모호) → 검증된 blocker(공식 API 없음+anti-abuse 429)로 격상
     d = decide_source_value("google_trends_explore")
-    assert d.decision == NEEDS_API_INTEGRATION
+    assert d.decision == REQUIRES_OFFICIAL_API_OR_CONTRACT
     assert d.profile_patch["enabled"] is False
-    assert d.profile_patch["skip_reason"] == "needs_api_integration"
+    assert d.profile_patch["skip_reason"] == "requires_official_api_or_contract"
 
 
 def test_unknown_source_no_decision():
@@ -38,5 +36,5 @@ def test_unknown_source_no_decision():
 
 
 def test_rationale_present():
-    for sid in ("its", "dcinside", "google_trends_explore"):
+    for sid in ("its", "google_trends_explore"):
         assert decide_source_value(sid).rationale

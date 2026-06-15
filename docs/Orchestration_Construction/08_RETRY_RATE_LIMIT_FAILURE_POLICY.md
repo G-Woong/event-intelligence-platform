@@ -299,3 +299,15 @@ body-fetch 반복은 alt strategy 시도 후 quarantine.
 - nyt min_interval 7200s(~12/day)로 무료 티어 500/day에 안전 마진.
 - google_trends_explore는 no key + probe unwired → needs_api_integration으로 enabled=false(429 회피가 아니라 미연동).
 - its/dcinside는 policy/robots 제외(우회 없음).
+
+---
+
+## Phase G-2 — Last-Chance Source Resurrection (dcinside / google_trends_explore / gdelt)
+
+**판정: PARTIAL_MIXED_PENDING_AND_BLOCKERS**. retry/rate-limit/failure 정책 관점에서 이번 단계는 **"막힌 문은 뚫지 않는다" 원칙을 세 가지 서로 다른 실패 유형에 정직하게 적용**한 사례다.
+
+- **gdelt — 429 처리 강화(pending_resume, 무한 retry 금지)**. 신규 `gdelt_strategy.py`의 `RateLimitGovernor`가 min_interval/cooldown을 강제하고, query 단순화 ladder(broad→keyword→narrow)를 spaced probe로 시도한다. live probe가 HTTP 429("one every 5 seconds")를 반환하면 cooldown_until을 영속하고 **즉시 pending_resume로 빠진다 — 재시도를 무한 반복하지 않는다**. cooldown은 governor state 파일에 영속되어 다음 run에서 자동 재개. production_state는 `EXTERNAL_RATE_LIMITED_PENDING_RESUME → EXTERNAL_RATE_LIMITED`로 매핑해 fresh data 0건을 READY로 둔갑시키지 않는다. 회복 경로: provider non-throttled 윈도에서 단발 재수집(프록시 로테이션·내부 RPC 회피책 채택 안 함).
+- **google_trends_explore — anti-abuse 429를 우회로 풀지 않음(blocker로 격상)**. robots는 비어있으나 공식 API 부재 + explore 엔드포인트 anti-abuse 429 + 우회(proxy/anti-bot/login) 금지로 compliant 자동 경로가 없다. 과거 "추측성 disable(needs_api_integration)"을 **검증된 evidence 기반 blocker(requires_official_api_or_contract)로 격상**했다. 429를 회피책으로 풀지 않고 공식 API/계약 확보 전까지 호출 안 함.
+- **dcinside — robots-allowed path만, 차단 감지 시 즉시 중단(최종 등급 DEGRADED)**. robots 허용 갤러리에 한해 generic UA static GET하며, **Cloudflare 챌린지/CAPTCHA/login 감지 즉시 `*_BLOCKED_NO_BYPASS`로 중단**한다(렌더 강행·우회 없음). 이는 08의 "CAPTCHA/login/paywall은 BLOCKED, 우회 안 함" 원칙의 정확한 실행이다. registry known_blockers `[cloudflare,anti_bot]`는 실측 결과 챌린지가 없어 `[]`로 정정. 다만 사이트가 AI 크롤러를 robots에서 전면 차단한 상태를 generic UA로 접근한 점(AI_CRAWLER_ROBOTS_BLOCK_HONORED_GENERIC_UA)과 ToS 자동수집 조항 미검증(TOS_AUTOMATED_USE_UNVERIFIED, legal-safety review pending)을 정책 리스크로 남겨, 최종 등급은 clean READY가 아니라 **PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY(=production_state DEGRADED)**로 강등했다.
+
+검증: 전체 회귀 1130 passed, secret scan PASS(210), 신규 설치 0, no bypass.

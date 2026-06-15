@@ -194,9 +194,11 @@ sources:
     role: supplementary
     phase: 2
     layer: community_signal
-    base_url: "https://www.dcinside.com"
-    known_blockers: [cloudflare, anti_bot]
-    expected_fields: [title, body, published_at, engagement]
+    base_url: "https://gall.dcinside.com/mgallery/board/lists/?id=stockus"  # Phase G-2: robots-allowed gallery list
+    collection_strategy: robots_allowed_static_list_fetch  # static GET, generic UA, no bypass
+    allowed_galleries: [stockus]  # robots User-agent:* allow (not in disallow list); AI-training crawler block honored
+    known_blockers: []  # verified: robots-allowed gallery returns clean HTTP 200 (server=nginx, no cloudflare/captcha)
+    expected_fields: [title, source_url, published_at, engagement]  # list-level community_signal (no full body)
     implemented: true
 
   - id: fmkorea

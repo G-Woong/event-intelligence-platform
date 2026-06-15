@@ -412,3 +412,24 @@ LangGraph 미호출 — raw_events가 Phase H로의 handoff 경계.
 - 5 sources, 38 EventQueue records → 38 raw_events mirror(re-run dedup으로 idempotency 입증).
 
 홀드오버(정직): gdelt EXTERNAL_RATE_LIMITED 유지(신선 데이터 0), culture_info/product_hunt anchor 수정 커밋됐으나 라이브 재검증 부재로 PRODUCTION_READY_DEGRADED 유지.
+
+---
+
+## Phase G-2 — Last-Chance Source Resurrection (dcinside / google_trends_explore / gdelt)
+
+**판정: PARTIAL_MIXED_PENDING_AND_BLOCKERS**. 구현 diff 관점에서 이번 단계가 생성/수정한 파일 목록(기존 수집 코드는 미수정).
+
+신규 모듈:
+- `source_policy_probe.py` — robots.txt 파서(갤러리/도메인별 Allow/Disallow 판정).
+- `dcinside_strategy.py` — robots-allowed list fetch(generic UA static GET) + Cloudflare/CAPTCHA/login 감지 시 즉시 `*_BLOCKED_NO_BYPASS` 중단. full body 미수집(list preview only).
+- `gdelt_strategy.py` — `RateLimitGovernor`(min_interval/cooldown 강제 + 영속) + query 단순화 ladder(broad→keyword→narrow) spaced probe. 429면 cooldown_until 영속 후 즉시 pending_resume.
+- `source_supervisor.py` — LLM-ready deterministic supervisor. unsafe 전략(우회·미허용 path) 거부.
+
+수정 config/정책(추가만, 삭제 diff 없음):
+- `source_profiles.yaml` — 3개 갱신. dcinside enabled false→true, readiness MVP_EXCLUDED→DEGRADED_PREVIEW_ONLY, preferred_strategy=robots_allowed_static_list_fetch, production_state=PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY(=DEGRADED; degraded_reasons: LIST_PREVIEW_ONLY_NO_BODY, AI_CRAWLER_ROBOTS_BLOCK_HONORED_GENERIC_UA, TOS_AUTOMATED_USE_UNVERIFIED, SCOPE_SINGLE_GALLERY_STOCKUS). gdelt EXTERNAL_RATE_LIMITED_PENDING_RESUME. google_trends_explore skip_reason needs_api_integration→requires_official_api_or_contract.
+- `source_registry.yaml` — dcinside route wiring(known_blockers `[cloudflare,anti_bot]`→`[]` 실측 정정).
+- `source_strategy_memory.yaml` — dcinside COMMUNITY_SIGNAL_ALIVE / gdelt PENDING / g_trends REQUIRES_CONTRACT.
+- `source_value_policy.py` — dcinside 제외 제거(=keep_active), g_trends→requires_contract.
+- `production_state.py` — 매핑 2건 추가(EXTERNAL_RATE_LIMITED_PENDING_RESUME→EXTERNAL_RATE_LIMITED, g_trends→requires_official_api_or_contract).
+
+테스트/검증: 전체 회귀 **1130 passed**, secret scan **PASS(210)**, 신규 설치 **0**, no bypass(robots 허용 path만·cooldown 존중·차단 감지 시 중단), 전 outputs gitignored.

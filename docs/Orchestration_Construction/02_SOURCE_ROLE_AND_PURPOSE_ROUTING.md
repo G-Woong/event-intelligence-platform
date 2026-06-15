@@ -435,3 +435,13 @@ degraded = root_cause_after 비어있지 않음(product_hunt/culture_info).
 - culture_info / product_hunt = 정보 확장 라우트의 anchor 수정(culture_info seq→detail URL, product_hunt slug→post URL)은 커밋되었으나 **라이브 재검증 부재**로 degraded 미해소. product_hunt slug 폴백은 dedup-collapse 위험을 동반하므로 실제 url을 선호한다.
 
 신규로 공식 API 라우트(우회 아님)로 승격된 소스: bok_ecos, eia, kma, nyt, cnbc. 명시적 제외(task §5.2 준거): its(not_service_useful), dcinside(robots/policy), google_trends_explore(no key + probe unwired → needs_api_integration). source_profiles.yaml enabled=false에 반영.
+
+---
+
+## Phase G-2 — Last-Chance Source Resurrection (dcinside / google_trends_explore / gdelt)
+
+**판정: PARTIAL_MIXED_PENDING_AND_BLOCKERS** (3개 중 1 degraded-승격, 1 pending, 1 blocker). Phase F에서 일괄 "제외"로 던졌던 3개 소스를 목적별 라우팅 관점에서 재심의한 결과, 한 소스의 역할 분류가 실측으로 바뀌었다(단 clean READY는 아님).
+
+- **dcinside → community_signal 역할로 편입하되 PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY(=production_state PRODUCTION_READY_DEGRADED)**. robots.txt 실측 결과, "AI 학습 크롤러 차단" 섹션(ClaudeBot/anthropic-ai/Claude-Web 등에 Disallow:/)과 별개로 `User-agent:*`는 Allow:/ 이며 특정 갤러리 15개(stock_new 등)만 Disallow다. 사용자 결정(2026-06-15)에 따라 **robots-allowed 갤러리에 한해** generic UA로 제한 수집한다(AI-학습 차단 의도는 generic UA로 존중, 우회 없음). 이 소스의 **목적은 event_discovery가 아니라 community_signal**이다 — 사건을 단정하는 1차 출처가 아니라, 사건 전후 커뮤니티 반응의 신호일 뿐이다. 실데이터 30건(EventQueue/raw_events bridge)을 수집한 것은 사실이나 **clean PRODUCTION_READY로 올리지 않고 DEGRADED로 정직히 강등**했다: (a) 본문 없이 list 메타데이터만(LIST_PREVIEW_ONLY_NO_BODY), (b) 사이트가 AI 크롤러를 robots에서 전면 차단했고 우리는 generic UA로 접근(AI_CRAWLER_ROBOTS_BLOCK_HONORED_GENERIC_UA), (c) ToS 자동수집 조항 미검증(TOS_AUTOMATED_USE_UNVERIFIED, legal-safety review pending), (d) 검증 범위는 stockus 단일 갤러리(SCOPE_SINGLE_GALLERY_STOCKUS). 이는 cnbc/nyt를 preview-only로 강등한 선례와 일관된 자세다. 익명 갤러리 제목은 **unconfirmed_until_corroborated**로만 싣고(투자조언 경계), 작성자 닉네임(PII)은 수집하지 않는다. full article body는 수집하지 않는다(저작권 보수). registry known_blockers `[cloudflare,anti_bot]`는 실측으로 `[]`로 정정, readiness MVP_EXCLUDED→CORE_READY, preferred_strategy=robots_allowed_static_list_fetch.
+- **google_trends_explore → trending 역할은 이미 다른 소스가 커버**. 이 소스의 의도된 목적(trending 발견)은 compliant source `google_trending_now`가 이미 담당하므로, explore 엔드포인트는 라우팅 상 **중복 역할**이다. 공식 API 부재 + 우회 금지로 compliant 자동 경로가 없어 REQUIRES_OFFICIAL_API_OR_CONTRACT blocker로 문서화(skip_reason: needs_api_integration→requires_official_api_or_contract). 역할 공백은 없다.
+- **gdelt → 신호/이벤트 발견 라우트는 유지하되 EXTERNAL_RATE_LIMITED**. 라우트는 wired(공개 DOC 2.0 API)이나 이번 live probe가 429라 신선 데이터 0건 → production_ready로 둔갑시키지 않고 pending_resume로 유지.

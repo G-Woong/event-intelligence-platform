@@ -141,6 +141,18 @@ __all__ = [
     "rescue_news_body",
     "SourceValueDecision",
     "decide_source_value",
+    # Phase G-2
+    "SourcePolicyProbeResult",
+    "probe_source_policy",
+    "DCInsideStrategyResult",
+    "collect_dcinside",
+    "GdeltStrategyResult",
+    "collect_gdelt",
+    "GoogleTrendsAssessment",
+    "assess_google_trends",
+    "SourceSupervisorDecision",
+    "LastChanceSourceResurrection",
+    "classify_resurrection",
 ]
 
 _SYMBOL_MODULE = {
@@ -270,6 +282,18 @@ _SYMBOL_MODULE = {
     "rescue_news_body": "body_rescue_ladder",
     "SourceValueDecision": "source_value_policy",
     "decide_source_value": "source_value_policy",
+    # Phase G-2
+    "SourcePolicyProbeResult": "source_policy_probe",
+    "probe_source_policy": "source_policy_probe",
+    "DCInsideStrategyResult": "dcinside_strategy",
+    "collect_dcinside": "dcinside_strategy",
+    "GdeltStrategyResult": "gdelt_strategy",
+    "collect_gdelt": "gdelt_strategy",
+    "GoogleTrendsAssessment": "google_trends_strategy",
+    "assess_google_trends": "google_trends_strategy",
+    "SourceSupervisorDecision": "source_supervisor",
+    "LastChanceSourceResurrection": "last_chance_source_resurrection",
+    "classify_resurrection": "last_chance_source_resurrection",
 }
 
 

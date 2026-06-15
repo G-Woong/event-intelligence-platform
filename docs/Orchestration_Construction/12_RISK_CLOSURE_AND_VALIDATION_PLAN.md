@@ -321,3 +321,27 @@ Launch blockers: ingestion contract에는 없음. raw_events DB migration이 Pha
 - 상업 런칭 전 nyt commercial license 확보.
 
 검증: 전체 회귀 1098 passed, secret scan PASS(269), 신규 설치 0. 리뷰 — Security SECURE, Legal APPROVED_WITH_CONDITIONS, DataQuality CLEAN.
+
+---
+
+## Phase G-2 — Last-Chance Source Resurrection (dcinside / google_trends_explore / gdelt)
+
+**판정: PARTIAL_MIXED_PENDING_AND_BLOCKERS** (3개 중 1 degraded-승격, 1 pending, 1 blocker). Phase F에서 일괄 제외했던 3개 소스의 risk를 status enum으로 정직하게 닫는다(dcinside는 clean READY가 아닌 DEGRADED).
+
+| source | 원인 | 완화 | status |
+|---|---|---|---|
+| **dcinside** | robots/anti_bot 차단 추정(미실측) | robots 실측 → AI-학습 차단 섹션 별개, generic UA Allow:/ 확인. robots-allowed 갤러리만 generic UA static fetch, 차단 감지 시 `*_BLOCKED_NO_BYPASS` 중단. live 30 community_signal 실증. | PARTIAL_CLOSED (PRODUCTION_READY_DEGRADED: list-preview-only/no-body, AI-차단 robots를 generic UA로 통과, ToS automated-use UNVERIFIED → legal-safety review pending; scope=stockus only) |
+| **gdelt** | provider 429(IP throttle) | RateLimitGovernor cooldown 영속 + non-throttled 윈도 재개. 0-record를 READY로 둔갑 금지(production_state 매핑). | DEFERRED_WITH_TRIGGER (non-throttled 윈도 재수집 시 재개) |
+| **google_trends_explore** | 공식 API 부재 + anti-abuse 429 + 우회 금지 | 추측 disable → 검증된 evidence blocker로 격상. trending 역할은 google_trending_now가 커버. | BLOCKED_BY_POLICY (requires_official_api_or_contract) |
+
+**정직성 보장**: gdelt fresh data 0건을 production_ready로 주장하지 않는다(EXTERNAL_RATE_LIMITED 유지). dcinside는 full body 미수집(저작권 보수)이며 clean READY가 아닌 DEGRADED로 강등. google_trends_explore는 우회 회피책을 채택하지 않는다.
+
+**Known limitation(미해소, 정직히 명시)**:
+- gdelt — 연속 pending에 대한 escalation 카운터가 없다. cooldown 만료 시 자동 재개만 하고, 동일 소스가 N회 연속 pending에 머무를 때 알림/격리로 escalate하는 카운터는 미구현이다(무한 pending 침묵 위험). 향후 supervisor에 consecutive_pending_count + threshold escalation을 추가해야 한다.
+
+**NEXT_STEP**:
+- dcinside — ToS 자동수집 조항 미검증(TOS_AUTOMATED_USE_UNVERIFIED) → **legal-safety-compliance-reviewer 핸드오프**로 ToS 자동수집 적법성 검토 후에야 DEGRADED→READY 승격 검토. 추가 갤러리는 각 robots 재확인 후에만 확장(일괄 확장 금지).
+- gdelt — provider 비-throttle 윈도에서 단발 재수집 + 위 escalation 카운터 구현.
+- google_trends_explore — 상용화 전 공식 API/계약 확보.
+
+검증: 전체 회귀 **1130 passed**, secret scan **PASS(210)**, 신규 설치 0, no bypass(robots 허용 path·cooldown 존중·CAPTCHA/login/cloudflare 감지 시 중단), 전 outputs gitignored. 최종 상태 분포: PRODUCTION_READY 44 / PRODUCTION_READY_DEGRADED 3(culture_info, product_hunt, dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9, non_excluded_not_ready 4(gdelt pending + culture_info/product_hunt/dcinside degraded).

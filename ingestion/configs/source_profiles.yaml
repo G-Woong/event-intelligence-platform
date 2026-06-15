@@ -242,20 +242,20 @@ profiles:
     skip_reason: "requires_api_key"
     notes: "bucket VERIFY_REQUIRED"
   dcinside:
-    enabled: false  # Phase G: robots/policy block, no-bypass → excluded
-    profile_status: "disabled"
-    readiness_status: "MVP_EXCLUDED"
+    enabled: true  # Phase G-2: robots(User-agent:*) allows stockus gallery; static fetch, no bypass (DEGRADED: preview-only)
+    profile_status: "active"
+    readiness_status: "DEGRADED_PREVIEW_ONLY"
     source_group: "community"
     purpose: "community"
     freshness_bucket: "short"
     min_interval_seconds: 1800
     risk_level: "high"
-    preferred_strategy: "playwright_selector_fetch"
+    preferred_strategy: "robots_allowed_static_list_fetch"
     requires_api_key: false
     is_community: true
     confirmation_policy: "unconfirmed_until_corroborated"
-    live_eligible: "false"
-    skip_reason: "robots_or_policy_block"
+    live_eligible: "true"
+    notes: "Phase G-2: stockus gallery only (robots User-agent:* allow); AI-training crawler block honored via generic UA (no bypass); ToS automated-use UNVERIFIED (legal-safety review pending); list-level community_signal only, no body, no PII; stop on cloudflare/captcha/login"
   # -- search --
   naver_blog_search:
     enabled: true
@@ -511,9 +511,9 @@ profiles:
     confirmation_policy: "unconfirmed_until_corroborated"
     live_eligible: "conservative"
   google_trends_explore:
-    enabled: false  # Phase G: no API key + probe unwired + rate-limited → disabled until operator integration
+    enabled: false  # Phase G-2: no official API + explore endpoint anti-abuse 429 (no-bypass) → requires official API/contract
     profile_status: "disabled"
-    readiness_status: "MVP_DEFERRED"
+    readiness_status: "REQUIRES_OFFICIAL_API_OR_CONTRACT"
     source_group: "trend"
     purpose: "trend"
     freshness_bucket: "medium"
@@ -523,8 +523,8 @@ profiles:
     is_community: false
     confirmation_policy: "unconfirmed_until_corroborated"
     live_eligible: "false"
-    skip_reason: "needs_api_integration"
-    notes: "registry/_SERVICE_CONFIGS 미등록 probe 미연결"
+    skip_reason: "requires_official_api_or_contract"
+    notes: "no official Google Trends API; pytrends unofficial+absent; explore endpoint anti-abuse 429; no-bypass; trending covered by google_trending_now"
   # -- market --
   finnhub:
     enabled: true

@@ -94,14 +94,19 @@ def test_real_configs_honest_holdovers_only():
         apply_config=False, write_outputs=False)
     assert r["unknown"] == 0 and r["source_without_state"] == 0
     assert r["critical_alerts"] == 0
-    # non-ready는 known 홀드오버의 부분집합(과대 평가/은폐 금지)
+    # non-ready는 known 홀드오버의 부분집합(과대 평가/은폐 금지).
+    # Phase G-2: dcinside는 robots-allowed static fetch로 실데이터 수집하나 list-preview-only +
+    # AI-차단/ToS 미검증 caveat로 DEGRADED(적대 리뷰 흡수) → 4번째 정직한 홀드오버.
     holdovers = {g.source_id for g in r["gaps"]}
-    assert holdovers.issubset({"gdelt", "culture_info", "product_hunt"})
-    assert r["non_excluded_not_ready"] <= 3
+    assert holdovers.issubset({"gdelt", "culture_info", "product_hunt", "dcinside"})
+    assert r["non_excluded_not_ready"] <= 4
 
 
 def test_disabled_sources_are_excluded_in_profiles():
     from ingestion.orchestration.source_profile import load_source_profiles
     profiles = {p.source_id: p for p in load_source_profiles("ingestion/configs/source_profiles.yaml")}
-    for sid in ("its", "dcinside", "google_trends_explore"):
+    # its/google_trends_explore는 여전히 disabled. dcinside는 Phase G-2에서 robots 허용 갤러리
+    # static fetch로 복구되어 active(아래에서 별도 확인).
+    for sid in ("its", "google_trends_explore"):
         assert profiles[sid].enabled is False, f"{sid} should be disabled"
+    assert profiles["dcinside"].enabled is True  # Phase G-2: robots-allowed static fetch, no bypass

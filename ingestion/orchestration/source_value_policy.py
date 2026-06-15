@@ -16,6 +16,7 @@ from typing import Optional
 DISABLE_NOT_SERVICE_USEFUL = "disabled_not_service_useful"
 POLICY_EXCLUDED = "policy_excluded"
 NEEDS_API_INTEGRATION = "disabled_needs_api_integration"
+REQUIRES_OFFICIAL_API_OR_CONTRACT = "requires_official_api_or_contract"
 KEEP_ACTIVE = "keep_active"
 
 
@@ -35,18 +36,15 @@ _VALUE_DECISIONS = {
         {"enabled": False, "profile_status": "disabled", "skip_reason": "not_service_useful",
          "readiness_status": "DISABLED_LOW_VALUE"},
     ),
-    "dcinside": SourceValueDecision(
-        "dcinside", POLICY_EXCLUDED,
-        "robots/policy block, no-bypass; community board excluded by policy",
-        {"enabled": False, "profile_status": "disabled", "skip_reason": "robots_or_policy_block",
-         "readiness_status": "MVP_EXCLUDED"},
-    ),
+    # Phase G-2: dcinside는 robots(User-agent:*) 허용 갤러리 static fetch로 복구됨(우회 0) →
+    # 더 이상 disable 대상이 아님(decide_source_value→None=keep_active). 상세는 dcinside_strategy.py.
     "google_trends_explore": SourceValueDecision(
-        "google_trends_explore", NEEDS_API_INTEGRATION,
-        "no API key + probe not wired (registry _SERVICE_CONFIGS missing) + rate-limited; "
-        "requires operator API integration before re-enable",
-        {"enabled": False, "profile_status": "disabled", "skip_reason": "needs_api_integration",
-         "readiness_status": "MVP_DEFERRED"},
+        "google_trends_explore", REQUIRES_OFFICIAL_API_OR_CONTRACT,
+        "no official Google Trends API; pytrends unofficial+absent; explore endpoint anti-abuse 429 "
+        "(no-bypass); trending covered by google_trending_now → requires official API/contract",
+        {"enabled": False, "profile_status": "disabled",
+         "skip_reason": "requires_official_api_or_contract",
+         "readiness_status": "REQUIRES_OFFICIAL_API_OR_CONTRACT"},
     ),
 }
 
@@ -59,6 +57,7 @@ def decide_source_value(source_id: str) -> Optional[SourceValueDecision]:
 def is_disabled_decision(decision: Optional[SourceValueDecision]) -> bool:
     return decision is not None and decision.decision in (
         DISABLE_NOT_SERVICE_USEFUL, POLICY_EXCLUDED, NEEDS_API_INTEGRATION,
+        REQUIRES_OFFICIAL_API_OR_CONTRACT,
     )
 
 
