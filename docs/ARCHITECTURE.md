@@ -1,3 +1,7 @@
+> **Status: SUPERSEDED (부분)**
+> Canonical replacement: `docs/_CANONICAL/02_CURRENT_ARCHITECTURE.md`, `docs/_CANONICAL/01_IMPLEMENTED_FLOW.md`
+> Reason: STEP 005/010 스냅샷. 컨테이너 7→실제 10, mock 8/11→6/11. 현재값은 canonical 우선(06 C-5, C-8).
+
 # Architecture — Event Intelligence (STEP 010)
 
 ## 컴포넌트 다이어그램

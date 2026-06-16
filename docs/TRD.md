@@ -1,3 +1,7 @@
+> **Status: SUPERSEDED (부분)**
+> Canonical replacement: `docs/_CANONICAL/02_CURRENT_ARCHITECTURE.md`, `docs/_CANONICAL/04_OPEN_TASKS_BY_FOLDER.md`
+> Reason: STEP 006~010 시점별 요구·버전 핀. 현재값/현황은 canonical 우선.
+
 # Technical Requirements Document — STEP 010
 
 ## STEP 010 신규 컴포넌트

@@ -1,3 +1,7 @@
+> **Status: SUPERSEDED**
+> Canonical replacement: `docs/_CANONICAL/04_OPEN_TASKS_BY_FOLDER.md`, `docs/_CANONICAL/06_CONFLICTS_AND_SUPERSEDED.md` (C-3)
+> Reason: DART/SEC/trafilatura를 TODO로 표기하나 `ingestion/sources/opendart.py`·`sec_edgar.py`·`tools/trafilatura_extractor.py`로 이미 구현됨. 다운스트림 mock 항목은 04·08 참조.
+
 # Mock·Stub·TODO 집계표
 
 > 시스템 내 모든 임시(mock/stub/partial/empty) 구현 및 미구현(TODO) 항목을 한 곳에 정리합니다.

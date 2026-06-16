@@ -1,3 +1,7 @@
+> **Status: SUPERSEDED (부분)**
+> Canonical replacement: `docs/_CANONICAL/01_IMPLEMENTED_FLOW.md §B`, `docs/_CANONICAL/03_SOURCE_STATUS.md`
+> Reason: `workers/` RSS 3소스(legacy 경로) 전용. 현재 주 수집 엔진은 `ingestion/`(57소스). 별개 서브시스템(06 C-1).
+
 # Collector Design
 
 ## STEP 007: RSS Collector

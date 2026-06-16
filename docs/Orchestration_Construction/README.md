@@ -1,3 +1,7 @@
+> **Status: SUPERSEDED (선언 부분)**
+> Canonical replacement: `docs/_CANONICAL/01_IMPLEMENTED_FLOW.md`, `docs/_CANONICAL/06_CONFLICTS_AND_SUPERSEDED.md` (C-4)
+> Reason: 아래 "구현 코드는 아직 적용되지 않았다(설계 전용)" 선언은 **stale**다. Phase A~G-4가 `ingestion/orchestration/`에 실제 구현됐다. 설계 상세는 참조용으로 유효하나 구현 상태는 canonical을 따른다.
+
 # docs/Orchestration_Construction — 오케스트레이션 구축 설계 문서 세트
 
 > **이 폴더는 설계(blueprint)다. 구현 코드는 아직 적용되지 않았다.**

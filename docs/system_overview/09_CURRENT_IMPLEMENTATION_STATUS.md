@@ -1,3 +1,7 @@
+> **Status: SUPERSEDED**
+> Canonical replacement: `docs/_CANONICAL/03_SOURCE_STATUS.md`, `docs/_CANONICAL/04_OPEN_TASKS_BY_FOLDER.md`, `docs/_CANONICAL/09_VALIDATION_AND_TESTS.md`
+> Reason: STEP 011(2026-05-24) 기준. 수집계층·DART/SEC/trafilatura "미구현" 표기는 stale — `ingestion/` 엔진이 대체(06 C-3). 다운스트림 상태표는 02 참조.
+
 # 현재 구현 상태 (STEP 011 기준)
 
 > 2026-05-24, HEAD commit: 38d0028  

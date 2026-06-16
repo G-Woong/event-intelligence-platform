@@ -1,3 +1,7 @@
+> **Status: SUPERSEDED (부분)**
+> Canonical replacement: `docs/_CANONICAL/07_ENHANCEMENT_BACKLOG.md`, `docs/_CANONICAL/03_SOURCE_STATUS.md`
+> Reason: Axis B(소스 확장)·Axis C(본문 추출)는 `ingestion/` 엔진이 이미 구현(06 C-3). Axis A/D만 유효 → 07로 이관.
+
 # 다음 단계 고도화 로드맵
 
 > 4대 고도화 축이 현재 코드 구조 어디에 붙는지 파일 경로 단위로 설명합니다.

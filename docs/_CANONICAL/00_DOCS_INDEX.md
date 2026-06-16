@@ -1,0 +1,55 @@
+# 00 — DOCS INDEX (canonical 단일 진입점)
+
+- 생성: 2026-06-16 (docs 전수 원자분해·통폐합 라운드)
+- 기준 커밋: `93e83b6` (Phase G-4 완료 후)
+- 목적: `docs/` 전체를 현재 구현 상태 기준으로 재정렬한 **단일 출처 index**.
+  신규 세션은 이 폴더(`docs/_CANONICAL/`)를 최우선으로 읽는다.
+
+---
+
+## 0. 한 문장 요약
+
+레포에는 **두 개의 자산**이 있고 아직 **하나로 연결되지 않았다.**
+① `ingestion/` 57소스 수집 엔진(Phase A~G-4 **구현 완료**) ②
+`backend`/`workers`/`agents`/`frontend` 다운스트림 앱(STEP 011 **구현 완료**).
+①의 출력은 현재 **JSON mirror**로만 떨어지고, ②의 실 `raw_events` PostgreSQL은
+별도의 `workers/` RSS 수집기(3소스)가 채운다. **이 둘을 잇는 브리지 배선이 최대 미해결 과제다.**
+
+---
+
+## 1. canonical 문서 읽는 순서
+
+| # | 문서 | 무엇을 담나 |
+|---|---|---|
+| 00 | **00_DOCS_INDEX.md** | (이 파일) 전체 지도 + 읽기 순서 |
+| 01 | **01_IMPLEMENTED_FLOW.md** | 구현 완료된 두 서브시스템의 흐름(짧게) |
+| 02 | **02_CURRENT_ARCHITECTURE.md** | 현재 아키텍처 단일 출처(컨테이너·API·DB·검색·LLM·프론트) |
+| 03 | **03_SOURCE_STATUS.md** | 57소스 production-state 분포 + tier 정의 |
+| 04 | **04_OPEN_TASKS_BY_FOLDER.md** | 폴더별 미구현 TASK |
+| 05 | **05_RISK_REGISTER.md** | RISK 등록부(심각도·종결조건) |
+| 06 | **06_CONFLICTS_AND_SUPERSEDED.md** | 문서 충돌·구버전 정리 |
+| 07 | **07_ENHANCEMENT_BACKLOG.md** | 고도화 backlog |
+| 08 | **08_LLM_AGENT_ORCHESTRATION_HANDOFF.md** | LLM 에이전트 handoff 상태 |
+| 09 | **09_VALIDATION_AND_TESTS.md** | 검증·테스트 현황 |
+| 10 | **10_DOCS_COVERAGE_MANIFEST.md** | 원본 MD 50개 전수 처리 증명 |
+
+비개발자/의사결정자: **00 → 03 → 05 → 07**.
+구현자: **00 → 01 → 02 → 04**.
+
+---
+
+## 2. 권위 순서(상충 시 무엇을 믿나)
+
+1. **코드 + 최신 산출물**(`ingestion/outputs/state/production_source_state.json` 등) — 최종 진실.
+2. `docs/_CANONICAL/*` — 이 라운드에서 코드와 대조해 정렬한 문서.
+3. `docs/ingestion/INGESTION_FINAL.md`, `docs/Orchestration_Construction/00·11·12` — 영역별 상세(일부 수치 stale, 06 참조).
+4. 기타 루트 설계문서·`system_overview/` — 설계 참조용. **수치/상태가 02·03과 어긋나면 02·03을 따른다.**
+
+---
+
+## 3. 기존 docs 폴더와의 관계
+
+- 원본 50개 MD는 **삭제하지 않았다.** 구버전/충돌 문서에는 상단 `SUPERSEDED` 배너를 붙이고
+  canonical 대체본을 가리킨다. 전체 매핑은 `10_DOCS_COVERAGE_MANIFEST.md`.
+- `system_overview/`는 다운스트림 앱(②) 설명은 유효하나 **수집 계층 설명은 폐기**됐다(ingestion 엔진이 대체).
+- `Orchestration_Construction/`는 설계 청사진이었고 **Phase A~G-4가 실제로 구현**됐다(README의 "설계 전용" 문구는 stale → 06).

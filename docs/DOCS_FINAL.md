@@ -1,3 +1,8 @@
+> **Status: 진입점 이전됨**
+> 신규 세션 최우선 진입점은 이제 `docs/_CANONICAL/00_DOCS_INDEX.md`다.
+> 이 문서의 일부 수치("509 passed", "수집 14/15", "44 소스")는 stale다(현재 ingestion 1205 / 57소스 / READY 46 — 06 C-2, 03 참조).
+> 아래 내용은 이력·참조용으로 보존한다.
+
 # docs/DOCS_FINAL.md — docs 최종 진입점 (신규 세션 최우선 문서)
 
 - 최종 갱신: 2026-06-14
