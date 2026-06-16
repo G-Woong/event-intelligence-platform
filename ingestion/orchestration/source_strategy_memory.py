@@ -35,6 +35,9 @@ class SourceStrategyMemory:
     cooldown_policy: Optional[str] = None
     safety_policy: str = "no_bypass"
     evidence: Optional[str] = None
+    # G-4: 추후 LLM SourceSupervisor가 재사용할 전략 힌트(예: never_disable_on_single_429).
+    # 사실/정책 힌트만, secret/키 금지. 비어 있으면 YAML 직렬화에서 생략(기존 entry 무변경).
+    llm_agent_hints: tuple[str, ...] = ()
 
 
 def _to_plain(m: SourceStrategyMemory) -> dict:
@@ -43,6 +46,9 @@ def _to_plain(m: SourceStrategyMemory) -> dict:
     for k, v in list(d.items()):
         if isinstance(v, tuple):
             d[k] = list(v)
+    # 비어 있는 llm_agent_hints는 생략 — 힌트 없는 기존 entry의 diff noise 방지.
+    if not d.get("llm_agent_hints"):
+        d.pop("llm_agent_hints", None)
     return d
 
 
@@ -66,6 +72,7 @@ def _from_plain(d: dict) -> SourceStrategyMemory:
         cooldown_policy=d.get("cooldown_policy"),
         safety_policy=d.get("safety_policy", "no_bypass"),
         evidence=d.get("evidence"),
+        llm_agent_hints=tup("llm_agent_hints"),
     )
 
 

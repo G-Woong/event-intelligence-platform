@@ -364,3 +364,37 @@ Launch blockers: ingestion contract에는 없음. raw_events DB migration이 Pha
 **NEXT_STEP**: dcinside→legal-safety-compliance-reviewer 핸드오프. community_signal→corroboration 게이트 구현(quality/safety 계층). gdelt→비-throttle 재수집 + escalation 카운터.
 
 검증: 전체 회귀 **1179 passed**, secret scan **PASS**, net-0 주입 9테스트, no bypass, 전 outputs gitignored. 최종 분포: PRODUCTION_READY 46 / PRODUCTION_READY_DEGRADED 1(dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9 = 57. unknown 0, critical_alerts 0, non_excluded_not_ready 2(dcinside/gdelt).
+
+---
+
+## Phase G-4 — Final Closure of Remaining Non-Excluded Source Risks
+
+**판정: PARTIAL_ONLY_IF_LEGAL_OR_PROVIDER_HARD_BLOCKER_WITH_FULL_EVIDENCE** — 비제외 소스 중 open 항목은 gdelt provider 429 하나뿐이다. G-3가 남긴 비제외 잔여 risk(dcinside DEGRADED의 애매함, gdelt escalation 카운터 미구현, community_signal corroboration 게이트 미구현, culture_info/product_hunt eq/raw=0 약점)를 status enum으로 최종 closure했다. gdelt single 429를 disable로 둔갑시키지 않고 escalation-capable scheduled state로 닫는다.
+
+| source | 원인 | 완화 | status |
+|---|---|---|---|
+| **dcinside** | 애매한 DEGRADED(기술 결함처럼 보였던 본문 미수집) | DEGRADED 폐기 → **community preview signal 역할로 재정의**(신규 tier `PRODUCTION_READY_COMMUNITY_PREVIEW`, memory final_status `COMMUNITY_PREVIEW_SIGNAL_ALIVE`). detail body static audit는 DETAIL_BODY_ALIVE(best_body_chars=230, 짧아 보수적으로 preview 역할 유지), PII(작성자 닉네임) 미수집. live 30 community_signal, source-specific proof eq=30/raw=30 contract_pass=True. publish는 게이트로 봉인(publish_gated). | CLOSED_BY_DESIGN (역할 재정의; ToS publish 해제는 legal review 전제로 잔존) |
+| **gdelt** | provider 429(cooldown 만료 후 정책 준수 spaced probe 실 재시도에서도 실제 provider 429) | 우회 금지 → 정직한 provider hard blocker. 단순 pending이 아닌 **escalation-capable scheduled state**: consecutive_pending 카운터(run마다 증가, threshold=3 도달 시 ESCALATE), host-level cooldown 영속(next_resume_at), query ladder profile(broad\|single_keyword\|narrow), 재현 커맨드(repro_cmd). RateLimitGovernor host-level min_interval 10s. colab parity는 코드 동일(endpoint+params+parse, test-verified), 응답 레벨 diff는 UNVERIFIED 정직 표기. single 429로 disabled 안 함. | DEFERRED_WITH_TRIGGER (자동 재개 + escalation 카운터; 비-throttle 윈도 fresh 확보 시 해소) |
+| **CommunityCorroborationGate** | G-3 미구현이던 corroboration/펌핑 차단 게이트 | 신규 모듈 `community_corroboration_gate.py`: 익명 금융/투자 갤러리(stockus 등)→`internal_queue_only`, 펌핑/투자권유성 제목(매수/풀매수/가즈아/떡상/목표가 등)→`publish_blocked_until_corrob`, 그 외 커뮤니티→`preview_candidate`. 익명 source는 항상 `requires_external_confirmation=True`(CLAUDE.md 원칙1 info-not-advice 정렬). | CLOSED_BY_DESIGN (게이트 구현; publish 파이프라인 하위 wiring은 후속 과제) |
+| **culture_info / product_hunt** | G-3 eq/raw=0(공유 dedup collapse) 약점 | 신규 `source_specific_proof.py`가 **격리 dedup namespace**로 source별 EventQueue/raw_events contract 통과 입증 → culture_info eq=5/raw=5, product_hunt eq=5/raw=5, contract_pass=True. 공유 production dedup의 collapse(eq=0)는 contract 실패가 아니라 정상 dedup임을 명확화. product_hunt 실 url/createdAt(합성 slug 거부), culture_info detail2 실 url+startDate. | CLOSED_BY_DESIGN (source-specific proof로 약점 제거) |
+
+**적대 리뷰/정직성 흡수**:
+- dcinside 본문 미수집은 degradation이 아니라 **역할 정의**임을 명확화(best_body_chars=230으로 짧아 보수적으로 preview 역할 유지). ToS-verified를 사칭하지 않는다 — 수집/큐 적재는 닫되 publish는 게이트로 봉인(publish_gated).
+- gdelt single 429를 disable로 둔갑시키지 않음. 응답 레벨 diff 저장본 없음을 UNVERIFIED로 정직 표기(코드 parity는 test-verified로 분리).
+- 공유 dedup의 eq=0 collapse를 "contract 실패"로 과장하지 않고 정상 dedup임을 격리 namespace proof로 분리 입증.
+
+**남은 risk(미해소, 정직)**:
+1. **gdelt provider 429** — 자동 재개 scheduled + escalation 카운터 구현됨. 비-throttle 윈도에서 fresh 확보 필요(여전히 open 비제외 항목).
+2. **dcinside ToS legal review** — publish 해제 전제(수집은 닫힘). legal-safety-compliance-reviewer 검토 잔존.
+3. **CommunityCorroborationGate publish 파이프라인 wiring** — 게이트는 구현됐으나 publish 파이프라인 하위에서 소비하는 wiring은 후속.
+
+**LLM agent hints(StrategyMemory `llm_agent_hints` 필드)**: 소스별 안전 힌트 저장(dcinside: community_preview_signal_is_valid_role / corroboration_required / avoid_pii_author_collection / no_publish_without_external_confirmation; gdelt: never_disable_on_single_429 / use_host_level_rate_limit / replay_colab_success_profile_first / simplify_query_before_declaring_failure / save_next_resume_at; culture_info: require_real_detail_url_or_stable_id / reject_local_or_synthetic_evidence; product_hunt: require_actual_api_url_or_slug / reject_name_slug_synthetic_fallback / require_createdAt_or_observed_at). SourceSupervisor는 LLM이 우회(proxy_rotation 등)를 제안해도 AllowedStrategyRegistry 밖이면 거부한다.
+
+**흡수 구조(나열식 if 금지)**: SourceCapability → PolicyProbe → StrategyGraph → ToolPlan → EvidenceGate → CommunityCorroborationGate → GdeltRateLimitProfile(RateLimitGovernor host-level) → SourceSpecificProof → StrategyMemory(+llm_agent_hints) → ProductionState(+PRODUCTION_READY_COMMUNITY_PREVIEW tier) → Monitoring → SourceSupervisorDecision(LLM-ready, unsafe 전략 거부).
+
+**NEXT_STEP**:
+- gdelt → provider 비-throttle 윈도에서 fresh 확보(escalation 카운터·next_resume_at 이미 구현).
+- dcinside → legal-safety-compliance-reviewer 핸드오프(publish 해제 전제, 수집은 닫힘).
+- CommunityCorroborationGate → publish 파이프라인 하위 소비 wiring.
+
+검증: 전체 회귀 **1205 passed**, secret scan **PASS**, no bypass(robots 허용 path·cooldown 존중·CAPTCHA/login/cloudflare 감지 시 중단·proxy/anti-bot 0), 전 outputs gitignored. 신규 테스트 7개(test_g4_final_risk_closure, test_dcinside_detail_final_closure, test_community_corroboration_gate, test_gdelt_rate_limit_profile, test_source_specific_proof_mode, test_llm_agent_strategy_hints, test_gdelt_colab_parity_recovery). 최종 분포: PRODUCTION_READY 46 / PRODUCTION_READY_COMMUNITY_PREVIEW 1(dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9 = 57. degraded_remaining 0, unknown 0, critical_alerts 0, non_excluded_not_ready 1(gdelt).

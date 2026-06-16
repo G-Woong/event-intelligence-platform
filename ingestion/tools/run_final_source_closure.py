@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from ingestion.orchestration.bridge_to_raw_events import RawEventBridgeWriter, bridge_records
+from ingestion.orchestration.community_corroboration_gate import annotate_records
 from ingestion.orchestration.dcinside_strategy import (
     audit_dcinside_detail_body,
     collect_dcinside,
@@ -34,10 +35,13 @@ from ingestion.orchestration.final_source_closure import (
     EXTERNAL_RATE_LIMITED_PENDING_RESUME,
     FinalSourceClosure,
     PRODUCTION_READY,
+    PRODUCTION_READY_COMMUNITY_PREVIEW,
     PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY,
     classify_final_closure,
+    classify_risk_closure,
     decide_final_status,
 )
+from ingestion.orchestration.source_specific_proof import prove_source_eventqueue_contract
 from ingestion.orchestration.gdelt_strategy import collect_gdelt
 from ingestion.orchestration.monitoring import build_monitoring_summary, write_monitoring_report
 from ingestion.orchestration.production_scheduler import ProductionRunPlan
@@ -81,6 +85,34 @@ _DC_CAVEATS = ("LIST_PREVIEW_ONLY_NO_BODY_BY_POLICY",
                "AI_CRAWLER_ROBOTS_BLOCK_HONORED_GENERIC_UA", "TOS_AUTOMATED_USE_UNVERIFIED",
                "SCOPE_SINGLE_GALLERY_STOCKUS")
 
+# G-4: gdelt 연속 pending이 이 횟수에 도달하면 escalation 플래그(단순 무한 pending 금지).
+_GDELT_ESCALATION_THRESHOLD = 3
+# 재현 가능한 gdelt 재수집 커맨드(보고/escalation 증거용 — secret 없음).
+_GDELT_REPRO_CMD = ("python -m ingestion.tools.run_final_source_closure "
+                    "--sources gdelt --gdelt-min-interval-seconds 10")
+
+# G-4: 추후 LLM SourceSupervisor가 재사용할 source별 전략 힌트(사실/정책만, secret 금지).
+_LLM_HINTS = {
+    "dcinside": ("do_not_treat_as_news_body_source_unless_detail_body_verified",
+                 "community_preview_signal_is_valid_role", "corroboration_required",
+                 "avoid_pii_author_collection", "no_publish_without_external_confirmation"),
+    "gdelt": ("never_disable_on_single_429", "use_host_level_rate_limit",
+              "replay_colab_success_profile_first", "simplify_query_before_declaring_failure",
+              "save_next_resume_at"),
+    "culture_info": ("require_real_detail_url_or_stable_id", "reject_local_or_synthetic_evidence"),
+    "product_hunt": ("require_actual_api_url_or_slug", "reject_name_slug_synthetic_fallback",
+                     "require_createdAt_or_observed_at"),
+}
+
+
+def _parse_consecutive_pending(mem: Optional[SourceStrategyMemory]) -> int:
+    """직전 gdelt memory evidence에서 consecutive_pending=N을 파싱(없으면 0)."""
+    if mem is None or not mem.evidence:
+        return 0
+    import re
+    m = re.search(r"consecutive_pending=(\d+)", mem.evidence)
+    return int(m.group(1)) if m else 0
+
 
 def _iso_now(now=None):
     now = now or datetime.now(timezone.utc)
@@ -122,7 +154,8 @@ def _close_product_hunt(*, ph_fetch) -> tuple[FinalSourceClosure, list, Optional
             preferred_next_strategy="ph_graphql_real_url_createdAt",
             adapter_name="vendor_route:ph_graphql_posts", parser_notes="real_url_createdAt;no_synthetic_slug",
             safety_policy="no_bypass",
-            evidence=f"items={len(records)};real_url;real_createdAt;utm_stripped_canonical")
+            evidence=f"items={len(records)};real_url;real_createdAt;utm_stripped_canonical",
+            llm_agent_hints=_LLM_HINTS["product_hunt"])
         patch = {"readiness_status": "CORE_READY", "live_eligible": "true",
                  "notes": "Phase G-3: GraphQL expanded query yields real url+createdAt (no synthetic slug)"}
     return closure, records, mem, patch
@@ -153,13 +186,14 @@ def _close_culture_info(*, culture_fetch) -> tuple[FinalSourceClosure, list, Opt
             preferred_next_strategy="period2_detail2_real_url",
             adapter_name="vendor_route:culture_period2_detail2",
             parser_notes="detail2_real_external_url;startDate_time_anchor", safety_policy="no_bypass",
-            evidence=f"items={len(records)};detail2_real_url;startDate_anchor;seq_stable_id")
+            evidence=f"items={len(records)};detail2_real_url;startDate_anchor;seq_stable_id",
+            llm_agent_hints=_LLM_HINTS["culture_info"])
         patch = {"readiness_status": "CORE_READY", "live_eligible": "true",
                  "notes": "Phase G-3: period2->detail2 yields real external url + startDate (no dead detailView shell)"}
     return closure, records, mem, patch
 
 
-def _close_gdelt(*, governor, gdelt_collect) -> tuple[FinalSourceClosure, list, Optional[SourceStrategyMemory], Optional[dict]]:
+def _close_gdelt(*, governor, gdelt_collect, prior_pending: int = 0) -> tuple[FinalSourceClosure, list, Optional[SourceStrategyMemory], Optional[dict]]:
     cap = capability_for("gdelt")
     nodes = _graph_nodes("gdelt")
     res = gdelt_collect(governor)
@@ -182,22 +216,34 @@ def _close_gdelt(*, governor, gdelt_collect) -> tuple[FinalSourceClosure, list, 
             preferred_next_strategy="host_rate_limit_spaced_probe",
             cooldown_policy="respect_cooldown", safety_policy="no_bypass",
             # colab_parity는 '코드 레벨' 사실(endpoint/params/parse 동일) — test_gdelt_colab_parity로 검증.
-            evidence=f"attempts={','.join(res.attempts)};items={len(records)};colab_parity_code_verified_doc2_artlist")
+            # 성공 시 consecutive_pending 리셋(=0).
+            evidence=(f"attempts={','.join(res.attempts)};items={len(records)};consecutive_pending=0;"
+                      "colab_parity_code_verified_doc2_artlist"),
+            llm_agent_hints=_LLM_HINTS["gdelt"])
         patch = {"readiness_status": "CORE_READY", "live_eligible": "true"}
         return closure, records, mem, patch
-    # records 0 → pending_resume(자동 재개). terminal 아님. 적대 리뷰 흡수(MEDIUM-3): 실제 사유를
-    # res.error로 구분 보고(provider_429 vs no_articles)하고, colab_parity는 '코드 동일'(test-verified)로만
-    # 단언(저장된 응답 diff는 없음 → 응답 레벨 parity는 UNVERIFIED로 정직 표기).
+    # records 0 → pending_resume(자동 재개). terminal 아님. 단순 'pending'이 아니라 escalation-capable
+    # scheduled state로 닫는다: consecutive_pending 카운터 + escalation 플래그 + next_resume_at +
+    # host-level cooldown + 재현 커맨드 + exact query profile + colab_parity diff(정직).
     cause = "provider_429_throttle" if res.error == "provider_rate_limited" else f"no_records:{res.error}"
+    consecutive = prior_pending + 1
+    escalation = "ESCALATE" if consecutive >= _GDELT_ESCALATION_THRESHOLD else "scheduled_resume"
+    query_profile = "|".join(lbl for lbl in res.attempts) or "cooldown_active_no_probe"
     mem = SourceStrategyMemory(
         source_id="gdelt", previous_status="EXTERNAL_RATE_LIMITED",
         final_status="EXTERNAL_RATE_LIMITED_PENDING_RESUME", root_cause_before=("RATE_LIMITED",),
-        root_cause_after=(cause.upper().replace(":", "_"),), successful_strategy=None,
+        root_cause_after=(cause.upper().replace(":", "_"),
+                          f"CONSECUTIVE_PENDING_{consecutive}",
+                          "ESCALATION_REQUIRED" if escalation == "ESCALATE" else "AUTO_RESUME_SCHEDULED"),
+        successful_strategy=None,
         preferred_next_strategy="host_rate_limit_spaced_probe",
         cooldown_policy=f"respect_cooldown_until:{res.cooldown_until}", safety_policy="no_bypass",
-        evidence=f"attempts={','.join(res.attempts) or 'cooldown_active'};cause={cause};"
-                 f"next_resume_at={res.next_resume_at};"
-                 "colab_parity:code_identical(endpoint+params+parse,test-verified);response_diff=UNVERIFIED")
+        evidence=(f"attempts={','.join(res.attempts) or 'cooldown_active'};cause={cause};"
+                  f"consecutive_pending={consecutive};escalation={escalation};"
+                  f"next_resume_at={res.next_resume_at};host_level_rate_limit=gdelt_host;"
+                  f"query_profile={query_profile};repro_cmd={_GDELT_REPRO_CMD};"
+                  "colab_parity:code_identical(endpoint+params+parse,test-verified);response_diff=UNVERIFIED"),
+        llm_agent_hints=_LLM_HINTS["gdelt"])
     return closure, records, mem, None
 
 
@@ -219,36 +265,43 @@ def _close_dcinside(*, robots_get, dcinside_list_collect, dcinside_detail_audit)
         return closure, [], None, None
 
     # detail body audit (우회/browser 강행 없음) — 기술적 본문 추출 가능성을 '사실'로만 기록.
-    # 결과와 무관하게 dcinside는 정책 근거(_DC_CAVEATS)로 preview-only DEGRADED 유지(보수).
+    # G-4: dcinside를 애매한 DEGRADED로 남기지 않고 community preview signal source로 역할을
+    # 명확히 재정의한다(option B). 본문 미수집은 '역할 정의'(저작권/PII 보수)이지 degradation이 아니다.
+    # ToS 미검증은 publish gate(corroboration)로 봉인 — 수집/큐 적재는 닫되 publish는 외부확인 전 차단.
     detail_urls = detail_urls_from_records(records)
     audit = dcinside_detail_audit(detail_urls)
+    # corroboration metadata 부여(익명 금융 갤러리 → internal_queue_only; 펌핑 제목 → publish_blocked).
+    records = annotate_records(records, source_id="dcinside", gallery_id=_DC_GALLERY)
     gate = gate_records("dcinside", records)
     fs, reason, blocker = decide_final_status(
         capability=cap, gate=(gate if records else None), record_count=len(records),
-        caveats=_DC_CAVEATS,
+        caveats=_DC_CAVEATS, community_preview_role=True,
         hard_blocker_evidence=(None if records else f"{res.verdict}:{res.blocked_reason}"))
     closure = FinalSourceClosure(
         "dcinside", "PRODUCTION_READY_DEGRADED", nodes,
-        "robots_allowed_static_list_fetch" if records else None,
+        "robots_allowed_static_list_community_preview" if records else None,
         () if records else (res.verdict,),
         len(records), 0, 0, fs, reason, None, blocker, gate)
     if not records:
         return closure, [], None, None
     mem = SourceStrategyMemory(
         source_id="dcinside", previous_status="PRODUCTION_READY_DEGRADED",
-        final_status="COMMUNITY_SIGNAL_ALIVE",
+        final_status="COMMUNITY_PREVIEW_SIGNAL_ALIVE",
         root_cause_before=("ROBOTS_OR_POLICY_BLOCK_OVERCAUTIOUS",), root_cause_after=_DC_CAVEATS,
-        successful_strategy="robots_allowed_static_list_fetch",
-        preferred_next_strategy="robots_allowed_static_list_fetch",
-        parser_notes=(f"dcinside_list_community_signal;no_pii_nickname;list_meta_only;"
+        successful_strategy="robots_allowed_static_list_community_preview",
+        preferred_next_strategy="robots_allowed_static_list_community_preview",
+        parser_notes=(f"role=community_preview_signal;no_pii_nickname;list_meta_only;"
+                      f"corroboration_required;publish_gated;"
                       f"detail_audit={audit.conclusion}(best_body_chars={audit.best_body_chars})"),
         cooldown_policy="respect_min_interval", safety_policy="no_bypass",
         evidence=(f"gallery={_DC_GALLERY}_only;items={len(records)};robots_user_agent_star_allow;"
-                  f"ai_training_crawler_block_honored_via_generic_ua;tos_automated_use_unverified;"
-                  f"detail_body_static={audit.conclusion};no_bypass"))
-    patch = {"readiness_status": "DEGRADED_PREVIEW_ONLY", "live_eligible": "true",
-             "notes": "Phase G-3: stockus list community_signal only; detail body empty in static "
-                      "(JS/image render) — no browser bypass; ToS automated-use UNVERIFIED (legal review pending)"}
+                  f"ai_training_crawler_block_honored_via_generic_ua;tos_automated_use_unverified_publish_gated;"
+                  f"detail_body_static={audit.conclusion};role=community_preview_signal;no_bypass"),
+        llm_agent_hints=_LLM_HINTS["dcinside"])
+    patch = {"readiness_status": "COMMUNITY_PREVIEW_READY", "live_eligible": "true",
+             "notes": "Phase G-4: role redefined to community preview signal (not news body); "
+                      "list community_signal only; corroboration gate enforces publish hold; "
+                      "ToS automated-use UNVERIFIED -> publish gated (legal review pending), collection closed"}
     return closure, records, mem, patch
 
 
@@ -298,8 +351,13 @@ def run_final_source_closure(
 
     governor = RateLimitGovernor(state_path=(gdelt_rl_path if write_outputs else None))
 
+    # gdelt escalation 카운터를 위해 직전 memory에서 consecutive_pending을 읽는다(자동 재개 누적).
+    prior_memory = load_strategy_memory(memory_path)
+    prior_gdelt_pending = _parse_consecutive_pending(prior_memory.get("gdelt"))
+
     results: list[FinalSourceClosure] = []
     eq_records: list[dict] = []
+    records_by_source: dict[str, list] = {}
     memory_updates: list[SourceStrategyMemory] = []
     profile_patches: dict = {}
 
@@ -308,16 +366,36 @@ def run_final_source_closure(
                                 dcinside_detail_audit=dcinside_detail_audit),
         lambda: _close_culture_info(culture_fetch=culture_fetch),
         lambda: _close_product_hunt(ph_fetch=ph_fetch),
-        lambda: _close_gdelt(governor=governor, gdelt_collect=gdelt_collect),
+        lambda: _close_gdelt(governor=governor, gdelt_collect=gdelt_collect,
+                             prior_pending=prior_gdelt_pending),
     ):
         closure, recs, mem, patch = builder()
         results.append(closure)
         if recs:
             eq_records.extend(recs)
+            records_by_source[closure.source_id] = list(recs)
         if mem is not None:
             memory_updates.append(mem)
         if patch is not None:
             profile_patches[closure.source_id] = patch
+
+    # G-4 source-specific proof: 격리 dedup namespace로 source별 EventQueue/raw_events contract 증명.
+    # (production 공유 dedup index의 collapse와 무관하게 "이 source의 record가 통과한다"를 입증.)
+    proof_by_source: dict[str, dict] = {}
+    proof_pass: dict[str, bool] = {}
+    proof_dir = (output_dir / run_id / "source_specific_proof") if write_outputs else None
+    if proof_dir is not None:
+        proof_dir.mkdir(parents=True, exist_ok=True)
+    for sid, recs in records_by_source.items():
+        proof = prove_source_eventqueue_contract(
+            sid, recs,
+            mirror_path=(proof_dir / f"{sid}_proof_raw_events.jsonl") if proof_dir else None,
+            collected_at=_iso_now(now))
+        proof_by_source[sid] = proof.to_dict()
+        proof_pass[sid] = proof.bridge_contract_pass and proof.eventqueue_proof > 0
+
+    # proof 결과를 해당 source memory evidence에 흡수(source-specific 증거 영속).
+    memory_updates = [_attach_proof_evidence(m, proof_by_source.get(m.source_id)) for m in memory_updates]
 
     # EventQueue dedup + raw_events bridge (검증된 live record만)
     dedup_index = DedupIndex(path=dedup_index_path if write_outputs else None)
@@ -347,7 +425,7 @@ def run_final_source_closure(
     memory_written = 0
     merged: dict = {}
     if memory_updates or apply_config:
-        existing = load_strategy_memory(memory_path)
+        existing = prior_memory
         merged = dict(existing)
         for m in memory_updates:
             merged[m.source_id] = m
@@ -359,9 +437,10 @@ def run_final_source_closure(
         governor.save()
 
     verdict = classify_final_closure(results)
+    risk_verdict = classify_risk_closure(results, proof_pass=proof_pass)
 
     # production_state 재산출(분포/degraded_remaining 확인)
-    state_summary = _recompute_states(profiles_path, merged or load_strategy_memory(memory_path))
+    state_summary = _recompute_states(profiles_path, merged or prior_memory)
 
     # monitoring
     plan = ProductionRunPlan(
@@ -389,11 +468,12 @@ def run_final_source_closure(
         dedup_index.save()
 
     return {
-        "run_id": run_id, "results": results, "verdict": verdict,
+        "run_id": run_id, "results": results, "verdict": verdict, "risk_verdict": risk_verdict,
         "eventqueue_written": len(written), "duplicates_skipped": duplicates,
         "raw_events_written": bridge_result.get("raw_events_written", 0),
         "bridge_contract_pass": bridge_result.get("bridge_contract_pass", False),
         "raw_by_source": raw_by_source, "memory_written": memory_written,
+        "proof_by_source": proof_by_source, "proof_pass": proof_pass,
         "profile_patches": profile_patches, "critical_alerts": summary["critical_alert_count"],
         "state_summary": state_summary, "monitoring_paths": monitoring_paths, "summary": summary,
     }
@@ -405,6 +485,17 @@ def _with_counts(r: FinalSourceClosure, raw_n: int) -> FinalSourceClosure:
     if r.eventqueue_records == eq_n and r.raw_events_records == raw_n:
         return r
     return replace(r, eventqueue_records=eq_n, raw_events_records=raw_n)
+
+
+def _attach_proof_evidence(m: SourceStrategyMemory, proof: Optional[dict]) -> SourceStrategyMemory:
+    """source-specific proof(격리 namespace eq/raw)를 memory evidence에 흡수(영속 증거)."""
+    if not proof:
+        return m
+    from dataclasses import replace
+    note = (f"source_specific_proof:eq={proof.get('eventqueue_proof')};"
+            f"raw={proof.get('raw_events_proof')};contract_pass={proof.get('bridge_contract_pass')}")
+    ev = f"{m.evidence};{note}" if m.evidence else note
+    return replace(m, evidence=ev)
 
 
 def _recompute_states(profiles_path, memory: dict) -> dict:
@@ -429,10 +520,10 @@ def _recompute_states(profiles_path, memory: dict) -> dict:
     dist = summ["distribution"]
     summ["degraded_remaining"] = dist.get("PRODUCTION_READY_DEGRADED", 0)
     summ["external_rate_limited_remaining"] = dist.get("EXTERNAL_RATE_LIMITED", 0)
-    # canonical readiness closure와 동일 정의: clean READY와 POLICY_EXCLUDED 외 전부(=degraded 포함).
+    # ready 계열(clean READY + community_preview tier)와 POLICY_EXCLUDED 외 전부(=degraded 포함).
     summ["non_excluded_not_ready"] = sum(
         v for k, v in dist.items()
-        if k not in ("PRODUCTION_READY", "POLICY_EXCLUDED"))
+        if k not in ("PRODUCTION_READY", "PRODUCTION_READY_COMMUNITY_PREVIEW", "POLICY_EXCLUDED"))
     return summ
 
 
@@ -471,18 +562,23 @@ def main(argv: Optional[list[str]] = None) -> int:
         gdelt_min_interval_seconds=args.gdelt_min_interval_seconds,
         gdelt_max_probes=args.max_policy_compliant_probes_per_source)
 
-    print("\nFINAL_SOURCE_CLOSURE_RESULT:")
-    print(f"- verdict: {result['verdict']['verdict']}")
+    print("\nG4_FINAL_RISK_CLOSURE_RESULT:")
+    print(f"- risk_verdict: {result['risk_verdict']['verdict']}")
+    print(f"- g3_verdict: {result['verdict']['verdict']}")
     for r in result["results"]:
+        pp = result["proof_pass"].get(r.source_id)
         print(f"- {r.source_id}: final_status={r.final_status} live={r.live_records} "
-              f"eq={r.eventqueue_records} raw={r.raw_events_records} "
+              f"eq={r.eventqueue_records} raw={r.raw_events_records} proof_pass={pp} "
               f"resume_at={r.pending_resume_at or '-'} strategy={r.successful_strategy or '-'}")
     print(f"- eventqueue_records: {result['eventqueue_written']} (dup_skipped={result['duplicates_skipped']})")
     print(f"- raw_events_records: {result['raw_events_written']} contract_pass={result['bridge_contract_pass']}")
+    print(f"- source_specific_proof: {result['proof_pass']}")
     print(f"- degraded_remaining: {result['verdict']['degraded_remaining']}")
     print(f"- rate_limited_remaining: {result['verdict']['external_rate_limited_remaining']}")
+    print(f"- open_risks: {result['risk_verdict']['open_risks']}")
     ss = result.get("state_summary", {})
     print(f"- production_state: ready={ss.get('production_ready')} "
+          f"community_preview={ss.get('production_ready_community_preview')} "
           f"non_excluded_not_ready={ss.get('non_excluded_not_ready')} unknown={ss.get('unknown')}")
     print(f"- critical_alerts: {result['critical_alerts']}")
     return 1 if result["critical_alerts"] > 0 else 0

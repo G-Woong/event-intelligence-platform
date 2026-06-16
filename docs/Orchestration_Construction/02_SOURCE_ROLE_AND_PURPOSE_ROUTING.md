@@ -456,3 +456,14 @@ degraded = root_cause_after 비어있지 않음(product_hunt/culture_info).
 - **gdelt → 신호 라우트 유지·EXTERNAL_RATE_LIMITED_PENDING_RESUME(자동 재개)**.
 
 **최종 status 매트릭스(SourceCapability 기준)**: PRODUCTION_READY 46 / PRODUCTION_READY_DEGRADED 1(dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9 = 57. unknown 0, source_without_state 0, non_excluded_not_ready 2(dcinside/gdelt). 라우팅 안전 체인: SourceCapability → StrategyGraph → ToolPlan → EvidenceGate → records.
+
+## Phase G-4 — dcinside 역할 재정의 (community preview signal)
+
+목적별 라우팅 관점에서 dcinside의 애매한 DEGRADED를 폐기하고, **community preview signal source 역할로 재정의**했다. 본문 미수집은 기술 결함(degradation)이 아니라 역할 정의다 — dcinside는 사건을 단정하는 1차 출처가 아니라 사건 전후 커뮤니티 반응의 preview signal일 뿐이다.
+
+- **신규 production tier**: `PRODUCTION_READY_COMMUNITY_PREVIEW`(memory final_status `COMMUNITY_PREVIEW_SIGNAL_ALIVE`). DEGRADED→이 tier로 이동(분포상 degraded_remaining 0).
+- detail body static audit는 DETAIL_BODY_ALIVE(best_body_chars=230)이나 짧아 **보수적으로 preview 역할 유지**(full body 미수집, 저작권 보수). 작성자 닉네임(PII) 미수집.
+- 익명 커뮤니티 신호는 항상 `requires_external_confirmation=True`(CommunityCorroborationGate, 09 참조) — 단독 발행 금지, CLAUDE.md 원칙1 info-not-advice 정렬.
+- ToS 자동수집 미검증(TOS_AUTOMATED_USE_UNVERIFIED) 잔존 → **수집/큐 적재는 닫되 publish는 게이트로 봉인**(publish_gated). publish 해제는 legal-safety-compliance-reviewer 검토 전제.
+
+최종 분포: PRODUCTION_READY 46 / PRODUCTION_READY_COMMUNITY_PREVIEW 1(dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9 = 57. non_excluded_not_ready 1(gdelt).

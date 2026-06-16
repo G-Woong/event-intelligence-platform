@@ -448,3 +448,11 @@ Body는 대부분 snippet_only(RSS summary) — 정직하게 기록하며 full b
 - **gdelt**: 큐 신규 기록 0(429 cooldown). `RateLimitGovernor` cooldown_until만 governor state 파일에 영속, 큐 점유 없이 다음 run 자동 재개.
 
 production_state 재산출(api_key_ready 반영): PRODUCTION_READY 46 / DEGRADED 1(dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9 = 57. 전 outputs gitignored.
+
+## Phase G-4 — source-specific proof (격리 dedup namespace)
+
+G-3에서 culture_info/product_hunt가 공유 production dedup에서 eq/raw=0으로 collapse한 것을 "contract 실패"처럼 읽힐 수 있었던 약점을 **격리 dedup namespace proof**로 제거했다.
+
+- **신규 모듈 `source_specific_proof.py`**: source별 독립 dedup namespace로 EventQueue→raw_events contract를 측정 → culture_info eq=5/raw=5, product_hunt eq=5/raw=5, dcinside eq=30/raw=30, 모두 contract_pass=True.
+- **명확화**: 공유 production dedup에서의 eq=0 collapse는 contract 실패가 아니라 **정상 dedup**(같은 url/seq가 이미 적재됨)이다. 두 측정(격리 proof vs 공유 production)을 분리 보고해 정상 dedup을 결함으로 과장하지 않는다.
+- dcinside 30건은 community_signal(list-level, 본문 미저장)로 적재되며 `requires_external_confirmation=True`로 태깅(09 CommunityCorroborationGate). product_hunt 실 url/createdAt, culture_info detail2 실 url+startDate가 dedup anchor로 사용된다.

@@ -22,12 +22,16 @@ from ingestion.orchestration.source_capability import POLICY_HIGH, SourceCapabil
 # final_status enum
 PRODUCTION_READY = "PRODUCTION_READY"
 PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY = "PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY"
+# G-4: 본문 source 실패했으나 community preview signal 역할로 명확히 닫힌 정식 tier(애매한 DEGRADED 아님).
+PRODUCTION_READY_COMMUNITY_PREVIEW = "PRODUCTION_READY_COMMUNITY_PREVIEW"
 EXTERNAL_RATE_LIMITED_PENDING_RESUME = "EXTERNAL_RATE_LIMITED_PENDING_RESUME"
 VERIFIED_HARD_BLOCKER = "VERIFIED_HARD_BLOCKER"
 NEEDS_OPERATOR_REVIEW = "NEEDS_OPERATOR_REVIEW"
 
-# 데이터가 살아있는(수집됨) ready 계열 — preview_only는 DEGRADED지만 ready로 인정(실데이터 존재)
-_READY_WITH_DATA = frozenset({PRODUCTION_READY, PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY})
+# 데이터가 살아있는(수집됨) ready 계열 — preview_only(DEGRADED)/community_preview도 ready로 인정(실데이터 존재)
+_READY_WITH_DATA = frozenset({
+    PRODUCTION_READY, PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY, PRODUCTION_READY_COMMUNITY_PREVIEW,
+})
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,10 @@ class FinalSourceClosure:
     def is_degraded(self) -> bool:
         return self.final_status == PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY
 
+    def is_community_preview(self) -> bool:
+        """community preview signal 역할로 닫힌 정식 tier(데이터 존재 + 역할 명확)."""
+        return self.final_status == PRODUCTION_READY_COMMUNITY_PREVIEW and self.eventqueue_records > 0
+
     def is_pending_resume(self) -> bool:
         return self.final_status == EXTERNAL_RATE_LIMITED_PENDING_RESUME
 
@@ -75,8 +83,14 @@ def decide_final_status(
     pending_resume_at: Optional[str] = None,
     caveats: tuple[str, ...] = (),
     hard_blocker_evidence: Optional[str] = None,
+    community_preview_role: bool = False,
 ) -> tuple[str, Optional[str], Optional[str]]:
-    """(final_status, ready_or_degraded_reason, hard_blocker_evidence) 산출 — 공통 결정 로직."""
+    """(final_status, ready_or_degraded_reason, hard_blocker_evidence) 산출 — 공통 결정 로직.
+
+    community_preview_role=True: 본문 source가 아니라 community preview signal source로 역할을
+    재정의한 경우. 데이터+EvidenceGate 통과 시 caveat(본문부재/ToS-미검증)는 '역할 정의'이므로
+    DEGRADED가 아니라 PRODUCTION_READY_COMMUNITY_PREVIEW(정식 tier)로 닫는다.
+    """
     # 1) 데이터 0건
     if record_count <= 0:
         if rate_limited:
@@ -91,7 +105,12 @@ def decide_final_status(
         reason = "evidence_gate_failed:" + ",".join(gate.get("downgrade_reasons", ()))
         return (NEEDS_OPERATOR_REVIEW, reason, None)
 
-    # 3) 데이터 있고 EvidenceGate 통과 — 정책 caveat가 있으면(HIGH 민감) preview-only DEGRADED
+    # 3) community preview 역할 재정의 — caveat는 역할 정의(본문 미수집은 의도). 정식 preview tier.
+    if community_preview_role:
+        reason = "community_preview_signal_role:" + ";".join(caveats) if caveats else "community_preview_signal_role"
+        return (PRODUCTION_READY_COMMUNITY_PREVIEW, reason, None)
+
+    # 4) 데이터 있고 EvidenceGate 통과 — 정책 caveat가 있으면(HIGH 민감) preview-only DEGRADED
     if caveats and capability.policy_sensitivity == POLICY_HIGH:
         return (PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY, ";".join(caveats), None)
     if caveats:
@@ -132,4 +151,57 @@ def classify_final_closure(results) -> dict:
         "needs_operator_review": [r.source_id for r in review],
         "degraded_remaining": len(degraded),
         "external_rate_limited_remaining": len(pending),
+    }
+
+
+def classify_risk_closure(results, *, proof_pass: Optional[dict] = None) -> dict:
+    """Phase G-4 risk-closure verdict — 남은 비-excluded source risk가 닫혔는가.
+
+    - dcinside : community preview tier 또는 detail-body ready → 닫힘(애매한 DEGRADED 금지).
+    - culture_info/product_hunt : clean ready AND source-specific eq/raw proof 통과 → 닫힘.
+    - gdelt    : fresh record ready → 완전 닫힘. pending이지만 next_resume/escalation 증거가
+                 있으면 'provider-constrained scheduled' — 나머지가 닫혔을 때 PARTIAL 허용.
+
+    verdict:
+      ALL_REMAINING_NON_EXCLUDED_SOURCE_RISKS_CLOSED — 4개 전부 닫힘(gdelt fresh 포함).
+      PARTIAL_ONLY_IF_LEGAL_OR_PROVIDER_HARD_BLOCKER_WITH_FULL_EVIDENCE — gdelt만 provider 429
+        scheduled로 남고 나머지 3개는 닫힘(full evidence 보유).
+      BLOCKED — 그 외(닫지 못한 risk가 남음).
+    """
+    proof_pass = proof_pass or {}
+    by = {r.source_id: r for r in results}
+
+    # 닫힘 판정은 role(final_status) + source-specific proof를 권위 증거로 본다.
+    # 공유 production dedup의 collapse(eq=0)는 contract 실패가 아니라 정상 dedup이므로 사용하지 않는다.
+    def _closed(sid: str) -> bool:
+        r = by.get(sid)
+        if r is None:
+            return False
+        if sid == "gdelt":
+            return r.final_status == PRODUCTION_READY and bool(proof_pass.get(sid, False))
+        if sid in ("culture_info", "product_hunt"):
+            return r.final_status == PRODUCTION_READY and bool(proof_pass.get(sid, False))
+        if sid == "dcinside":
+            return (r.final_status in (PRODUCTION_READY_COMMUNITY_PREVIEW, PRODUCTION_READY)
+                    and bool(proof_pass.get(sid, False)))
+        return r.final_status == PRODUCTION_READY and bool(proof_pass.get(sid, False))
+
+    targets = ("dcinside", "gdelt", "culture_info", "product_hunt")
+    closed_map = {s: _closed(s) for s in targets}
+    g = by.get("gdelt")
+    gdelt_scheduled = bool(g and g.is_pending_resume() and g.pending_resume_at)
+    others_closed = all(closed_map[s] for s in ("dcinside", "culture_info", "product_hunt"))
+
+    if all(closed_map.values()):
+        verdict = "ALL_REMAINING_NON_EXCLUDED_SOURCE_RISKS_CLOSED"
+    elif others_closed and gdelt_scheduled:
+        verdict = "PARTIAL_ONLY_IF_LEGAL_OR_PROVIDER_HARD_BLOCKER_WITH_FULL_EVIDENCE"
+    else:
+        verdict = "BLOCKED"
+
+    return {
+        "verdict": verdict,
+        "closed": closed_map,
+        "gdelt_scheduled": gdelt_scheduled,
+        "open_risks": [s for s, c in closed_map.items() if not c],
     }

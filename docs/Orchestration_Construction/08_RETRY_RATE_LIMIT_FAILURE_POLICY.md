@@ -322,3 +322,15 @@ body-fetch 반복은 alt strategy 시도 후 quarantine.
 - **남은 정책 공백(정직)**: gdelt 비-throttle 윈도 재수집 + 연속 pending escalation 카운터는 여전히 미구현(무한 pending 침묵 위험). 프록시 로테이션·내부 RPC 회피책은 채택하지 않는다.
 
 검증: 전체 회귀 **1179 passed**, secret scan **PASS**, net-0 주입 테스트, no bypass.
+
+## Phase G-4 — gdelt escalation 카운터 구현 (G-3 미구현 항목 해소)
+
+G-3가 미구현으로 남긴 **연속 pending escalation 카운터**를 구현해, gdelt를 단순 pending이 아닌 **escalation-capable scheduled state**로 닫았다(`GdeltRateLimitProfile`).
+
+- **재시도 절차**: cooldown 만료 후 정책 준수 spaced probe(host-level `RateLimitGovernor`, min_interval 10s)로 실 재시도 → 실제 provider 429 수신. 우회 금지 → 정직한 provider hard blocker로 닫음(single 429로 disabled 하지 않음).
+- **consecutive_pending 카운터**: run마다 증가, **threshold=3 도달 시 ESCALATE 플래그**(무한 pending 침묵 위험 해소).
+- **next_resume_at**: host-level cooldown을 영속 저장(다음 run 자동 재개).
+- **query ladder profile**: `broad | single_keyword | narrow` — 실패 선언 전 쿼리 단순화 단계.
+- **repro_cmd**: 재현 커맨드를 state에 보존.
+- **colab parity**: endpoint+params+parse가 코드 레벨 동일(test-verified). 응답 레벨 diff는 저장본 없어 **UNVERIFIED로 정직 표기**(코드 parity와 분리).
+- 프록시 로테이션·내부 RPC 회피책은 채택하지 않는다. 남은 risk: 비-throttle 윈도에서 fresh 확보(여전히 open).

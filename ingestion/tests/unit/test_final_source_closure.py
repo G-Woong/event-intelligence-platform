@@ -7,6 +7,7 @@ from ingestion.orchestration.dcinside_strategy import DCInsideDetailAudit, DCIns
 from ingestion.orchestration.final_source_closure import (
     EXTERNAL_RATE_LIMITED_PENDING_RESUME,
     PRODUCTION_READY,
+    PRODUCTION_READY_COMMUNITY_PREVIEW,
     PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY,
     VERIFIED_HARD_BLOCKER,
     FinalSourceClosure,
@@ -80,20 +81,27 @@ def _run(**over):
     return run_final_source_closure(**kw)
 
 
-def test_three_ready_dcinside_degraded():
+def test_three_ready_dcinside_community_preview_role():
     r = _run()
     by = {c.source_id: c for c in r["results"]}
     assert by["product_hunt"].final_status == PRODUCTION_READY and by["product_hunt"].is_production_ready()
     assert by["culture_info"].final_status == PRODUCTION_READY and by["culture_info"].is_production_ready()
     assert by["gdelt"].final_status == PRODUCTION_READY
-    # dcinside: 실데이터 수집하나 preview-only + ToS 미검증 → DEGRADED(승격 아님)
-    assert by["dcinside"].final_status == PRODUCTION_READY_WITH_PUBLIC_PREVIEW_ONLY
-    assert by["dcinside"].is_production_ready() is False
-    assert r["verdict"]["verdict"] == "PARTIAL_WITH_VERIFIED_HARD_BLOCKERS"
-    assert r["verdict"]["degraded_remaining"] == 1
+    # G-4: dcinside는 애매한 DEGRADED가 아니라 community preview signal 역할로 명확히 닫힌다.
+    assert by["dcinside"].final_status == PRODUCTION_READY_COMMUNITY_PREVIEW
+    assert by["dcinside"].is_community_preview() is True
+    assert by["dcinside"].is_production_ready() is False     # clean READY와는 구분
+    assert by["dcinside"].is_degraded() is False             # DEGRADED로 세지 않음
+    # degraded_remaining 0(더 이상 preview-only DEGRADED 없음), rate_limited 0
+    assert r["verdict"]["degraded_remaining"] == 0
     assert r["verdict"]["external_rate_limited_remaining"] == 0
+    # G-4 risk verdict: 4개 모두 닫힘(gdelt fresh) → ALL_CLOSED
+    assert r["risk_verdict"]["verdict"] == "ALL_REMAINING_NON_EXCLUDED_SOURCE_RISKS_CLOSED"
+    assert r["risk_verdict"]["open_risks"] == []
     assert r["eventqueue_written"] == 6 and r["raw_events_written"] == 6
     assert r["bridge_contract_pass"] is True and r["critical_alerts"] == 0
+    # source-specific proof: 4 target 모두 contract 통과
+    assert all(r["proof_pass"].get(s) for s in ("dcinside", "culture_info", "product_hunt", "gdelt"))
 
 
 def test_gdelt_429_pending_resume_not_disguised():

@@ -38,6 +38,9 @@ from ingestion.orchestration.source_strategy_memory import (
 # ── production state enum ────────────────────────────────────────────────────
 PRODUCTION_READY = "PRODUCTION_READY"
 PRODUCTION_READY_DEGRADED = "PRODUCTION_READY_DEGRADED"
+# G-4: 본문 source로 실패했지만 community preview signal source로는 성공 — 애매한 DEGRADED가
+# 아니라 명시적 production tier(역할 재정의). schedulable이며 degraded로 세지 않는다.
+PRODUCTION_READY_COMMUNITY_PREVIEW = "PRODUCTION_READY_COMMUNITY_PREVIEW"
 POLICY_EXCLUDED = "POLICY_EXCLUDED"
 POLICY_BLOCKED_NO_BYPASS = "POLICY_BLOCKED_NO_BYPASS"
 EXTERNAL_RATE_LIMITED = "EXTERNAL_RATE_LIMITED"
@@ -51,15 +54,20 @@ NEEDS_OPERATOR_REVIEW = "NEEDS_OPERATOR_REVIEW"
 UNKNOWN = "UNKNOWN"
 
 PRODUCTION_STATES: frozenset[str] = frozenset({
-    PRODUCTION_READY, PRODUCTION_READY_DEGRADED, POLICY_EXCLUDED,
-    POLICY_BLOCKED_NO_BYPASS, EXTERNAL_RATE_LIMITED, EXTERNAL_API_ERROR,
+    PRODUCTION_READY, PRODUCTION_READY_DEGRADED, PRODUCTION_READY_COMMUNITY_PREVIEW,
+    POLICY_EXCLUDED, POLICY_BLOCKED_NO_BYPASS, EXTERNAL_RATE_LIMITED, EXTERNAL_API_ERROR,
     VENDOR_CONTRACT_REQUIRED, NOT_SERVICE_USEFUL, QUARANTINED, COOLDOWN,
     DEAD_END_SKIPPED, NEEDS_OPERATOR_REVIEW, UNKNOWN,
 })
 
 # scheduler가 due 후보로 삼는 상태 (실행 가능)
 SCHEDULABLE_STATES: frozenset[str] = frozenset({
-    PRODUCTION_READY, PRODUCTION_READY_DEGRADED,
+    PRODUCTION_READY, PRODUCTION_READY_DEGRADED, PRODUCTION_READY_COMMUNITY_PREVIEW,
+})
+# G-4: community preview signal 역할로 명시 재정의된 source의 memory final_status.
+# 이 상태는 root_cause_after(역할 caveat)가 있어도 DEGRADED가 아니라 정식 preview tier로 닫는다.
+COMMUNITY_PREVIEW_ROLE_STATUSES: frozenset[str] = frozenset({
+    "COMMUNITY_PREVIEW_SIGNAL_ALIVE",
 })
 # 영구 skip (dead-end) — 운영 plan에서 제외, profiles에는 유지
 DEAD_END_STATES: frozenset[str] = frozenset({
@@ -228,6 +236,15 @@ def derive_production_state(
     # 3) memory 학습 final_status
     if mem is not None:
         fs = mem.final_status
+        # G-4: community preview 역할은 본문 부재/ToS-미검증 caveat가 있어도 DEGRADED가 아니라
+        # 명시적 preview production tier(역할 자체가 preview-only). DATA_ALIVE 일반 degraded 로직보다 우선.
+        if fs in COMMUNITY_PREVIEW_ROLE_STATUSES:
+            return ProductionSourceState(
+                current_status=PRODUCTION_READY_COMMUNITY_PREVIEW,
+                production_ready=True, known_dead_end=False,
+                terminal_reason=(";".join(mem.root_cause_after) or None),
+                **base,
+            )
         if fs in DATA_ALIVE_STATUSES:
             degraded = bool(mem.root_cause_after)  # NO_STABLE_URL/NO_TIMESTAMP 등 → degraded
             return ProductionSourceState(
@@ -380,7 +397,9 @@ def summarize_states(states) -> dict:
     return {
         "total": len(states),
         "distribution": dict(sorted(dist.items())),
-        "production_ready": dist.get(PRODUCTION_READY, 0) + dist.get(PRODUCTION_READY_DEGRADED, 0),
+        "production_ready": (dist.get(PRODUCTION_READY, 0) + dist.get(PRODUCTION_READY_DEGRADED, 0)
+                             + dist.get(PRODUCTION_READY_COMMUNITY_PREVIEW, 0)),
+        "production_ready_community_preview": dist.get(PRODUCTION_READY_COMMUNITY_PREVIEW, 0),
         "source_without_state": without_state,
         "unknown": dist.get(UNKNOWN, 0),
     }

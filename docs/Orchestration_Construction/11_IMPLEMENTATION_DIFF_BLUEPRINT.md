@@ -455,3 +455,23 @@ vendor route 2종(`ingestion/orchestration/vendor_api_routes.py`):
 분포 변화(G-2→G-3): DEGRADED 3→1, clean READY 44→46(culture_info+product_hunt 승격). 최종 PRODUCTION_READY 46 / DEGRADED 1(dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9 = 57.
 
 테스트/검증: 전체 회귀 **1179 passed**, secret scan **PASS**, 신규 설치 0, no bypass, 전 outputs gitignored.
+
+## Phase G-4 — Final Closure of Remaining Non-Excluded Source Risks
+
+G-4가 생성/수정한 항목(기존 수집 코드는 직접 미수정, 흡수 라우팅·게이트 신설).
+
+신규 모듈(2):
+- `community_corroboration_gate.py` — publish 등급(internal_queue_only/publish_blocked_until_corrob/preview_candidate) + 펌핑 제목 차단 + 익명 `requires_external_confirmation`.
+- `source_specific_proof.py` — 격리 dedup namespace로 source별 EventQueue/raw_events contract_pass 입증.
+
+상수/필드/함수 추가:
+- `production_state.PRODUCTION_READY_COMMUNITY_PREVIEW` — 신규 production tier.
+- `final_source_closure.PRODUCTION_READY_COMMUNITY_PREVIEW` + `classify_risk_closure` — closure 분류 함수.
+- `source_strategy_memory.llm_agent_hints` 필드 — 소스별 LLM agent 안전 힌트(dcinside/gdelt/culture_info/product_hunt).
+- `GdeltRateLimitProfile`(08 참조) — consecutive_pending 카운터(threshold=3 ESCALATE)/next_resume_at/query ladder/repro_cmd.
+
+신규 테스트 7개: test_g4_final_risk_closure, test_dcinside_detail_final_closure, test_community_corroboration_gate, test_gdelt_rate_limit_profile, test_source_specific_proof_mode, test_llm_agent_strategy_hints, test_gdelt_colab_parity_recovery.
+
+분포 변화(G-3→G-4): DEGRADED 1→0(dcinside가 PRODUCTION_READY_COMMUNITY_PREVIEW로 재정의). 최종 PRODUCTION_READY 46 / PRODUCTION_READY_COMMUNITY_PREVIEW 1(dcinside) / EXTERNAL_RATE_LIMITED 1(gdelt) / POLICY_EXCLUDED 9 = 57. degraded_remaining 0, unknown 0, critical_alerts 0, non_excluded_not_ready 1(gdelt).
+
+테스트/검증: 전체 회귀 **1205 passed**, secret scan **PASS**, 신규 설치 0, no bypass, 전 outputs gitignored.
