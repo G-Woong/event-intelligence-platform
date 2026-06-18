@@ -15,6 +15,32 @@
 | POLICY_EXCLUDED | **9** | 의도적 제외(robots/ToS/login/정책) | ⛔ |
 | **합계** | **57** | degraded 0 | |
 
+## 1b. Source Role Taxonomy (역할 분류 — `source_role.py` 파생)
+
+각 source 의 **본질적 역할**은 `source_profiles.yaml` 의 `source_group`/`is_community`/
+`confirmation_policy` 에서 **결정론적으로 파생**한다(`ingestion/orchestration/source_role.py`,
+새 데이터 하드코딩 0). 역할(무엇을 위한 source 인가)과 final_action(이번 run 운영 상태)은
+**직교**한다 — excluded 된 reuters 도 본질은 ARTICLE_BODY 이고 단지 final_action=SKIPPED 일 뿐.
+
+| source_role | 수 | 파생 기준(group/flag) | routing_mode | publication 규칙 | 예시 |
+|---|---:|---|---|---|---|
+| ARTICLE_BODY_SOURCE | 14 | group=news | backend_sink, body면 published·snippet이면 hold | published_if_body_and_evidence_else_hold | bbc, ap_news, yna |
+| EXPANSION_SEARCH_SOURCE | 7 | group=search (is_community=false) | expansion candidate(증거 아님) | **never_direct_publish** (expansion only) | serper, tavily, exa, gnews, naver_news_search |
+| OFFICIAL_RECORD_SOURCE | 8 | group=official | backend_sink, evidence_required | published_if_evidence_complete_else_hold | sec_edgar, gdelt, federal_register, opendart |
+| STRUCTURED_SIGNAL_SOURCE | 6 | group=market (purpose=numeric) | structured signal 또는 expansion seed | signal_only_not_article_card | coinbase_market, binance_market, finnhub |
+| COMMUNITY_EARLY_SIGNAL_SOURCE | 9 | is_community=true OR group=community | hold + corroboration 필요 | **never_direct_publish** (hold until corroborated) | hacker_news, dcinside, product_hunt, naver_blog_search |
+| ENRICHMENT_ONLY_SOURCE | 13 | group∈{trend,domain} | enrichment, 대량 큐 투입 금지 | enrichment_no_direct_publish | google_trending_now, kma, tmdb, kofic |
+| **합계** | **57** | | | | |
+
+- **PERIODIC_EVENT_QUEUE_SOURCE**: news/official 에 부여되는 **보조 역할**(주기 수집 → EventQueue).
+- **운영 상태(역할 아님, final_action)**: POLICY_EXCLUDED 9 / RATE_LIMITED_SCHEDULED 1(gdelt) /
+  HELD_BY_POLICY 1(dcinside) / NEEDS_KEY(키 미설정 callable) / CALLABLE_NOT_PROBED 46.
+  → `run_orchestration_source_validation` 이 role + final_action 을 한 표(SOURCE_ROLE_MATRIX +
+  SOURCE_FINAL_ACTION_MATRIX)로 emit. 잠금: `tests/unit/test_source_role_taxonomy.py`(36).
+- **헌법 3(역할별 연결) 보증**: search=expansion candidate(증거 승격 금지), community=hold(corroboration
+  전 publish 금지)를 publication_policy 가 코드로 강제 — `EXPANSION_SEARCH`/`COMMUNITY_EARLY_SIGNAL` 은
+  publication_policy 에 `never_direct_publish` 를 항상 포함(테스트로 잠금).
+
 ## 2. 비-excluded 4개 risk source 최종 상태 (Phase G-4)
 
 | source | 역할 | successful_strategy | 비고 |

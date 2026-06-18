@@ -19,6 +19,7 @@ from typing import Optional
 
 from ingestion.orchestration.api_readiness import ApiKeyReadiness, audit_api_key_readiness
 from ingestion.orchestration.source_profile import load_source_profiles
+from ingestion.orchestration.source_role import SourceRoleView, roles_by_source
 
 _DEFAULT_STATE = Path("ingestion/outputs/state/production_source_state.json")
 _DEFAULT_PROFILES = Path("ingestion/configs/source_profiles.yaml")
@@ -43,9 +44,16 @@ class SourceVerdict:
     readiness_status: str
     final_action: str
     reason: str
+    # 본질적 역할(source_role.py 파생). final_action(운영 상태)과 합쳐야 전체 그림이 된다.
+    source_role: str = "UNKNOWN"
+    routing_mode: str = "unknown"
 
 
-def classify(state_entry: dict, readiness: Optional[ApiKeyReadiness]) -> SourceVerdict:
+def classify(
+    state_entry: dict,
+    readiness: Optional[ApiKeyReadiness],
+    role: Optional[SourceRoleView] = None,
+) -> SourceVerdict:
     sid = state_entry.get("source_id", "?")
     cs = state_entry.get("current_status", "UNKNOWN")
     grp = state_entry.get("source_group", "")
@@ -71,6 +79,8 @@ def classify(state_entry: dict, readiness: Optional[ApiKeyReadiness]) -> SourceV
         source_id=sid, current_status=cs, source_group=grp,
         call_allowed_by_policy=allowed, keys_present=keys_present,
         readiness_status=rstatus, final_action=action, reason=reason,
+        source_role=role.primary_role if role else "UNKNOWN",
+        routing_mode=role.routing_mode if role else "unknown",
     )
 
 
@@ -79,7 +89,11 @@ def build_matrix(state_path: Path, profiles_path: Path, env_path: Optional[Path]
     sources = state.get("sources", {})
     profiles = load_source_profiles(str(profiles_path))
     readiness_by_id = {r.source_id: r for r in audit_api_key_readiness(profiles, env_path=env_path)}
-    verdicts = [classify(entry, readiness_by_id.get(sid)) for sid, entry in sorted(sources.items())]
+    role_by_id = roles_by_source(profiles)
+    verdicts = [
+        classify(entry, readiness_by_id.get(sid), role_by_id.get(sid))
+        for sid, entry in sorted(sources.items())
+    ]
     return verdicts
 
 
@@ -90,16 +104,23 @@ def summarize(verdicts: list[SourceVerdict]) -> dict[str, int]:
     return out
 
 
+def summarize_roles(verdicts: list[SourceVerdict]) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for v in verdicts:
+        out[v.source_role] = out.get(v.source_role, 0) + 1
+    return out
+
+
 def _to_markdown(verdicts: list[SourceVerdict]) -> str:
     lines = [
-        "| source_id | current_status | group | policy_ok | keys | readiness | final_action | reason |",
-        "|---|---|---|:--:|:--:|---|---|---|",
+        "| source_id | source_role | routing_mode | current_status | group | policy_ok | keys | final_action | reason |",
+        "|---|---|---|---|---|:--:|:--:|---|---|",
     ]
     for v in verdicts:
         lines.append(
-            f"| {v.source_id} | {v.current_status} | {v.source_group} | "
-            f"{'Y' if v.call_allowed_by_policy else 'N'} | {'Y' if v.keys_present else 'N'} | "
-            f"{v.readiness_status} | {v.final_action} | {v.reason} |"
+            f"| {v.source_id} | {v.source_role} | {v.routing_mode} | {v.current_status} | "
+            f"{v.source_group} | {'Y' if v.call_allowed_by_policy else 'N'} | "
+            f"{'Y' if v.keys_present else 'N'} | {v.final_action} | {v.reason} |"
         )
     return "\n".join(lines)
 
@@ -117,14 +138,17 @@ def main(argv: Optional[list[str]] = None) -> int:
         Path(args.env_path) if args.env_path else None,
     )
     summary = summarize(verdicts)
+    role_summary = summarize_roles(verdicts)
 
     outdir = Path(args.output_dir)
     outdir.mkdir(parents=True, exist_ok=True)
     payload = {
         "total": len(verdicts),
         "summary": summary,
+        "role_summary": role_summary,
         "sources": [v.__dict__ for v in verdicts],
-        "note": "CALLABLE_NOT_PROBED is NOT a success; live load requires production-validation runner.",
+        "note": "CALLABLE_NOT_PROBED is NOT a success; live load requires production-validation runner. "
+                "source_role 은 본질적 역할, final_action 은 이번 run 운영 상태(둘은 직교).",
     }
     (outdir / "source_final_action_matrix.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8"
@@ -135,6 +159,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"- total: {len(verdicts)}")
     for action, count in sorted(summary.items()):
         print(f"- {action}: {count}")
+    print("SOURCE_ROLE_MATRIX:")
+    for role, count in sorted(role_summary.items()):
+        print(f"- {role}: {count}")
     print(f"- output: {outdir}")
     return 0
 

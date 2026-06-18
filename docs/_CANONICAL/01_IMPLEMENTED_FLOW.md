@@ -106,6 +106,14 @@ workers/collectors/rss_collector.py  RSS 3소스(bbc/reuters/yna), feedparser, c
     서버는 200 완료인데 클라이언트가 거짓 transport-fail 집계(100건 중 54 false-fail) → contract_fail 거짓
     critical. 멱등 endpoint 라 timeout 안전. 수정 후 재실행 critical=0, contract_pass=True. 회귀 +2 테스트.
   - **recovery-scheduler 상주 daemon**: `up -d` 로 상시 기동, 즉시 첫 tick `actions=3 ok=3`, 60초 주기.
+- ✅ **Source Role Taxonomy 라운드(2026-06-18)**:
+  - **`source_role.py`**: source_profiles 의 source_group/is_community/confirmation_policy 에서 7역할
+    (ARTICLE_BODY/EXPANSION_SEARCH/OFFICIAL_RECORD/STRUCTURED_SIGNAL/COMMUNITY_EARLY_SIGNAL/ENRICHMENT_ONLY/
+    PERIODIC_EVENT_QUEUE)을 **결정론적 파생**(새 데이터 0, 단일 출처 유지). routing_mode+publication_policy 동반,
+    EXPANSION/COMMUNITY 는 `never_direct_publish` 강제(증거승격·무검증공개 차단). 잠금 `test_source_role_taxonomy.py`(36).
+  - **role 은 final_action 과 직교**: `run_orchestration_source_validation` 이 SOURCE_ROLE_MATRIX(57:
+    ARTICLE 14/COMMUNITY 9/ENRICHMENT 13/EXPANSION 7/OFFICIAL 8/STRUCTURED 6) + SOURCE_FINAL_ACTION_MATRIX 동시 emit.
+    상세 03 §1b. **설계 결정**: registry 에 8종 policy 를 손으로 재박지 않음(단일 출처 이중화·sprawl 회피).
 - ⚠ **남은 blocker**: ① entity/sector는 **LLM급 아닌 결정론적 baseline**, ② 46 CALLABLE 소스 **전수** 라이브
   probe(이번은 ap_news+bbc급), ③ timeout 수정의 100건 burst 재검증, ④ DLQ depth 알림·라이브 chaos,
   ⑤ ap_news 무본문은 정상 hold이나 **published 상용 카드는 실본문 소스 필요**(T-AgtA). 상세 04/05.

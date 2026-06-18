@@ -20,6 +20,19 @@
   ② 46 CALLABLE 소스 **전수** 라이브 probe 미완, ③ timeout 수정의 100건 burst 재검증.
 - Closure: backend sink 상시 스케줄 + 46 소스 전수 라이브 idempotent 적재 시 LOW.
 
+### R-SourceRoleDrift · source 역할 정의와 실제 routing 불일치  — Severity: MEDIUM→LOW (taxonomy 파생+잠금 2026-06-18)
+- Area: source-aware orchestration / 헌법 3(역할별 연결)
+- Description: source 를 모두 같은 방식으로 수집하면 search 결과가 evidence 로, community 가 published 로 새는 위험.
+- DONE(2026-06-18): `source_role.py` — source_group/is_community/confirmation_policy 에서 7역할
+  (ARTICLE_BODY/EXPANSION_SEARCH/OFFICIAL_RECORD/STRUCTURED_SIGNAL/COMMUNITY_EARLY_SIGNAL/ENRICHMENT_ONLY/
+  PERIODIC_EVENT_QUEUE)을 **결정론적 파생**(새 데이터 하드코딩 0, 단일 출처 유지). routing_mode+publication_policy
+  동반. EXPANSION/COMMUNITY 는 `never_direct_publish` 를 publication_policy 에 항상 포함(증거승격·무검증공개 차단).
+  `run_orchestration_source_validation` 이 SOURCE_ROLE_MATRIX 로 emit(57: ARTICLE 14/COMMUNITY 9/ENRICHMENT 13/
+  EXPANSION 7/OFFICIAL 8/STRUCTURED 6). 잠금: `test_source_role_taxonomy.py`(36).
+- Remaining gap: 분류·정책은 코드로 강제되나 **role 별 라이브 end-to-end proof** 는 ARTICLE(ap_news)만 관찰됨 —
+  EXPANSION/OFFICIAL/STRUCTURED/COMMUNITY 각 1건 라이브 route proof 미완(03 1b). 04 T-IngA 연동.
+- Closure: role 별 최소 1건 라이브 route proof + run_role_aware 통합 시 LOW.
+
 ### R-MockCard · 생성 event_card 콘텐츠 mock  — Severity: HIGH→MEDIUM→LOW-MEDIUM (mock 상수 제거 2026-06-18 Orchestration 하드닝)
 - Area: 정보 신뢰성(§1) / 상품성
 - Description(과거): LangGraph 6노드가 mock 고정 상수 → 카드 entity/sector/impact가 고정/가짜
