@@ -9,6 +9,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # 실행 환경. production/staging에서는 admin API 토큰 미설정 시 인증을 fail-closed로 강제한다.
+    APP_ENV: Literal["dev", "test", "staging", "production"] = "dev"
+
     LANGSMITH_TRACING: str = ""
     LANGSMITH_ENDPOINT: str = ""
     LANGSMITH_API_KEY: str = ""

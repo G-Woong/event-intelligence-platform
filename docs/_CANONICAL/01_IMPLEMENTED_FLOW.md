@@ -75,7 +75,13 @@ workers/collectors/rss_collector.py  RSS 3소스(bbc/reuters/yna), feedparser, c
   `published`+목록 노출, synthetic URL→카드 `hold`+목록 비노출(`GATE_LIVE_PROOF=PASS`).
 - ✅ **P0 하드닝 — DLQ/PEL 부품**: `workers/queue/dlq.py`(route_failure 재시도/DLQ, reap_pending XAUTOCLAIM),
   consumer 실패시 DLQ 라우팅(silent leak 제거), `run_dlq_reaper` CLI, `requeue_failed_xadd`(poison 한도).
-- ⚠ **남은 blocker(P0 complete 아님)**: ① LangGraph entity/sector/impact/fact_check 여전히 mock →
-  카드 **분석 콘텐츠는 mock**(published 노출은 게이트로 봉인됐으나 콘텐츠 신뢰 금지, T-AgtA), ② 대표 record
-  4/5 정적 + production-validation **라이브 외부 수집** 미실행(사용자 중단), ③ DLQ/PEL 자동 주기 트리거
-  (Celery beat)·DLQ 알림 미구현(부품·CLI는 DONE, 04 T-Ops-DLQ). 상세 04/05.
+- ✅ **Orchestration 하드닝(2026-06-18) — mock 상수 제거 + baseline**: entity/sector/impact/summary/fact_check
+  5노드의 mock 고정 상수를 **결정론적 입력파생 baseline**으로 대체(`agents/nodes/baselines.py`), `publish_or_hold`에
+  합성마커 백스톱 추가. **라이브 proof**: 실 URL→카드 `published`(entities=['OPEC','Saudi Aramco',...], sectors=['energy'],
+  정직 impact/추출 요약), synthetic URL→`hold`+공개 404(`BASELINE_LIVE_PROOF=PASS`).
+- ✅ **Orchestration 하드닝 — admin auth 운영 fail-closed**: `APP_ENV` 도입, production/staging 토큰 미설정 시
+  admin 503 + 기동 거부. **복구 주기 드라이버** `run_recovery_scheduler`(reconcile+requeue-failed-xadd+PEL reap),
+  backend `POST /raw-events/requeue-failed-xadd` 엔드포인트.
+- ⚠ **남은 blocker**: ① entity/sector는 **LLM급 아닌 결정론적 baseline**, evidence **도달성(HTTP) 미검증**(T-AgtA),
+  ② production-validation **라이브 외부 수집** 미실행(우회 금지), ③ 복구 드라이버 **라이브 주기 tick**(compose/cron
+  배포)·DLQ 알림 미구현(코드·테스트는 DONE, 04 T-Ops-DLQ). 상세 04/05.

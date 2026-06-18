@@ -110,6 +110,47 @@ def test_list_raw_events_with_status_filter(client):
     mock_list.assert_awaited_once()
 
 
+def test_requeue_failed_xadd_dry_run_returns_candidates(client):
+    failed = _make_record(status="failed", error_reason="xadd_failed: connection refused")
+
+    with patch(
+        "backend.app.api.admin.reconciler_service.requeue_failed_xadd",
+        new_callable=AsyncMock,
+        return_value=([failed], 0),
+    ):
+        resp = client.post(
+            "/api/admin/raw-events/requeue-failed-xadd",
+            json={"dry_run": True},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dry_run"] is True
+    assert body["candidate_count"] == 1
+    assert body["requeued"] == 0
+    assert len(body["items"]) == 1
+
+
+def test_requeue_failed_xadd_executes_requeue(client):
+    failed = _make_record(status="failed", error_reason="xadd_failed: timeout")
+
+    with patch(
+        "backend.app.api.admin.reconciler_service.requeue_failed_xadd",
+        new_callable=AsyncMock,
+        return_value=([failed], 1),
+    ):
+        resp = client.post(
+            "/api/admin/raw-events/requeue-failed-xadd",
+            json={"dry_run": False},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["dry_run"] is False
+    assert body["candidate_count"] == 1
+    assert body["requeued"] == 1
+
+
 def test_reconcile_stuck_empty_returns_zero(client):
     with patch(
         "backend.app.api.admin.reconciler_service.mark_stuck_as_failed",

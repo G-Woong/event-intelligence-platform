@@ -17,6 +17,8 @@ from backend.app.schemas.raw_events import (
     RawEventStatusUpdate,
     ReconcileStuckRequest,
     ReconcileStuckResponse,
+    RequeueFailedXaddRequest,
+    RequeueFailedXaddResponse,
     RequeueRequest,
     RequeueResponse,
 )
@@ -70,6 +72,26 @@ async def reconcile_stuck(
     return ReconcileStuckResponse(
         stuck_count=len(items),
         marked_failed=marked,
+        dry_run=body.dry_run,
+        items=items,
+    )
+
+
+@router.post("/raw-events/requeue-failed-xadd", response_model=RequeueFailedXaddResponse)
+async def requeue_failed_xadd(
+    body: RequeueFailedXaddRequest,
+    session: AsyncSession = Depends(get_session),
+) -> RequeueFailedXaddResponse:
+    """xadd_failed 행(PG는 됐으나 Redis XADD 실패)을 자동 재발행한다. poison은 max_requeue로 차단."""
+    items, requeued = await reconciler_service.requeue_failed_xadd(
+        session,
+        limit=body.limit,
+        max_requeue=body.max_requeue,
+        dry_run=body.dry_run,
+    )
+    return RequeueFailedXaddResponse(
+        candidate_count=len(items),
+        requeued=requeued,
         dry_run=body.dry_run,
         items=items,
     )

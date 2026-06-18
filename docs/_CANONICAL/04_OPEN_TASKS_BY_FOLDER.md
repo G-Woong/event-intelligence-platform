@@ -23,10 +23,15 @@
   PEL leak 제거). `workers/tools/run_dlq_reaper.py` CLI. `reconciler_service.requeue_failed_xadd`(xadd_failed
   행을 max_requeue 한도 내 자동 requeue, poison 무한루프 방지). 테스트: `workers/tests/test_dlq_reaper.py`(7),
   `backend/tests/test_requeue_failed_xadd.py`(4) — FakeRedis/mock, 네트워크 0.
-- 남은 부분: ① 주기 트리거(Celery beat/cron)로 reaper+requeue_failed_xadd 자동 스케줄(현재 수동 CLI/함수),
-  ② DLQ 적재 모니터링/알림 임계값, ③ `agent_worker.py`는 무조건 XACK 유지(실패는 DB status=failed로 기록되어
-  소실 아님 — reconciler 회수 대상).
-- Acceptance(잔여): Celery beat 스케줄 가동 + DLQ depth 알림. Priority: P1(잔여) / Owner: operations-sre-agent
+- DONE(Orchestration 하드닝 2026-06-18): 주기 복구 **드라이버** `workers/tools/run_recovery_scheduler.py`
+  (매 tick: reconcile-stuck + requeue-failed-xadd + PEL reap, 각 action 에러 격리, `--once`/`--interval-sec`,
+  all-fail 시 non-zero exit). backend에 `POST /api/admin/raw-events/requeue-failed-xadd` 엔드포인트 추가
+  (`reconciler_service.requeue_failed_xadd` 노출). 테스트: `workers/tests/test_recovery_scheduler.py`(4),
+  `backend/tests/test_reconciler_api.py`(requeue-failed-xadd 2 추가).
+- 남은 부분: ① 드라이버를 **compose service/cron으로 배포해 라이브 주기 tick 입증**(코드/테스트는 완료,
+  컨테이너/cron 배포는 ops 결정), ② DLQ 적재 모니터링/알림 임계값, ③ `agent_worker.py`는 무조건 XACK 유지
+  (실패는 DB status=failed로 기록 — 소실 아님).
+- Acceptance(잔여): 드라이버 compose/cron 배포 + 라이브 tick + DLQ depth 알림. Priority: P1(잔여) / Owner: operations-sre-agent
 
 ### T-IngB · EventQueue Redis Stream 모드 활성화  **[DONE 2026-06-18]**
 - Files: `ingestion/pipeline/event_queue.py`
@@ -53,17 +58,20 @@
 
 ## agents/ (LangGraph)
 
-### T-AgtA · mock 노드 실모델 연결  **[P1 — evidence_check/publish 게이트 PARTIAL DONE 2026-06-18]**
-- Files: `agents/nodes/{entity_linking,sector_mapping,impact_analysis,evidence_check,fact_check,final_writer,publish_or_hold,evidence_rules}.py`
-- DONE(P0 하드닝): `evidence_check`가 고정 mock(`[mock-source-*]`) 대신 **실 source URL**을 구조 검증
-  (`evidence_rules.is_valid_evidence_url`: http(s)+호스트, 합성/로컬/플레이스홀더 거부) 후 채택. `publish_or_hold`가
-  **유효 근거 + fact_check pass + 본문 존재** 모두 충족 시에만 published(아니면 hold, `final_writer` 기본 hold로
-  fail-closed). → mock 콘텐츠 카드 published 차단(05 R-MockCard 노출경로 봉인). 테스트: `agents/tests/
-  test_event_graph_no_mock_published.py`, `test_evidence_check_real_validation.py`.
-- 남은 mock(여전히 고정/템플릿): entity_linking(NER), sector_mapping(분류기), impact_analysis, fact_check(LLM
-  실패시 pass fallback), final_writer 요약. evidence_check도 **URL 도달성(HTTP) 검증은 미구현**(구조 유효성까지).
-- Required: NER/분류기/프롬프트 자산 연결(`agents/prompts/*.md` → load_prompt → LLMClient, `LLM_PROVIDER=openai`).
-- Acceptance: 각 노드 실 출력 + 스키마 검증 통과, mock 분기 제거 아닌 실경로 추가. Priority: P1(잔여)
+### T-AgtA · mock 노드 실모델 연결  **[P1 — mock 상수 제거+baseline DONE 2026-06-18; LLM급 잔여]**
+- Files: `agents/nodes/{baselines,entity_linking,sector_mapping,impact_analysis,evidence_check,fact_check,final_writer,publish_or_hold,evidence_rules}.py`
+- DONE(Orchestration 하드닝): 5노드의 **mock 고정 상수를 결정론적 입력파생 baseline으로 대체**
+  (`agents/nodes/baselines.py`): entity=대문자 고유명사 추출, sector=keyword 분류, impact=정직한 baseline 문구,
+  summary=본문 추출, fact_check=**구조적 fail-closed**(본문+grounded evidence+합성마커없음일 때만 pass).
+  `publish_or_hold`에 **카드 텍스트 합성마커 백스톱** 추가(`[fallback]`/`[mock]` 우회노출 차단). `LLM_PROVIDER=openai`
+  일 때만 LLM 보강(상수 반환 시 baseline 복귀). 라이브 입증(재빌드 스택): 실 URL 카드가 실 entity/sector/추출요약으로
+  published, synthetic URL은 hold+공개 404. 테스트: `agents/tests/test_entity_sector_impact_fact_real_baseline.py`,
+  `test_event_graph_no_mock_published.py`, `test_evidence_check_real_validation.py`.
+- 남은(LLM급 정밀도): entity NER/sector 분류기는 **결정론적 baseline**(LLM급 의미분석 아님). `evidence_check` **URL
+  도달성(HTTP) 검증 미구현**(구조 유효성까지). LLM 보강(`LLM_PROVIDER=openai`)은 미배포(키 미설정).
+- Required: NER/분류기/프롬프트 자산 연결(`agents/prompts/*.md` → load_prompt → LLMClient, `LLM_PROVIDER=openai`),
+  evidence reachability(SSRF-safe HEAD/GET).
+- Acceptance: LLM급 실 출력 + 스키마 검증 + evidence 도달성. Priority: P1(잔여)
 
 ### T-AgtB · deduplicate 벡터 유사도 임계값 결정  **[P2]**
 - Files: `agents/nodes/deduplicate.py`(dedupe_key는 생성, 벡터 cosine 기준 미정)
@@ -90,7 +98,11 @@
 ## infra/ops
 
 ### T-OpA · 내장 scheduler daemon  **[P2]** — 외부 cron 가정.
-### T-OpB · RBAC/OAuth2 + Admin bypass 해제  **[P1]** — 운영 배포 전 필수(05 R-Auth).
+### T-OpB · RBAC/OAuth2 + Admin bypass 해제  **[P1 — prod fail-closed DONE 2026-06-18; RBAC 잔여]**
+- DONE(Orchestration 하드닝): `APP_ENV`(dev/test/staging/production) 도입. `require_admin_token`이
+  **production/staging에서 토큰 미설정 시 503 거부**, `main.py` lifespan은 운영 모드 토큰 미설정 시 **기동 거부**
+  (RuntimeError). dev/test만 bypass 유지. 테스트: `backend/tests/test_admin_api_token_required_in_production.py`(5).
+- 남은: RBAC/OAuth2 per-endpoint scope. 운영 배포 전 `APP_ENV=production` + `ADMIN_API_TOKEN` 설정 필수(05 R-Auth).
 ### T-OpC · production Docker / TLS / CDN  **[P2]** — dev 설정만 존재.
 
 ## docs/

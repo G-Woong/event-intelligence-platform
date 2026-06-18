@@ -17,25 +17,30 @@
 | 1 | source_parse | REAL |
 | 2 | normalize_event | REAL |
 | 3 | deduplicate | PARTIAL(dedupe_key만, 벡터 임계값 미정) |
-| 4 | entity_linking | MOCK |
-| 5 | sector_mapping | MOCK |
+| 4 | entity_linking | BASELINE(결정론적 NER, `baselines.extract_entities`) |
+| 5 | sector_mapping | BASELINE(결정론적 keyword 분류, `baselines.map_sectors`) |
 | 6 | retrieve_past_context | REAL(Milvus top-k) |
-| 7 | impact_analysis | MOCK |
+| 7 | impact_analysis | BASELINE(결정론적; openai일 때만 LLM 보강) |
 | 8 | evidence_check | PARTIAL(실 source URL 구조검증 채택, 도달성 미검증) |
-| 9 | fact_check | MOCK("pass" fallback) |
-| 10 | final_writer | MOCK(요약 mock, status 기본 hold=fail-closed) |
-| 11 | publish_or_hold | REAL(근거+fact_check+본문+corroboration 게이트) |
+| 9 | fact_check | BASELINE(구조적 fail-closed; 빈본문/무근거→hold) |
+| 10 | final_writer | BASELINE(추출 요약; status 기본 hold=fail-closed) |
+| 11 | publish_or_hold | REAL(근거+fact_check+본문+합성마커+corroboration 게이트) |
 
-→ **5 REAL / 1 PARTIAL / 5 MOCK.** 잔여 mock 실연결은 04 T-AgtA.
+→ **6 REAL/BASELINE 신뢰 가능 / 1 PARTIAL / 4 deterministic-baseline.** LLM급 실연결은 04 T-AgtA.
 
-> ⚠ **mock 카드 경고(2026-06-18, P0 하드닝으로 노출경로 봉인)**: entity/sector/impact/fact_check는 여전히
-> mock(고정/가짜, 05 R-MockCard). 단 **published 노출경로는 fail-closed로 차단**됨:
-> - `evidence_check`는 실 source URL만 근거로 채택(`evidence_rules.is_valid_evidence_url`).
-> - `publish_or_hold`는 **유효 근거 URL + fact_check pass + 본문 존재**를 모두 만족할 때만 published,
->   아니면 hold. `final_writer` 기본 status도 `hold`.
-> - 공개 `GET /api/events`는 published 카드만 반환(`event_service.list_events(status="published")`).
-> → 근거 없는/mock evidence 카드는 published되지 않고 공개 목록 노출도 안 됨. 다만 entity/sector/impact
->   **콘텐츠 자체는 mock**이므로 published 카드라도 그 분석필드는 신뢰 금지(T-AgtA까지).
+> ✅ **mock 상수 제거(2026-06-18, Orchestration 하드닝)**: entity/sector/impact/fact_check/final_writer의
+> **mock 고정 상수(`[mock-entity-*]`, 고정 geopolitics/energy/defense, `[mock] ...`, `[fallback] ...`)를
+> 결정론적 입력파생 baseline으로 대체**(`agents/nodes/baselines.py`). 라이브 입증(재빌드 스택): 실 URL 카드가
+> `entities=['OPEC','Saudi Aramco','European Union',...]`, `sectors=['energy']`, 정직한 impact/추출 요약으로
+> published(05 R-MockCard).
+> - baseline은 **결정론적·rule/keyword 기반**이며 LLM급 의미분석이 아니다. `LLM_PROVIDER="openai"`일 때만
+>   LLM이 보강하되, LLM이 `[fallback]`/`[mock]` 상수를 반환하면 baseline으로 되돌려 카드에 노출하지 않는다.
+> - `fact_check`는 **fail-closed**: 본문 존재 + grounded evidence + 합성마커 없음일 때만 구조적 "pass"
+>   (이전 LLM 실패 시 무조건 "pass" fail-open 제거).
+> - `publish_or_hold`는 **유효 근거 URL + fact_check pass + 본문 존재 + 카드 텍스트(summary/impact)에
+>   합성마커 없음**을 모두 만족할 때만 published(합성 상수 우회 노출 차단, 적대적 리뷰 지적 반영).
+> - 공개 `GET /api/events`(목록)·`GET /api/events/{id}`(단건) 모두 published 카드만 반환.
+> → 잔여: entity/sector는 **LLM급 정밀도가 아닌 baseline**, evidence **도달성(HTTP) 미검증**(T-AgtA).
 >
 > **publish_or_hold corroboration(2026-06-18)**: `confirmation_policy ∈
 > {unconfirmed_until_corroborated, internal_queue_only, publish_blocked_until_corrob}` 또는

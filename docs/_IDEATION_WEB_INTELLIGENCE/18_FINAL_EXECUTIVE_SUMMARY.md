@@ -39,20 +39,26 @@
        공개 GET /api/events = published-only. 라이브 proof: 유효URL→published+노출, synthetic→hold+비노출.
 [DONE] DLQ/PEL 부품: workers/queue/dlq.py(route_failure 재시도/DLQ, reap_pending XAUTOCLAIM),
        consumer 실패시 DLQ 라우팅(silent leak 제거), run_dlq_reaper CLI, requeue_failed_xadd(poison 한도).
+[DONE] Orchestration 하드닝(2026-06-18): mock 5노드 → 결정론적 baseline(agents/nodes/baselines.py),
+       publish_or_hold 합성마커 백스톱. 라이브: 실URL→실 entity/sector/추출요약 published, synthetic→hold+404.
+[DONE] admin auth 운영 fail-closed(APP_ENV: prod 토큰 미설정→503+기동거부). 복구 주기 드라이버
+       run_recovery_scheduler(reconcile+requeue-failed-xadd+PEL reap) + requeue-failed-xadd 엔드포인트.
+[DONE] 적대적 리뷰 REAL_BUG 수정: openai 모드 [fallback] 상수 게이트 우회노출 → 백스톱+baseline 복귀.
 ```
 
 ### 남은 즉시 과제 (P0 complete까지)
 
 ```text
 1) production-validation 라이브 외부 probe→backend 실적재 1회 검증 + 기본 sink를 backend로. (미실행)
-2) DLQ/PEL 자동 트리거: reaper+requeue_failed_xadd를 Celery beat/cron 주기 스케줄 + DLQ depth 알림.
-   (부품·CLI는 DONE, 자동 스케줄만 남음. 04 T-Ops-DLQ)
-3) mock 콘텐츠 해제: entity_linking=NER, sector_mapping 분류기, evidence_check URL **도달성**(HTTP) 검증,
-   impact_analysis. (published 노출은 게이트로 봉인됐으나 entity/sector/impact 콘텐츠 자체는 여전히 mock.)
+2) 복구 드라이버 라이브 배포: run_recovery_scheduler를 compose service/cron으로 띄워 주기 tick 입증
+   + DLQ depth 알림. (드라이버·엔드포인트·테스트는 DONE, 배포/라이브 tick만 남음. 04 T-Ops-DLQ)
+3) LLM급 콘텐츠: entity_linking=NER, sector_mapping 분류기, evidence_check URL **도달성**(HTTP) 검증,
+   impact LLM. (mock 상수는 제거·baseline화 완료; 현재는 결정론적 baseline이라 LLM급 정밀도가 다음 관문.)
 ```
 
 위는 source-ingestion-engineer / orchestrator-architect / operations-sre-agent에 위임 가능. P2~P10은 15 로드맵.
 
 ## C. 한 줄
 
-> 배관은 연결됐다(5타입 e2e 입증). 이제 카드의 **알맹이**(mock 6노드)를 실데이터로 채우는 것이 다음 관문이다.
+> 배관은 연결됐고(5타입 e2e), 카드 **알맹이의 mock 상수는 결정론적 baseline으로 제거**됐다(라이브 입증).
+> 이제 baseline을 **LLM급 정밀도**(NER/분류기/도달성)로 끌어올리는 것이 다음 관문이다.

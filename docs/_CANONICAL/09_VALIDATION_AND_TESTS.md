@@ -21,6 +21,23 @@
 
 ## 2. 검증 라운드
 
+### 2d. Orchestration 하드닝 라운드 (2026-06-18, 수행)
+- 범위: mock 노드 → 결정론적 baseline(entity/sector/impact/summary/fact_check) + publish 게이트 합성마커
+  백스톱 + admin auth 운영 fail-closed(`APP_ENV`) + 복구 주기 드라이버(reconcile+requeue-failed-xadd+PEL reap).
+- 단위/통합(네트워크 0): `pytest ingestion/tests` → **1243 passed**(회귀 0). `pytest backend workers agents`
+  → **(2d 신규 포함, 회귀 0)**. 신규: agents `test_entity_sector_impact_fact_real_baseline`(baseline+게이트 백스톱),
+  backend `test_admin_api_token_required_in_production`(5) + `test_reconciler_api`(requeue-failed-xadd 2),
+  workers `test_recovery_scheduler`(5). 기존 `test_nodes_with_llm` 1건은 새 계약(openai 실패→baseline)으로 갱신.
+- **라이브 baseline proof**(코어 스택 재빌드, agent-worker 새 이미지): fresh raw-event 2건 주입 →
+  ① 실 URL → 카드 `published`, **entities=['OPEC','Saudi Aramco','European Union','United States','Brent']**,
+     **sectors=['energy']**, impact=정직 baseline, summary=추출 실문장(전부 비-mock), 공개목록 노출 O.
+  ② synthetic URL(mock.local) → hold + 공개 단건 `http_404` + 목록 X. `BASELINE_LIVE_PROOF=PASS`.
+- 적대적 리뷰(adversarial-reality-critic): **REAL_BUG 1건**(openai 모드 LLM 파싱실패 시 `[fallback]` 상수가
+  evidence/fact_check 게이트를 우회해 `impact_path`/`summary`로 published 노출) → 게이트 백스톱 + 노드 baseline
+  복귀로 수정, 잠금 테스트 추가.
+- ⚠ UNKNOWN(verified blocker): 라이브 외부 수집→backend 실적재 미실행(우회 금지), 복구 드라이버 **라이브 주기
+  tick**(compose/cron 배포)·DLQ chaos는 미수행(코드/단위까지). LLM급 entity/sector + evidence 도달성 미구현.
+
 ### 2c. P0 하드닝 라운드 (2026-06-18, 수행)
 - 범위: mock 카드 published 차단 게이트 + Redis DLQ/PEL reaper + xadd_failed 자동 requeue.
 - 단위/통합(네트워크 0): `pytest ingestion/tests` → **1243 passed**(회귀 0). `pytest backend agents workers`

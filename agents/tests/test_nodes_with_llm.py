@@ -77,12 +77,15 @@ def test_final_writer_node_mock():
 
 
 def test_node_llm_failure_fallback(monkeypatch):
+    """openai provider에서 LLM이 실패하면 결정론적 baseline으로 복구하고 에러를 기록한다."""
     import backend.app.services.llm_client as llm_mod
+    from backend.app.core.config import settings
 
     class BrokenClient(MockLLMClient):
         def complete_json(self, prompt, *, schema, **kwargs):
             raise RuntimeError("simulated LLM failure")
 
+    monkeypatch.setattr(settings, "LLM_PROVIDER", "openai")
     llm_mod._client_cache = BrokenClient()
     state = {
         "normalized": _make_normalized(),
@@ -91,5 +94,7 @@ def test_node_llm_failure_fallback(monkeypatch):
         "llm_errors": [],
     }
     result = impact_analysis(state)
-    assert "[fallback]" in result["impact"]
+    # 가짜 주장이 아닌 정직한 baseline으로 복구. mock/fallback 마커가 카드에 들어가지 않는다.
+    assert "deterministic baseline" in result["impact"]
+    assert "[mock]" not in result["impact"]
     assert len(result.get("llm_errors", [])) > 0

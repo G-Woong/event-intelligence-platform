@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from agents.state.event_state import EventState
 from agents.nodes.evidence_rules import has_grounded_evidence
+from agents.nodes.baselines import contains_mock_sentinel
 
 # 익명 커뮤니티/미확인 신호는 외부 교차확인 전 publish 금지(§1 info-not-advice, G-4 게이트의
 # B측 강제). ingestion CommunityCorroborationGate 의 publish_level 과 동일 의미.
@@ -45,10 +46,21 @@ def publish_or_hold(state: EventState) -> EventState:
             card.status = "hold"
         return {**state, "status": "hold"}
 
+    # 카드 텍스트 필드(summary/impact_path/entities)에 mock 센티넬이 있으면 강제 hold.
+    # LLM fallback 상수(`[fallback] ...`)가 evidence/fact_check 게이트를 우회해 published로
+    # 노출되는 경로를 차단한다(적대적 리뷰 지적 반영, 05 R-MockCard).
+    synthetic = contains_mock_sentinel(
+        card.summary if card else "",
+        card.impact_path if card else "",
+        card.entities if card else [],
+        state.get("impact"),
+    )
+
     publishable = (
         state.get("fact_check") == "pass"
         and has_grounded_evidence(state.get("evidence"))
         and _has_body(state)
+        and not synthetic
     )
 
     status = "published" if publishable else "hold"

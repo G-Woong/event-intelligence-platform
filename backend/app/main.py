@@ -23,6 +23,11 @@ async def lifespan(app: FastAPI):
     setup_langsmith()
 
     if not settings.ADMIN_API_TOKEN:
+        if settings.APP_ENV in ("production", "staging"):
+            # fail-closed: 운영 환경에서 admin 토큰 없이 기동 금지.
+            raise RuntimeError(
+                f"ADMIN_API_TOKEN required when APP_ENV={settings.APP_ENV} (refusing to start unauthenticated)"
+            )
         logger.warning("ADMIN_API_TOKEN unset — admin endpoints unauthenticated (dev only)")
 
     if redis_db.ping():

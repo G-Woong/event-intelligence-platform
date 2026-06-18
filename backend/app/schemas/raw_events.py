@@ -69,6 +69,19 @@ class ReconcileStuckResponse(BaseModel):
     items: list[RawEventRecord]
 
 
+class RequeueFailedXaddRequest(BaseModel):
+    limit: int = 100
+    max_requeue: int = 3
+    dry_run: bool = True
+
+
+class RequeueFailedXaddResponse(BaseModel):
+    candidate_count: int
+    requeued: int
+    dry_run: bool
+    items: list[RawEventRecord]
+
+
 class RequeueRequest(BaseModel):
     force: bool = False
 

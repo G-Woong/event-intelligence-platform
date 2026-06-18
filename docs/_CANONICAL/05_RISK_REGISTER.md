@@ -13,25 +13,27 @@
   ② 기본 sink는 여전히 mirror(backend는 opt-in) — 정식 production 스케줄에서 backend sink 채택.
 - Closure: 라이브 외부 수집 사이클이 실 raw_events row를 idempotent 생성(backend sink 상시).
 
-### R-MockCard · 생성 event_card 콘텐츠 mock  — Severity: HIGH→MEDIUM (노출경로 봉인 2026-06-18 P0하드닝)
+### R-MockCard · 생성 event_card 콘텐츠 mock  — Severity: HIGH→MEDIUM→LOW-MEDIUM (mock 상수 제거 2026-06-18 Orchestration 하드닝)
 - Area: 정보 신뢰성(§1) / 상품성
-- Description: LangGraph 6노드(entity_linking/sector_mapping/impact_analysis/evidence_check/
-  fact_check/final_writer)가 mock → 생성 카드의 entity/sector/impact가 고정/가짜
-  (예: 모든 입력을 geopolitics/energy/defense로 분류). raw_event 연결·status는 실제이나 알맹이는 mock.
-- Evidence: `agents/nodes/entity_linking.py` 등 상수 반환. fact_check는 LLM 실패 시 "pass" fallback.
+- Description(과거): LangGraph 6노드가 mock 고정 상수 → 카드 entity/sector/impact가 고정/가짜
+  (예: 모든 입력을 geopolitics/energy/defense로 분류). raw_event 연결·status는 실제이나 알맹이는 mock이었음.
+- DONE(Orchestration 하드닝, 상수 제거 + 게이트 백스톱):
+  ① 5노드의 mock 고정 상수를 **결정론적 입력파생 baseline**으로 대체(`agents/nodes/baselines.py`):
+     entity=고유명사 추출, sector=keyword 분류, impact=정직한 baseline, summary=본문 추출,
+     fact_check=구조적 fail-closed. `[mock-*]`/고정상수/`[mock]`/`[fallback]`이 카드에 들어가지 않는다.
+  ② `publish_or_hold`에 **카드 텍스트(summary/impact) 합성마커 백스톱** 추가 — openai 모드에서 LLM이
+     `[fallback]` 상수를 반환해도 published 우회노출 차단(적대적 리뷰 REAL_BUG 지적 반영).
+  ③ 공개 `GET /api/events`(목록)·`/api/events/{id}`(단건) 모두 published 카드만.
+  → 라이브 입증(재빌드 스택): 실 URL 카드가 `entities=['OPEC','Saudi Aramco','European Union',...]`,
+     `sectors=['energy']`, 정직한 impact/추출 요약으로 published; synthetic URL은 hold + 공개 404.
+- Evidence: `agents/nodes/baselines.py`, `live_baseline_smoke.py`(BASELINE_LIVE_PROOF: PASS).
 - Current mitigation (P0 하드닝, 노출 차단 = fail-closed):
-  ① `evidence_check`가 더 이상 `[mock-source-*]` 고정 mock을 반환하지 않고 **실 source URL**만 근거로
-     채택(`agents/nodes/evidence_rules.py`: http(s)+공개호스트, 합성/로컬/플레이스홀더 + **사설/loopback/
-     link-local(메타데이터 169.254.169.254)/예약 IP**(`ipaddress`) + **RFC2606 예약도메인(example.com,
-     .test/.invalid/.localhost/.example)** 거부 — 적대적 리뷰 SSRF/placeholder 지적 반영).
-  ② `publish_or_hold`가 **유효 근거 URL + fact_check pass + 비어있지 않은 본문**을 모두 만족할 때만
-     published; 아니면 hold(`final_writer` 기본 status도 `hold`로 fail-closed). 빈 본문 pass 차단.
-  ③ 공개 `GET /api/events`(목록) **및 `GET /api/events/{id}`(단건)** 모두 **published 카드만** 노출
-     (목록=`list_events(status="published")`, 단건=status!=published면 404 — 적대적 리뷰 단건조회 우회 지적 반영).
-  → mock 콘텐츠/근거 없는 카드는 published되지 않고, 설령 남아도 공개 API(목록·단건) 어디에도 노출되지 않는다.
-- Remaining gap: 04 T-AgtA(6노드 실연결, 특히 evidence_check URL **도달성**(HTTP) 검증 + entity/sector
-  실분류). 현재는 구조적 URL 유효성까지만 — reachability/품질은 미검증.
-- Closure: entity/sector/evidence 실연결 + 근거 도달성 검증 완료 시 MEDIUM→LOW.
+- evidence(P0 하드닝 유지): `evidence_check`는 실 source URL만 근거로 채택, `evidence_rules`가 http(s)+공개호스트,
+  합성/로컬/플레이스홀더 + 사설/loopback/link-local(메타데이터 169.254.169.254)/예약 IP(`ipaddress`) +
+  RFC2606 예약도메인 거부(SSRF 가드).
+- Remaining gap: entity/sector는 **결정론적 baseline**(LLM급 정밀도 아님), evidence_check **URL 도달성(HTTP)
+  미검증**(구조 유효성까지), LLM 보강(`LLM_PROVIDER=openai`) 미배포. → 04 T-AgtA.
+- Closure: LLM급 entity/sector + evidence 도달성 검증 완료 시 LOW.
 
 ### R-Gdelt429 · gdelt provider 429  — Severity: MEDIUM
 - Area: rate-limit / cooldown / retry
@@ -60,12 +62,14 @@
 - Current mitigation: 코드/문서 전반 enforced(09 정책 게이트). fallback chain은 0 bypass 입증(`rate_limit_evidence.md` §5).
 - Closure: 불변.
 
-### R-Auth · Admin 인증 bypass  — Severity: HIGH(운영 전)
+### R-Auth · Admin 인증 bypass  — Severity: HIGH→MEDIUM (prod fail-closed 2026-06-18 Orchestration 하드닝)
 - Area: monitoring/보안
 - Description: `ADMIN_API_TOKEN` 빈 값이면 Admin API 허용(dev 편의). RBAC/OAuth 없음.
-- Current mitigation: dev 한정. 토큰 설정 시 검사 활성. server-only 격리로 토큰 노출 차단.
-- Remaining gap: RBAC/OAuth(04 T-OpB).
-- Closure: 운영 배포 전 token 필수화 + RBAC.
+- Current mitigation: **`APP_ENV` 도입 — production/staging에서는 토큰 미설정 시 admin API 503 거부 +
+  backend 기동 자체 거부**(`security.require_admin_token`, `main.py` lifespan RuntimeError). dev/test만 bypass
+  유지. 토큰 설정 시 timing-safe 검사. server-only 격리로 토큰 노출 차단. 테스트: `test_admin_api_token_required_in_production.py`.
+- Remaining gap: RBAC/OAuth per-endpoint scope(04 T-OpB). `APP_ENV=dev`로 운영 오배포 시 무인증(배포 환경변수 규율 필요).
+- Closure: RBAC + 운영 배포에서 `APP_ENV=production` 강제.
 
 ### R-Secret · 비밀 유출  — Severity: HIGH
 - Area: secret leakage
