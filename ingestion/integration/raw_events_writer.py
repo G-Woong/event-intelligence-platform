@@ -60,12 +60,19 @@ class BackendApiRawEventsWriter:
     헤더로만 전달(값 로깅 금지).
     """
 
+    # backend POST 1건은 PG upsert + Redis XADD 를 동기로 수행한다. 100건 burst 적재 시 단일
+    # uvicorn 워커에서 agent-worker PATCH 와 이벤트루프가 경합하면 tail latency 가 수 초~10초+ 까지
+    # 튄다. 과거 10초 default 는 burst 에서 거짓 transport timeout(실제로는 서버가 200 으로 완료)을
+    # 만들어 raw_events_failed 를 부풀렸다(라이브 관찰: 100건 중 54건 false-fail). 30초로 상향.
+    # endpoint 는 content_hash on_conflict 로 멱등이므로 timeout 후 재시도해도 중복은 collapse 된다.
+    _DEFAULT_TIMEOUT = 30.0
+
     def __init__(
         self,
         *,
         base_url: str = "http://localhost:8000",
         admin_token: Optional[str] = None,
-        timeout: float = 10.0,
+        timeout: float = _DEFAULT_TIMEOUT,
         client: Optional[httpx.Client] = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")

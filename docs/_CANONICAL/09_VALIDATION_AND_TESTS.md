@@ -21,6 +21,36 @@
 
 ## 2. 검증 라운드
 
+### 2f. Source-to-card E2E + timeout false-fail 수정 라운드 (2026-06-18, 수행)
+- 범위: 라이브 외부 source → **backend sink → event_card** end-to-end 직접 관찰(직전 verified blocker
+  해소) + BackendApiRawEventsWriter timeout 거짓실패 버그 수정 + recovery-scheduler **상주 daemon** 기동.
+- **backend auth 재확인(무해 probe)**: `POST /api/admin/raw-events` no-token → **422**(auth 통과, body 검증만
+  실패). 즉 현 스택은 토큰 없이 admin write 수락 → 호스트 runner 가 backend sink 적재 가능(직전 세션의
+  "토큰 friction" 은 현 스택에선 비차단). 우회/비밀 없음.
+- **라이브 E2E proof(직접 관찰)**: `run_production_orchestration --mode production-validation
+  --raw-events-sink backend --max-sources 1` → due 소스 **ap_news**(Google News RSS) 라이브 fetch
+  **100 records** → raw_events PG **100 rows**(source_name=ap_news, 전부 title·published_at 채워짐) →
+  Redis `stream:raw_events` +100 / `stream:to_agent` +100 → worker(group:ingest, pending 0/lag 0 소비) →
+  agent-worker(group:agent) → LangGraph → **event_cards 100건**(evidence 에 news.google.com URL,
+  전부 status=`hold`). snippet_only·무본문 → fact_check fail-closed → **정상 hold**(공개 published 129 불변,
+  held 카드 비노출). **provenance 확정**: `evidence::text LIKE '%news.google.com%'` 카드 = 100.
+- **REAL BUG 발견+수정(라이브)**: 첫 run 이 `raw_events_written=46 / raw_events_failed=54 /
+  bridge_contract_pass=False / critical_alerts=2`("54 raw_events write failures") 보고했으나 **PG 엔 100건
+  전부 적재 + redis +100 + backend 로그 4xx/5xx 0건**. 원인 = `BackendApiRawEventsWriter` **timeout=10초**
+  (+호출마다 새 httpx.Client, 풀링 없음)가 burst 적재 tail-latency(>10초, agent-worker PATCH 와 이벤트루프
+  경합)에서 **거짓 transport timeout** 을 일으켜 실패로 집계(서버는 200 으로 완료, 데이터는 정상 적재).
+  → **수정**: default timeout **10→30초**(endpoint 는 content_hash on_conflict 멱등이라 timeout 재시도 안전).
+  회귀 잠금: `test_p0_raw_events_writer.py` +2(default 30s, 설정가능) — **9 passed**.
+- **수정 후 재검증(라이브, 2회)**: ① 재실행 → `critical=0`, `contract_pass=True`(35 dup collapse + 1 신규),
+  ② **fresh burst 재검증** → 신규 record **20건 전부 write 성공**(raw_events_written=20, failed=0, `critical=0`,
+  `contract_pass=True`). 직전 동일 경로 100건 중 54 false-fail 이 **0 으로 제거**됨(전수 100건 burst 는 후속).
+- **recovery-scheduler 상주 daemon**: `docker compose up -d recovery-scheduler` → 즉시 첫 tick
+  `recovery cycle done actions=3 ok=3`(reconcile_stuck/requeue_failed_xadd/reap_pending 전부 backend:8000
+  in-network 200), 이후 `--interval-sec 60` 주기. 직전 라운드의 "--once 만" → **상시 tick** 으로 진행.
+- ⚠ UNKNOWN(verified blocker): 46 CALLABLE 소스 **전수** 라이브 probe 미완(이번 라이브는 ap_news 1 + bbc급
+  재실행). timeout 수정의 **100건 burst 재검증**은 후속. entity/sector LLM급 정밀도·evidence 도달성
+  openai/network 라이브·RBAC 미배포. ap_news 카드는 무본문이라 전량 hold(상용 published 카드는 실본문 소스 필요).
+
 ### 2e. Orchestration source-live 라운드 (2026-06-18, 수행)
 - 범위: evidence_check SSRF-safe HTTP 도달성(Phase 4) + recovery-scheduler 라이브 tick/compose service(Phase 3)
   + admin auth 자세 단일화 + APP_ENV=dev 오배포 guard(Phase 5) + source-wide final_action matrix harness(Phase 2).

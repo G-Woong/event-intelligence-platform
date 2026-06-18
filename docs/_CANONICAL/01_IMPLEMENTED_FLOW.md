@@ -96,6 +96,16 @@ workers/collectors/rss_collector.py  RSS 3소스(bbc/reuters/yna), feedparser, c
     HELD_BY_POLICY 1(dcinside). 가짜 green 없음.
   - **라이브 외부 probe 1건 직접 관찰**: vetted runner로 bbc 라이브 수집 → 36 records 실추출 →
     34 EventQueue/raw_events(mirror) 적재, 2 DUPLICATE_COLLAPSED. rate_limited=0.
-- ⚠ **남은 blocker**: ① entity/sector는 **LLM급 아닌 결정론적 baseline**(evidence 도달성은 구현 완료),
-  ② 라이브 외부→**backend sink end-to-end**(card까지)는 in-network 토큰 friction으로 미실행(bbc는 mirror까지
-  관찰), ③ 복구 드라이버 daemon **상시 배포**·DLQ depth 알림, ④ 46 CALLABLE 소스 전수 라이브 probe. 상세 04/05.
+- ✅ **Source-to-card E2E 라운드(2026-06-18, 2f)**:
+  - **라이브 외부 → backend sink → event_card E2E 직접 관찰**: `production-validation --raw-events-sink
+    backend` 로 **ap_news**(Google News RSS) 100 records 라이브 → raw_events PG 100 → Redis +100 →
+    worker(group:ingest, pending0/lag0) → agent-worker(group:agent) → LangGraph → **event_cards 100건**
+    (evidence=news.google.com URL 확정). 무본문 snippet_only → fail-closed 전량 hold(공개 published 129 불변).
+    직전 "backend sink end-to-end 미실행" blocker 해소(현 스택은 no-token admin write 수락=422 probe 확인).
+  - **timeout 거짓실패 버그 수정**: `BackendApiRawEventsWriter` timeout 10→30초. burst tail-latency(>10초)에서
+    서버는 200 완료인데 클라이언트가 거짓 transport-fail 집계(100건 중 54 false-fail) → contract_fail 거짓
+    critical. 멱등 endpoint 라 timeout 안전. 수정 후 재실행 critical=0, contract_pass=True. 회귀 +2 테스트.
+  - **recovery-scheduler 상주 daemon**: `up -d` 로 상시 기동, 즉시 첫 tick `actions=3 ok=3`, 60초 주기.
+- ⚠ **남은 blocker**: ① entity/sector는 **LLM급 아닌 결정론적 baseline**, ② 46 CALLABLE 소스 **전수** 라이브
+  probe(이번은 ap_news+bbc급), ③ timeout 수정의 100건 burst 재검증, ④ DLQ depth 알림·라이브 chaos,
+  ⑤ ap_news 무본문은 정상 hold이나 **published 상용 카드는 실본문 소스 필요**(T-AgtA). 상세 04/05.

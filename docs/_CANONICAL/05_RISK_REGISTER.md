@@ -4,14 +4,21 @@
 
 ---
 
-### R-Integration · 두 수집 경로 미통합  — Severity: HIGH→MEDIUM (PARTIAL MITIGATED 2026-06-18)
+### R-Integration · 두 수집 경로 미통합  — Severity: HIGH→MEDIUM→LOW-MEDIUM (라이브 외부→card E2E 관찰 2026-06-18)
 - Area: source 수집 안정성 / 아키텍처
 - Description: ingestion 엔진 출력→다운스트림 raw_events PG 배선.
 - DONE: `ingestion/integration/` adapter(BackendApiRawEventsWriter) + `--raw-events-sink backend` 진입점.
   라이브 e2e 5타입(ingestion record→PG→Redis→worker→LangGraph→event_card) 통과, 멱등 collapse 확인.
-- Remaining gap: ① production-validation 라이브 외부 probe→backend 실적재 1회 검증(미실행),
-  ② 기본 sink는 여전히 mirror(backend는 opt-in) — 정식 production 스케줄에서 backend sink 채택.
-- Closure: 라이브 외부 수집 사이클이 실 raw_events row를 idempotent 생성(backend sink 상시).
+- DONE(2f 라운드, 2026-06-18): **라이브 외부 source → backend sink → event_card E2E 직접 관찰**.
+  `production-validation --raw-events-sink backend` 로 **ap_news**(Google News RSS) 100 records 라이브 fetch →
+  raw_events PG 100 rows → Redis +100 → worker(pending0/lag0) → agent-worker → LangGraph → **event_cards 100건**
+  (evidence 에 news.google.com URL 확정), 무본문이라 전량 status=hold(fail-closed, 공개 비노출). 직전
+  "라이브 외부 probe→backend 실적재 미검증" 갭 **해소**.
+- DONE: **timeout 거짓실패 버그 수정** — writer timeout 10→30초(burst tail-latency >10초에서 서버는 200 완료인데
+  클라이언트가 거짓 transport-fail 집계하던 문제; 100건 중 54 false-fail 관찰). 수정 후 재실행 contract_pass=True.
+- Remaining gap: ① 기본 sink 는 여전히 mirror(backend opt-in) — 정식 production 스케줄에서 backend 채택,
+  ② 46 CALLABLE 소스 **전수** 라이브 probe 미완, ③ timeout 수정의 100건 burst 재검증.
+- Closure: backend sink 상시 스케줄 + 46 소스 전수 라이브 idempotent 적재 시 LOW.
 
 ### R-MockCard · 생성 event_card 콘텐츠 mock  — Severity: HIGH→MEDIUM→LOW-MEDIUM (mock 상수 제거 2026-06-18 Orchestration 하드닝)
 - Area: 정보 신뢰성(§1) / 상품성

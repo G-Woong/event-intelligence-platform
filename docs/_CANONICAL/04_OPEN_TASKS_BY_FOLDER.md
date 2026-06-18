@@ -13,8 +13,11 @@
   backend POST 경유 PG+Redis), `downstream_contracts.py`(record_type별 계약 검증),
   `p0_integration_runner.py`+`tools/run_p0_integration.py`(e2e proof). `run_production_orchestration`에
   `--raw-events-sink backend` 주입 진입점 추가. 라이브 e2e 5타입 통과, 멱등 collapse 확인.
-- 남은 부분(P0 complete까지): ① production-validation 라이브 외부 probe→backend 실적재 1회 검증
-  (이번 세션 미실행, dry-run+proof-runner만), ② 카드 콘텐츠 mock(T-AgtA 의존).
+- DONE(2f 라운드, 2026-06-18): **라이브 외부 probe→backend 실적재 E2E 검증 완료**. ap_news(Google News RSS)
+  100 records 라이브 → raw_events PG 100 → Redis +100 → worker → agent-worker → event_cards 100(전량 hold,
+  evidence=news.google.com). **timeout 거짓실패 버그 수정**(writer 10→30초; 54 false-fail 관찰 후 contract_pass=True).
+- 남은 부분(P0 complete까지): ① 기본 sink backend 채택(현재 opt-in), ② 46 소스 전수 라이브 probe,
+  ③ 카드 콘텐츠 LLM급(T-AgtA 의존; ap_news 무본문은 정상 hold).
 - Owner: source-ingestion-engineer + orchestrator-architect / Priority: P0(잔여)
 
 ### T-Ops-DLQ · Redis DLQ / PEL 회수 / xadd_failed 자동 requeue  **[P0 — PARTIAL DONE 2026-06-18]**
@@ -32,9 +35,12 @@
   (worker 이미지 재사용, `--interval-sec 60`). scheduler에 logging.basicConfig + cycle 요약 로그 추가
   (이전엔 무출력). **라이브 `--once` tick 입증**: compose run → reconcile_stuck(200)/requeue_failed_xadd(200)/
   reap_pending(claimed=0) `actions=3 ok=3` EXIT=0.
-- 남은 부분: ① **daemon 상시 가동**(compose service는 정의/검증됨; `up -d`로 상주 배포는 ops 결정),
-  ② DLQ depth 모니터링/알림 임계값, ③ worker-kill 라이브 chaos(현재 단위 FakeRedis까지).
-- Acceptance(잔여): daemon 상시 배포 + DLQ depth 알림 + 라이브 chaos. Priority: P1(잔여) / Owner: operations-sre-agent
+- DONE(2f 라운드, 2026-06-18): **daemon 상주 기동** — `docker compose up -d recovery-scheduler` →
+  즉시 첫 tick `recovery cycle done actions=3 ok=3`(reconcile_stuck/requeue_failed_xadd/reap_pending
+  전부 backend:8000 in-network 200), 이후 `--interval-sec 60` 상시 주기. 직전 "--once 만" 갭 해소.
+- 남은 부분: ① DLQ depth 모니터링/알림 임계값, ② worker-kill 라이브 chaos(현재 단위 FakeRedis까지),
+  ③ 재기동 후 자동 상주 보장(compose `up -d` 의존, ops 운영).
+- Acceptance(잔여): DLQ depth 알림 + 라이브 chaos. Priority: P1(잔여) / Owner: operations-sre-agent
 
 ### T-IngB · EventQueue Redis Stream 모드 활성화  **[DONE 2026-06-18]**
 - Files: `ingestion/pipeline/event_queue.py`

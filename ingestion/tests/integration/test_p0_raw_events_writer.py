@@ -91,6 +91,18 @@ def test_admin_token_sent_as_header_only(monkeypatch):
     assert seen["token"] == "secret-token-value"  # 헤더로만 전달
 
 
+def test_default_timeout_is_30s_to_absorb_burst_tail_latency():
+    # 라이브 회귀 잠금: 10초 default 는 burst 적재에서 backend tail latency(>10s)를 거짓 transport
+    # 실패로 집계해 raw_events_failed 를 부풀렸다(100건 중 54건 false-fail 관찰). 30초로 고정.
+    w = BackendApiRawEventsWriter()
+    assert w._timeout == 30.0
+
+
+def test_timeout_is_configurable():
+    w = BackendApiRawEventsWriter(timeout=60.0)
+    assert w._timeout == 60.0
+
+
 def test_mirror_writer_marked_not_p0_complete(tmp_path):
     w = MirrorRawEventsWriter(tmp_path / "mirror.jsonl")
     assert w(_CREATE) is True
