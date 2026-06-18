@@ -56,8 +56,20 @@ workers/collectors/rss_collector.py  RSS 3소스(bbc/reuters/yna), feedparser, c
   10개 컨테이너 healthcheck HEALTHY(STEP 011).
 - **mock→real 무코드 전환**: `LLM_PROVIDER`, `EMBEDDING_PROVIDER`, `LANGSMITH_TRACING`, `ADMIN_API_TOKEN`.
 
-## A↔B 연결 상태 (핵심)
+## A↔B 연결 상태 (핵심) — P0 배선 PARTIAL(2026-06-18)
 
 - ✅ 각 서브시스템은 **독립적으로 구현·검증됨**.
-- ❌ **A의 출력이 B의 실 `raw_events` PG로 들어가지 않는다.** A는 JSON mirror(`db_writer=None` 기본),
-  B의 PG는 `workers/` RSS 3소스가 채운다. → 통합 배선이 최우선 미구현(04 T-IngA, 06 C-1).
+- ✅ **A→B 통합 배선 구현됨**(`ingestion/integration/`): `BackendApiRawEventsWriter`가 bridge의
+  `db_writer` 주입점에 꽂혀 backend `POST /api/admin/raw-events`로 적재 → backend가 PG upsert
+  (on_conflict content_hash) + Redis XADD(`stream:raw_events`)를 수행하므로 그 뒤
+  worker→agent→LangGraph→event_cards는 기존 다운스트림이 처리.
+- ✅ **라이브 e2e proof(실행됨)**: 5개 record_type(article/official/structured/search/community)이
+  각 1건씩 ingestion record→raw_events PG→Redis→worker→LangGraph→event_card 통과(`run_p0_integration`).
+  community(`unconfirmed_until_corroborated`)는 card status=`hold`로 봉인. 재실행 시 content_hash
+  on_conflict로 전부 DUPLICATE_COLLAPSED(멱등).
+- ✅ **production runner 실배선 진입점**: `run_production_orchestration --raw-events-sink backend`로
+  실 엔진이 backend에 적재 가능(기본은 mirror 보존). dry-run에서 `bridge_contract_pass=True` 확인.
+- ⚠ **남은 blocker(P0 complete 아님)**: ① LangGraph 6노드 여전히 mock → 생성 카드의
+  entity/sector/evidence/impact는 **mock 콘텐츠**(사용자 노출 전 T-AgtA 필요), ② 대표 record 4/5는
+  정적(live probe 미수행 — production-validation 라이브 외부 수집은 이번 세션 미실행), ③ DLQ/PEL
+  회수/xadd_failed 자동 requeue 미구현(04 T-Ops). 상세 04/05.

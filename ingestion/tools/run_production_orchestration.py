@@ -470,6 +470,11 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--env-path", default=None)
     ap.add_argument("--no-live", action="store_true",
                     help="validation 모드라도 네트워크 probe 비활성(계약 검증만)")
+    # P0: raw_events sink 선택. 기본은 mirror(기존 동작 보존). backend 선택 시 실 raw_events PG +
+    # Redis Stream 으로 적재(BackendApiRawEventsWriter 주입). 우회/가정 없음.
+    ap.add_argument("--raw-events-sink", default="mirror", choices=["mirror", "backend"],
+                    help="raw_events 적재 대상: mirror(jsonl, 기본) | backend(PG+Redis via API)")
+    ap.add_argument("--backend-url", default="http://localhost:8000")
     return ap
 
 
@@ -519,7 +524,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"- expected_calls: {preview_plan.expected_calls}")
     print(f"- state_path: {config.state_path}")
     print(f"- queue_path: {config.queue_path}")
-    print(f"- raw_events_target: {config.raw_mirror_path}")
+
+    # P0: raw_events sink — backend 선택 시 실 PG+Redis 적재기 주입(없으면 mirror)
+    db_writer = None
+    if args.raw_events_sink == "backend":
+        import os
+        from ingestion.integration.raw_events_writer import BackendApiRawEventsWriter
+        db_writer = BackendApiRawEventsWriter(
+            base_url=args.backend_url, admin_token=os.getenv("ADMIN_API_TOKEN") or None,
+        )
+        print(f"- raw_events_target: backend({args.backend_url}) PG+Redis")
+    else:
+        print(f"- raw_events_target: mirror({config.raw_mirror_path})")
     print(f"- monitoring_dir: {config.monitoring_dir}")
 
     probe_fn = None
@@ -528,6 +544,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     result = run_production_orchestration(
         config, profiles=profiles, memory=memory, probe_fn=probe_fn,
+        db_writer=db_writer,
         api_ready_map=api_ready, now=now, env_path=env_path,
     )
     s = result["summary"]

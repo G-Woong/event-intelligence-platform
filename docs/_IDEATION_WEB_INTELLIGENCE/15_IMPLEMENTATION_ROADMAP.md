@@ -23,16 +23,19 @@ P7  Commercial dashboard/alert/report/API
 - Goal: 현재 상태/목표 아키텍처 동결. **(완료)** `_CANONICAL/` 11 + 본 ideation 세트.
 - Acceptance: 본 문서 세트 커밋, P0 명시. Do-not-do: 코드 변경.
 
-## Phase 1 — ingestion → raw_events 실배선 (P0)
+## Phase 1 — ingestion → raw_events 실배선 (P0)  — **PARTIAL DONE 2026-06-18**
 - Goal: ingestion seed가 실 raw_events PG에 적재.
-- Required: `bridge_to_raw_events` db_writer 주입(workers POST), payload→RawEvent 계약 정합.
-- Dependencies: workers raw_events API(구현됨).
-- Acceptance: ingestion seed 1건+ raw_events PG row 확인, mirror→DB 전환, A→B e2e green.
-- Risks: 스키마 drift(compat test), mirror 착시. Complexity: 중. Do-not-do: 소스 추가, 우회.
+- DONE: `ingestion/integration/`(BackendApiRawEventsWriter = bridge db_writer, backend POST 경유 PG+Redis).
+  `run_production_orchestration --raw-events-sink backend` 진입점. 라이브 e2e 5 record_type green
+  (PG→Redis→worker→LangGraph→event_card). 멱등 collapse. community hold 봉인. 신규 테스트 37 PASS.
+- 남은 부분: ① production-validation 라이브 외부 probe→backend 1회(미실행), ② 기본 sink backend 전환,
+  ③ 카드 콘텐츠 mock(Phase 3 의존), ④ DLQ/PEL/auto-requeue(신규 P0 운영, 04 T-Ops-DLQ).
+- Risks: mock 카드 콘텐츠 사용자 노출(05 R-MockCard), 라이브 수집 미검증. Do-not-do: 소스 추가, 우회.
 
 ## Phase 2 — Redis stream / worker / DLQ / monitoring
 - Goal: A EventQueue Redis 배선 + DLQ/retry/quota + cost/rate 가시화.
-- Required: `event_queue.py` `_redis_*` 구현(B 헬퍼 위임), Celery beat(스케줄), DLQ stream, rate_limit ZSET, cost/rate 대시보드.
+- 일부 DONE: `event_queue.py` `_redis_*` 구현(Stream+group+PEL ack). 남음: DLQ stream, XAUTOCLAIM 회수,
+  xadd_failed 자동 requeue, Celery beat, cost/rate 대시보드(04 T-Ops-DLQ가 P0로 승격).
 - Acceptance: enqueue→consume→ack, PEL→DLQ 회수, cost+rate+health 3축 노출. Complexity: 중상.
 
 ## Phase 3 — 6 mock 노드 해제 + dedup/clustering

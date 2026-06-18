@@ -20,24 +20,28 @@
 
 **투자/조언 아님.** 본 플랫폼과 문서는 사건/이벤트 정보 전달이 목적이며 투자 권유·금융 조언이 아니다.
 
-## B. 엔지니어 Next Tasks (즉시)
+## B. 진행 상황 (2026-06-18 갱신) — P0 배선 PARTIAL DONE
 
 ```text
-1) P0 배선: bridge_to_raw_events에 db_writer 주입(workers POST 경유)
-   → ingestion seed 1건이 raw_events PG에 실제 INSERT되는 것을 확인 (mirror→DB)
-   검증: A→B e2e (enqueue → consume → raw_events row)
-
-2) Redis 배선: event_queue.py의 _redis_* 4개(NotImplementedError) 구현
-   → B의 redis.py 헬퍼(xadd/ensure_group/xreadgroup/xack)에 위임
-   검증: REDIS_URL 설정 시 stream 왕복, PEL→DLQ 회수
-
-3) mock 해제(결정론 우선): entity_linking=NER, evidence_check=URL/출처 검증
-   + dedup→cross-source clustering(MinHash LSH + 임베딩 HDBSCAN) 착수
-   검증: end-to-end 실데이터 카드 1건, cluster purity≥0.8
+[DONE] 1) P0 배선: ingestion/integration/ adapter(BackendApiRawEventsWriter = bridge db_writer,
+       backend POST 경유 PG+Redis) + run_production_orchestration --raw-events-sink backend 진입점.
+       라이브 e2e 5 record_type green(record→PG→Redis→worker→LangGraph→event_card), 멱등 collapse,
+       community 카드 hold 봉인. 신규 테스트 37 PASS.
+[DONE] 2) Redis: event_queue.py _redis_* 4개 구현(Stream+group+PEL ack).
+       (P0 핵심 전달경로는 backend stream:raw_events. 이 스트림은 A측 EventQueue durable 백엔드.)
 ```
 
-위 3개를 source-ingestion-engineer / orchestrator-architect / operations-sre-agent에 위임 가능. 이후 P2(검색확장)~P10(enterprise 보안)은 15 로드맵을 따른다.
+### 남은 즉시 과제 (P0 complete까지)
+
+```text
+1) production-validation 라이브 외부 probe→backend 실적재 1회 검증 + 기본 sink를 backend로.
+2) DLQ/PEL 회수/xadd_failed 자동 requeue (팀 리뷰가 P0 운영 안전으로 승격, 04 T-Ops-DLQ).
+3) mock 해제(결정론 우선): entity_linking=NER, sector_mapping, evidence_check=URL/출처 검증,
+   fact_check 빈 본문 pass 차단. → 그래야 카드 "콘텐츠"가 실데이터(현재는 배관만 실제, 알맹이 mock).
+```
+
+위는 source-ingestion-engineer / orchestrator-architect / operations-sre-agent에 위임 가능. P2~P10은 15 로드맵.
 
 ## C. 한 줄
 
-> 신기술을 얹기 전에, 이미 만든 두 자산을 연결하라. 실데이터 카드 1건이 1000개 소스보다 가치 있다.
+> 배관은 연결됐다(5타입 e2e 입증). 이제 카드의 **알맹이**(mock 6노드)를 실데이터로 채우는 것이 다음 관문이다.

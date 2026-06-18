@@ -7,22 +7,28 @@
 
 ## ingestion/ (수집 엔진)
 
-### T-IngA · ingestion → 다운스트림 raw_events 실 배선  **[P0]**
-- Folder: `ingestion/orchestration/`, `backend/app/services/`
-- Files: `bridge_to_raw_events.py`(주입형 db_writer 지원), `run_production_orchestration.py`(기본 `db_writer=None`), `backend/app/services/raw_event_service.py`
-- Current: bridge가 **JSON mirror로만** 기록. 57소스 출력이 실 PG/Redis stream에 들어가지 않음.
-- Why not: Phase H(브리지) DEFERRED — async+pydantic+AsyncSession 어댑터 미구현.
-- Risk if ignored: 두 자산이 영원히 분리 → ingestion 가치가 다운스트림에 미반영.
-- Required: `create_raw_event`(async/AsyncSession)에 맞는 db_writer 어댑터 구현 + runner에서 주입 + idempotent 보장.
-- Acceptance: production 사이클 1회 → 실 raw_events row 증가 + Redis stream XADD 확인, 중복 미적재.
-- Owner: source-ingestion-engineer + orchestrator-architect / Priority: P0
+### T-IngA · ingestion → 다운스트림 raw_events 실 배선  **[P0 — PARTIAL DONE 2026-06-18]**
+- Folder: `ingestion/integration/`, `ingestion/orchestration/`, `backend/app/services/`
+- DONE: `ingestion/integration/raw_events_writer.py`(`BackendApiRawEventsWriter` = bridge db_writer 콜러블,
+  backend POST 경유 PG+Redis), `downstream_contracts.py`(record_type별 계약 검증),
+  `p0_integration_runner.py`+`tools/run_p0_integration.py`(e2e proof). `run_production_orchestration`에
+  `--raw-events-sink backend` 주입 진입점 추가. 라이브 e2e 5타입 통과, 멱등 collapse 확인.
+- 남은 부분(P0 complete까지): ① production-validation 라이브 외부 probe→backend 실적재 1회 검증
+  (이번 세션 미실행, dry-run+proof-runner만), ② 카드 콘텐츠 mock(T-AgtA 의존).
+- Owner: source-ingestion-engineer + orchestrator-architect / Priority: P0(잔여)
 
-### T-IngB · EventQueue Redis Stream 모드 활성화  **[P1]**
-- Files: `ingestion/pipeline/event_queue.py`(REDIS_URL 시 redis 경로 디스패치, 실제 client는 "Round 2")
-- Current: REDIS_URL 없는 deterministic 사이클에선 JSONL fallback만 동작.
-- Required: redis client 배선 + enqueue/dequeue/peek/mark_done 구현 + 테스트.
-- Acceptance: REDIS_URL 설정 시 stream 기반 큐 동작, JSONL과 계약 동일.
-- Priority: P1 (T-IngA의 후속/대안 경로)
+### T-Ops-DLQ · Redis DLQ / PEL 회수 / xadd_failed 자동 requeue  **[P0(운영 안전)]**
+- Files: `workers/queue/consumer.py`(예외 시 XACK 누락→PEL 영구잔류), `agents/agent_worker.py`(무조건 XACK→실패 소실), `backend/app/services/{raw_event_service,reconciler_service}.py`(requeue 부품 존재, 자동 트리거 없음)
+- Required: DLQ stream + XAUTOCLAIM reaper + status=failed row 주기 requeue(Celery beat). 부품 대부분 존재, 배선 중심.
+- Acceptance: poison 메시지 DLQ 격리, consumer 크래시 후 PEL 회수, xadd_failed 자동 회복.
+- Priority: P0(데이터 정체 직결, 팀 리뷰 지적) / Owner: operations-sre-agent
+
+### T-IngB · EventQueue Redis Stream 모드 활성화  **[DONE 2026-06-18]**
+- Files: `ingestion/pipeline/event_queue.py`
+- DONE: `_redis_enqueue/_dequeue/_peek/_mark_done` 구현(Stream `stream:ingestion_eventqueue` +
+  consumer group + PEL ack). 주입형 client로 테스트(test_p0_redis_publish, test_pipeline_scaffold).
+- 주의: 이 스트림은 A측 EventQueue 자체 durable 백엔드(P0 핵심 전달경로는 backend `stream:raw_events`).
+  production runner는 현재 EventQueue를 JSONL로 사용 — Redis 백엔드 채택 여부는 운영 결정(P1).
 
 ### T-IngC · Celery 스케줄링 (Phase H)  **[P1]**
 - Files(미생성): `celery_app.py`, `tasks.py`, `retry_queue.py`, `quota_guard.py`
@@ -31,11 +37,14 @@
 - Blocker: Redis/Postgres 컨테이너 가동 + 사용자 승인(INSTALL_CANDIDATE).
 - Priority: P1
 
-### T-IngD · CommunityCorroborationGate → publish 파이프라인 배선  **[P1]**
-- Files: `community_corroboration_gate.py`(publish 등급 산출은 구현) → 다운스트림 publish 계층 소비 미연결.
-- Current: 등급(internal_queue_only/publish_blocked/preview_candidate)은 record에 부착되나 소비처 없음.
-- Required: quality/safety publish 계층이 등급을 강제하도록 연결(특히 익명 금융 갤러리 internal_queue_only).
-- Priority: P1 (dcinside publish 해제의 전제, 05 R-DcToS와 연동)
+### T-IngD · CommunityCorroborationGate → publish 파이프라인 배선  **[PARTIAL DONE 2026-06-18]**
+- Files: `community_corroboration_gate.py`(등급 산출), `agents/nodes/publish_or_hold.py`(B측 소비 추가)
+- DONE: B측 `publish_or_hold`가 `confirmation_policy ∈ {unconfirmed_until_corroborated,
+  internal_queue_only, publish_blocked_until_corrob}`이면 fact_check와 무관하게 card status=`hold` 강제.
+  라이브 e2e로 community 카드 hold 봉인 확인. p0_integration_runner는 `internal_queue_only`를 bridge에서 제외.
+- 남은 부분: A측 publish_level 메타(gallery_id 기반 internal/blocked 세분)를 raw_metadata로 끝까지 운반해
+  B측에서 등급별 차등 처리(현재는 정책 set 일괄 hold). dcinside 수집 자체는 R-DcToS 봉인 유지.
+- Priority: P1(잔여) (05 R-DcToS 연동)
 
 ## agents/ (LangGraph)
 

@@ -4,14 +4,24 @@
 
 ---
 
-### R-Integration · 두 수집 경로 미통합  — Severity: HIGH
+### R-Integration · 두 수집 경로 미통합  — Severity: HIGH→MEDIUM (PARTIAL MITIGATED 2026-06-18)
 - Area: source 수집 안정성 / 아키텍처
-- Description: ingestion 57소스 엔진 출력이 JSON mirror로만 떨어지고 다운스트림 실 raw_events PG에 미반영. 다운스트림 PG는 workers RSS 3소스가 채움.
-- Evidence: `run_production_orchestration.py` 기본 `db_writer=None` → `bridge.target="mirror"`.
-- Affected: `ingestion/orchestration/bridge_to_raw_events.py`, `backend/app/services/raw_event_service.py`
-- Current mitigation: mirror가 동일 계약을 검증(데이터 유실 아님, 단지 미연결).
-- Remaining gap: 실 db_writer 주입(04 T-IngA).
-- Closure: production 사이클이 실 raw_events row를 idempotent하게 생성.
+- Description: ingestion 엔진 출력→다운스트림 raw_events PG 배선.
+- DONE: `ingestion/integration/` adapter(BackendApiRawEventsWriter) + `--raw-events-sink backend` 진입점.
+  라이브 e2e 5타입(ingestion record→PG→Redis→worker→LangGraph→event_card) 통과, 멱등 collapse 확인.
+- Remaining gap: ① production-validation 라이브 외부 probe→backend 실적재 1회 검증(미실행),
+  ② 기본 sink는 여전히 mirror(backend는 opt-in) — 정식 production 스케줄에서 backend sink 채택.
+- Closure: 라이브 외부 수집 사이클이 실 raw_events row를 idempotent 생성(backend sink 상시).
+
+### R-MockCard · 생성 event_card 콘텐츠 mock  — Severity: HIGH (사용자 노출 전)
+- Area: 정보 신뢰성(§1) / 상품성
+- Description: LangGraph 6노드(entity_linking/sector_mapping/impact_analysis/evidence_check/
+  fact_check/final_writer)가 mock → 생성 카드의 entity/sector/evidence/impact가 고정/가짜
+  (예: 모든 입력을 geopolitics/energy/defense로 분류). raw_event 연결·status는 실제이나 알맹이는 mock.
+- Evidence: `agents/nodes/entity_linking.py` 등 상수 반환. fact_check는 raw_text="" + LLM 실패 시 무조건 "pass".
+- Current mitigation: `LLM_PROVIDER=mock` 기본이며 dev/검증 한정. community는 hold 봉인.
+- Remaining gap: 04 T-AgtA(6노드 실연결), fact_check 빈 본문 pass 차단.
+- Closure: 최소 entity/sector/evidence 실연결 전까지 카드 `published` 사용자 노출 금지.
 
 ### R-Gdelt429 · gdelt provider 429  — Severity: MEDIUM
 - Area: rate-limit / cooldown / retry

@@ -110,8 +110,20 @@ def test_event_queue_jsonl_peek_does_not_consume(tmp_path):
     assert dequeued[0]["title"] == "peek test"
 
 
-def test_event_queue_redis_raises_when_forced(tmp_path):
-    q = EventQueue(redis_url="redis://localhost:6379", fallback_dir=tmp_path)
+def test_event_queue_redis_uses_stream_backend_when_enabled():
+    # Round 2 구현됨: redis 모드에서 enqueue 는 stub(NotImplementedError)이 아니라 Redis
+    # Stream 으로 위임된다. 네트워크 없이 주입형 client 로 검증.
+    class _FakeRedis:
+        def __init__(self):
+            self.added = []
+
+        def xadd(self, stream, fields):
+            self.added.append((stream, fields))
+            return "1-0"
+
+    fake = _FakeRedis()
+    q = EventQueue(redis_client=fake)
     assert q._use_redis is True
-    with pytest.raises(NotImplementedError):
-        q.enqueue({"title": "redis test"})
+    msg_id = q.enqueue({"title": "redis test"})
+    assert msg_id == "1-0"
+    assert fake.added and fake.added[0][0] == EventQueue._STREAM

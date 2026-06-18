@@ -24,9 +24,17 @@
 | 8 | evidence_check | MOCK |
 | 9 | fact_check | MOCK("pass" 고정) |
 | 10 | final_writer | MOCK |
-| 11 | publish_or_hold | REAL(fact_check 기반 status) |
+| 11 | publish_or_hold | REAL(fact_check + **corroboration hold** 기반 status) |
 
 → **5 REAL / 6 MOCK.** mock 6개 실연결은 04 T-AgtA.
+
+> ⚠ **mock 카드 경고(2026-06-18)**: 6 mock 노드 탓에 생성 카드의 entity/sector/evidence/impact는
+> 고정/가짜다(05 R-MockCard). P0 통합 e2e는 **배관(plumbing)**을 입증한 것이지 카드 콘텐츠 품질이
+> 아니다. T-AgtA 전까지 `published` 카드 사용자 노출 금지.
+>
+> **publish_or_hold corroboration(2026-06-18 추가)**: `confirmation_policy ∈
+> {unconfirmed_until_corroborated, internal_queue_only, publish_blocked_until_corrob}`이면 fact_check와
+> 무관하게 `hold`. 라이브 e2e로 community 카드 hold 확인. 상수는 노드에 인라인(ingestion 미의존).
 
 ## 3. mock→real 전환 (무코드, env)
 

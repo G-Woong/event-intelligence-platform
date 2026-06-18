@@ -8,7 +8,8 @@
 
 | 범위 | 위치 | 수 | 상태 | 기준 |
 |---|---|---:|---|---|
-| ingestion(수집+오케스트레이션) | `ingestion/tests/` | **1205** | PASS | G-4 기준(93e83b6) |
+| ingestion(수집+오케스트레이션) | `ingestion/tests/` | **1242** | PASS | P0 통합(2026-06-18): 1205 + 신규 integration 37 |
+| P0 통합(adapter/계약/멱등/정책/redis) | `ingestion/tests/integration/test_p0_*` | **37** | PASS | 네트워크 0(MockTransport/FakeRedis) |
 | backend | `backend/tests/` | ~50 | PASS | STEP 011 기준선 |
 | agents | `agents/tests/` | ~22 | PASS | STEP 011 기준선 |
 | workers | `workers/tests/` | ~19 | PASS | STEP 011 기준선 |
@@ -18,11 +19,22 @@
 - **ingestion 1205**가 현재 권위 수치. 구 문서의 509/635/648은 stale(06 C-2).
 - 다운스트림(backend/agents/workers/frontend) 카운트는 **STEP 011 스냅샷** — 그 이후 드리프트 여부 `NEEDS_VERIFICATION`(재집계 시 갱신).
 
-## 2. 이 docs 라운드의 검증 (수행)
+## 2. 검증 라운드
 
-- secret scan: `python -m ingestion.tools.scan_secrets --paths docs` → 결과는 커밋 메시지/보고에 기록.
+### 2b. P0 통합 라운드 (2026-06-18, 수행)
+- `pytest ingestion/tests` → **1242 passed**(신규 37 포함, 회귀 0). `pytest agents` → 21 passed/1 skip.
+- 라이브 e2e: 코어 스택 10컨테이너 healthy. `run_p0_integration` 5 record_type **E2E_OK**(article/
+  official/structured/search/community) — raw_event→PG→Redis→worker→LangGraph→event_card. 재실행 멱등 collapse.
+  community 카드 `hold` 봉인(agent-worker 이미지 재빌드 후). production CLI `--raw-events-sink backend`
+  dry-run `bridge_contract_pass=True`.
+- secret scan: `scan_secrets --paths ingestion backend workers agents docs` → **verdict=PASS files_scanned=5079**.
+- `git diff --check`: DIFF_CHECK_CLEAN.
+- ⚠ UNKNOWN: production-validation 라이브 외부 probe→backend 실적재는 이번 세션 미실행(사용자 중단).
+
+### 2a. docs 라운드의 검증 (수행)
+- secret scan: `python -m ingestion.tools.scan_secrets --paths docs`.
 - `git diff --check`: 공백/충돌 마커 없음 확인.
-- manifest 정합: `docs/**/*.md` 수 == `10_DOCS_COVERAGE_MANIFEST.md` 행 수(원본 50 + 신규 canonical 11 + 인벤토리/매니페스트 자체는 행에서 구분).
+- manifest 정합: `docs/**/*.md` 수 == `10_DOCS_COVERAGE_MANIFEST.md` 행 수.
 
 ## 3. 산출물·아티팩트 정책
 
