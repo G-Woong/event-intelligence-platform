@@ -2,6 +2,8 @@
 
 > 경영자용 요약 + 엔지니어용 next tasks. 기준 커밋 `5491c02`, 2026-06-16.
 
+> 📌 **경영 요약(ABSORB, 10 Group E E19)**: §B는 self-reconcile됨. 단 "두 자산이 아직 미연결"이라는 프레이밍은 **stale** — 배선·라이브 E2E 완료(canonical `01`·`05 R-Integration`, ap_news 100 카드). 현재 구현 사실은 canonical이 권위. 수익화·가격 등은 **미구현 ROADMAP**.
+
 ---
 
 ## A. 경영자 요약 (Executive Summary)

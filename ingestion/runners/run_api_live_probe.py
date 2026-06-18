@@ -128,4 +128,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    print(
+        "[DEPRECATED] This runner is kept for legacy API-probe compatibility.\n"
+        "Canonical API connectivity: python -m ingestion.runners.run_api_connectivity_check\n"
+        "Canonical orchestration: python -m ingestion.tools.run_production_orchestration",
+        file=sys.stderr,
+    )
     main()

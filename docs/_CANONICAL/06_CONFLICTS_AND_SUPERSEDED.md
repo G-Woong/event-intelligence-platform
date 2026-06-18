@@ -62,6 +62,12 @@
 - Files: `INGESTION_FINAL.md`/`IMPLEMENTATION_TRACE_FINAL.md`("PASS/CORE_READY") ↔ production_state("EXTERNAL_RATE_LIMITED")
 - Resolution: **레이어 차이** — 수집계층 view(과거 성공)와 오케스트레이션 view(현재 scheduled 429)가 다름. Current 권위 = production_state. Canonical: `03 §2`.
 
+### C-11 · pre-harness closure 검증 정정 (2026-06-18)
+- **markdown_extractor "orphan" 오분류**: 직전 라운드가 `ingestion/tools/markdown_extractor.py`를 삭제후보 orphan으로 기재했으나 **오류** — `fetch_strategies/cloud_browser_like.py`가 import하고 `tests/unit/test_fetch_strategies.py`가 테스트한다. **KEEP_CANONICAL**로 정정(04 T-RunA).
+- **CLAUDE.md codex 참조 정확성**: 직전 WARNING이 "CLAUDE.md가 부재 파일(.codex/AGENTS.md/README.md/CLAUDE.local.md)을 참조"라 했으나 **과장**. 실제 CLAUDE.md는 `codex/ worktree`만 참조(line 11/50/53/89)하고, 해당 worktree(`business/codex [codex]`)와 `codex/AGENTS.md`는 **실재**한다. CLAUDE.md는 정확 → **무수정**(없는 걸 있다고, 있는 걸 없다고 쓰지 않는다).
+- **orphan 2개 삭제**: `search_query_builder.py`·`screenshot_logger.py`(전 repo 참조 0건) 사용자 승인 후 제거.
+- Canonical: `04 T-RunA`.
+
 ---
 
 ## B. 구버전(SUPERSEDED) — 배너 부착, 삭제 안 함

@@ -2,6 +2,8 @@
 
 > 결론: 우리는 구글 같은 범용 검색엔진을 만들지 않는다. 고신호 source·검색 API 확장·자체 index·RAG/KG-RAG·LLM judge·event graph를 결합한 **event intelligence platform**을 만든다.
 
+> 📌 **포지셔닝 문서(ABSORB, 10 Group E E3)**: 논제는 유효하며 코드-상태 주장이 없다. 현재 구현 사실은 `docs/_CANONICAL/01·02`가 권위. 검색 API 확장/KG-RAG/judge는 다수 **미구현 ROADMAP**(06·09·11 ideation).
+
 ---
 
 ## 1. 본질적 차이

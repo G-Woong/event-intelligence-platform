@@ -2,6 +2,8 @@
 
 > 원칙: 토대(배선·dedup·mock 해제)를 먼저 닫고, 고급 layer(검색확장·rerank·GraphRAG)는 그 위에 얹는다. 순서 역전 금지(적대적 비판). 각 Phase는 측정 가능한 acceptance를 가진다.
 
+> 📌 **로드맵 문서(ABSORB, 10 Group E E16)**: P0(ingestion→raw_events 배선)은 **완료**됨(ap_news 라이브 E2E; canonical `04 T-IngA`·`01`). 아래 Phase의 "DONE 여부"는 `docs/_CANONICAL/04·09`가 권위(본 문서보다 최신). Phase 의존 순서는 `04` 상단에 흡수됨.
+
 ---
 
 ## P0/P1 우선순위 요약

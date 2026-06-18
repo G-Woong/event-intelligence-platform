@@ -3,6 +3,9 @@
 > 구현 완료된 것은 여기 없다(01 참조). RISK는 05, 고도화는 07.
 > 우선순위: P0 통합 차단 / P1 기능 갭 / P2 운영·품질.
 
+> **Phase 의존 순서(역전 금지, 출처: ideation 15 roadmap)**: P0 배선(ingestion→raw_events)은 완료(T-IngA PARTIAL DONE).
+> 다음은 **토대 먼저** — P1 큐/관측(T-Ops-DLQ)·mock 해제/dedup(T-AgtA) → 그 위에 P2 고급 layer(search 확장 T-SrA·hybrid/rerank T-SrB·clustering·LLM supervisor). 토대(배선·dedup·실모델) 전에 search-expansion/GraphRAG로 건너뛰지 않는다. 상세 로드맵은 `_IDEATION_WEB_INTELLIGENCE/15`.
+
 ---
 
 ## ingestion/ (수집 엔진)
@@ -128,9 +131,9 @@
 
 ## scripts/runners (정리 인벤토리)
 
-### T-RunA · runner/script 책임표 + 통폐합  **[P2 — 인벤토리 DONE 2026-06-18 / 통폐합 DEFER_TO_HARNESS_REBUILD]**
-> Pre-Harness Cleanup Sprint 전수 grep 감사. 각 파일은 **참조(doc/test/import) 근거 보유 시 삭제 불가**.
-> "확인 없이 삭제 금지"(CLAUDE.md) 준수 — 아래는 분류만, 실제 삭제/deprecate는 사용자 승인·하네스 재구축 시 진행.
+### T-RunA · runner/script 책임표 + 통폐합  **[P2 — 인벤토리/deprecate/orphan DONE 2026-06-18 / 잔여 통폐합 DEFER_TO_HARNESS_REBUILD]**
+> Pre-Harness Cleanup(+Closure) Sprint 전수 grep 감사. 각 파일은 **참조(doc/test/import) 근거 보유 시 삭제 불가**.
+> closure 라운드에서 deprecate warning 삽입 + 승인된 orphan 2개 삭제 완료. 잔여 통폐합(merge/audit 러너)은 하네스 재구축 시.
 
 - **Job family별 canonical 진입점**(이것만 신규 작업의 진입점으로 사용):
   - production orchestration → `ingestion/tools/run_production_orchestration.py`
@@ -144,17 +147,19 @@
   - browser/dep readiness → `run_browser_runtime_check.py` / `tools/check_dependency_readiness.py`
   - secret/env gate → `tools/scan_secrets.py`(hook 연동) / `tools/check_env_hygiene.py`
 
-- **DEPRECATE_WITH_WARNING 후보**(상위 canonical로 대체됨, 단 catalog/readiness 러너가 문자열 참조 → 삭제 아님):
-  `runners/run_collection_probe.py`, `runners/run_api_live_probe.py`(→`run_api_connectivity_check.py`로 흡수 권장),
-  `runners/run_playwright_selector_sources_audit.py`, `runners/run_external_rate_limit_recheck.py`.
+- **DEPRECATE_WITH_WARNING (DONE 2026-06-18)** — CLI 실행 시 stderr deprecation 안내 삽입(import side effect 0, `__main__`에서만):
+  `runners/run_collection_probe.py`, `runners/run_api_live_probe.py`(→`run_api_connectivity_check.py` 안내),
+  `runners/run_playwright_selector_sources_audit.py`(→`run_structure_explorer` 안내), `runners/run_external_rate_limit_recheck.py`.
+  catalog/readiness 러너 문자열 참조가 있어 **삭제는 안 함**(동작 보존, canonical로 유도만).
 
 - **MERGE_CANDIDATE**(소스 폐쇄 family, 이전 phase): `tools/run_last_chance_source_resurrection.py`,
-  `tools/run_source_readiness_closure.py` → 최신 `run_final_source_closure.py`/`run_production_orchestration.py`로 수렴.
+  `tools/run_source_readiness_closure.py` → 최신 `run_final_source_closure.py`/`run_production_orchestration.py`로 수렴.(DEFER)
 
-- **DELETE_CANDIDATE_REQUIRES_APPROVAL**(전 repo grep상 doc/test/import 참조 0건인 진짜 orphan — **삭제는 사용자 승인 필요**):
-  `ingestion/tools/search_query_builder.py`(`build_news_search_query` 무호출),
-  `ingestion/tools/screenshot_logger.py`(`screenshot_path_for` 무호출),
-  `ingestion/tools/markdown_extractor.py`(trafilatura_extractor와 중복, 무호출).
+- **ORPHAN DELETED (2026-06-18, 사용자 승인)**: `ingestion/tools/search_query_builder.py`,
+  `ingestion/tools/screenshot_logger.py` — 전 repo import/test/docs 참조 0건 확인 후 제거(closure 라운드).
+- **정정(직전 라운드 오류)**: `ingestion/tools/markdown_extractor.py`는 orphan **아님** —
+  `ingestion/fetch_strategies/cloud_browser_like.py`가 import하고 `tests/unit/test_fetch_strategies.py`가 테스트한다 →
+  **KEEP_CANONICAL**(body 추출 ladder의 markdown 모드). 이전 "삭제후보" 분류는 철회.
   > 주의: `summarize_reports.py`/`inspect_last_failure.py`는 외부 참조 0건이나 운영 진단 도구라 KEEP_PROBE(삭제 후보 아님).
 
 - **DEFER_TO_HARNESS_REBUILD**(live-audit 라운드 러너 다수 — 전부 unit-test import 보유, `_audit_common.py` 공유):

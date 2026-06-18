@@ -244,4 +244,10 @@ def main(argv: Optional[list] = None) -> int:
 
 
 if __name__ == "__main__":
+    print(
+        "[DEPRECATED] This runner is a one-shot legacy selector E2E audit (07).\n"
+        "Canonical selector recovery: python -m ingestion.runners.run_structure_explorer\n"
+        "Canonical orchestration: python -m ingestion.tools.run_production_orchestration",
+        file=sys.stderr,
+    )
     raise SystemExit(main())

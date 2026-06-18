@@ -319,4 +319,10 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 
 if __name__ == "__main__":
+    print(
+        "[DEPRECATED] This runner is a one-shot legacy audit (docs/10 PHASE 3-4).\n"
+        "Canonical orchestration: python -m ingestion.tools.run_production_orchestration\n"
+        "No-call source validation: python -m ingestion.tools.run_orchestration_source_validation",
+        file=sys.stderr,
+    )
     sys.exit(main())

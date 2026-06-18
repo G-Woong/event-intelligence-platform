@@ -106,7 +106,7 @@
 | E19 | 18_FINAL_EXECUTIVE_SUMMARY.md | 경영 요약 | ABSORB | §B self-reconcile, 현행 서술 |
 
 > Group E 처리: ABSORB 4(E3·E16·E19·E5 일부) / MIXED 7 / ROADMAP_ONLY 4 / ARCHIVE 2 / SUPERSEDED 2.
-> STALE 배너 부착 = **4개**(E1·E2·E17·E18). 나머지는 전략/로드맵으로 유효(배너 없음).
+> 배너: STALE 4개(E1·E2·E17·E18) + ABSORB canonical 포인터 3개(E3·E16·E19, 2026-06-18 closure). 나머지는 배너 없음.
 
 ---
 
