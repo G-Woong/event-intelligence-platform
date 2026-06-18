@@ -21,6 +21,27 @@
 
 ## 2. 검증 라운드
 
+### 2e. Orchestration source-live 라운드 (2026-06-18, 수행)
+- 범위: evidence_check SSRF-safe HTTP 도달성(Phase 4) + recovery-scheduler 라이브 tick/compose service(Phase 3)
+  + admin auth 자세 단일화 + APP_ENV=dev 오배포 guard(Phase 5) + source-wide final_action matrix harness(Phase 2).
+- 단위/통합(네트워크 0): `pytest ingestion/tests` → **1255 passed**(회귀 0, +12 matrix 분류기).
+  agents → **83 passed/1 skip**(+evidence_reachability SSRF 17, +evidence_check 배선 3). backend admin auth
+  → **9 passed**(+assert_startup_auth_posture 4). workers recovery scheduler → 4 passed.
+- **적대적 리뷰(adversarial-reality-critic, SSRF)**: REAL_BUG 2건 — ① DNS rebinding/TOCTOU(HIGH, 잔존 위험으로
+  문서화 + "SSRF-safe" 단언 철회→best-effort), ② IPv4-mapped IPv6 분류(HIGH, `ip_is_public`을 is_global
+  whitelist + 언맵으로 수정; 본 인터프리터에선 is_private이 이미 차단하나 견고화). follow_redirects 강제 추가.
+  회귀 잠금 테스트 3건(`::ffff:169.254.169.254` 차단 등).
+- **라이브 tick proof**(실행 스택): `recovery-scheduler` compose run `--once --dry-run` →
+  reconcile_stuck(200)/requeue_failed_xadd(200)/reap_pending(claimed=0) `actions=3 ok=3` EXIT=0.
+- **라이브 외부 probe proof**: `run_production_orchestration --mode production-validation --max-sources 1` →
+  **bbc** 라이브 수집 36 records → EventQueue 34 + raw_events(mirror) 34, duplicates 2, rate_limited 0,
+  bridge_contract_pass=True. (실제 외부 데이터가 흐르는 것을 직접 관찰; mirror sink까지.)
+- secret scan: `scan_secrets --paths ingestion backend workers agents docs` → **PASS files_scanned=5210**.
+  `git diff --check`: clean.
+- ⚠ UNKNOWN(verified blocker): 라이브 외부→**backend sink end-to-end(card까지)** 미실행(in-network 토큰
+  friction), 46 CALLABLE 소스 전수 라이브 probe 미실행(이번 1건만), 복구 daemon 상시 배포·DLQ chaos·
+  evidence 도달성 LLM_PROVIDER=openai 라이브, entity/sector LLM급 정밀도.
+
 ### 2d. Orchestration 하드닝 라운드 (2026-06-18, 수행)
 - 범위: mock 노드 → 결정론적 baseline(entity/sector/impact/summary/fact_check) + publish 게이트 합성마커
   백스톱 + admin auth 운영 fail-closed(`APP_ENV`) + 복구 주기 드라이버(reconcile+requeue-failed-xadd+PEL reap).

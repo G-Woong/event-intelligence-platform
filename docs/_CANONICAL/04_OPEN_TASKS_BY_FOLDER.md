@@ -28,10 +28,13 @@
   all-fail 시 non-zero exit). backend에 `POST /api/admin/raw-events/requeue-failed-xadd` 엔드포인트 추가
   (`reconciler_service.requeue_failed_xadd` 노출). 테스트: `workers/tests/test_recovery_scheduler.py`(4),
   `backend/tests/test_reconciler_api.py`(requeue-failed-xadd 2 추가).
-- 남은 부분: ① 드라이버를 **compose service/cron으로 배포해 라이브 주기 tick 입증**(코드/테스트는 완료,
-  컨테이너/cron 배포는 ops 결정), ② DLQ 적재 모니터링/알림 임계값, ③ `agent_worker.py`는 무조건 XACK 유지
-  (실패는 DB status=failed로 기록 — 소실 아님).
-- Acceptance(잔여): 드라이버 compose/cron 배포 + 라이브 tick + DLQ depth 알림. Priority: P1(잔여) / Owner: operations-sre-agent
+- DONE(source-live 라운드 2026-06-18): `docker-compose.dev.yml`에 **`recovery-scheduler` service 추가**
+  (worker 이미지 재사용, `--interval-sec 60`). scheduler에 logging.basicConfig + cycle 요약 로그 추가
+  (이전엔 무출력). **라이브 `--once` tick 입증**: compose run → reconcile_stuck(200)/requeue_failed_xadd(200)/
+  reap_pending(claimed=0) `actions=3 ok=3` EXIT=0.
+- 남은 부분: ① **daemon 상시 가동**(compose service는 정의/검증됨; `up -d`로 상주 배포는 ops 결정),
+  ② DLQ depth 모니터링/알림 임계값, ③ worker-kill 라이브 chaos(현재 단위 FakeRedis까지).
+- Acceptance(잔여): daemon 상시 배포 + DLQ depth 알림 + 라이브 chaos. Priority: P1(잔여) / Owner: operations-sre-agent
 
 ### T-IngB · EventQueue Redis Stream 모드 활성화  **[DONE 2026-06-18]**
 - Files: `ingestion/pipeline/event_queue.py`
@@ -67,8 +70,13 @@
   일 때만 LLM 보강(상수 반환 시 baseline 복귀). 라이브 입증(재빌드 스택): 실 URL 카드가 실 entity/sector/추출요약으로
   published, synthetic URL은 hold+공개 404. 테스트: `agents/tests/test_entity_sector_impact_fact_real_baseline.py`,
   `test_event_graph_no_mock_published.py`, `test_evidence_check_real_validation.py`.
-- 남은(LLM급 정밀도): entity NER/sector 분류기는 **결정론적 baseline**(LLM급 의미분석 아님). `evidence_check` **URL
-  도달성(HTTP) 검증 미구현**(구조 유효성까지). LLM 보강(`LLM_PROVIDER=openai`)은 미배포(키 미설정).
+- DONE(source-live 라운드 2026-06-18): **`evidence_check` URL 도달성(HTTP) 구현** —
+  `agents/nodes/evidence_reachability.py`(SSRF-safe best-effort): DNS 해석 후 is_global whitelist
+  (IPv4-mapped 언맵), redirect 매 hop 재검증(follow_redirects 강제 off), HEAD→GET fallback, 짧은 timeout.
+  `EVIDENCE_REACHABILITY_CHECK` 토글(기본 off). 적대적 리뷰 REAL_BUG 2건 반영(TOCTOU 문서화/철회, IPv4-mapped
+  수정). 테스트: `test_evidence_reachability_ssrf_safe.py`(17), `test_evidence_check_real_validation.py`(+3 배선).
+- 남은(LLM급 정밀도): entity NER/sector 분류기는 **결정론적 baseline**(LLM급 의미분석 아님). LLM 보강
+  (`LLM_PROVIDER=openai`)·evidence 도달성 라이브(openai/network)는 미배포(키 미설정). DNS rebinding/TOCTOU 잔존.
 - Required: NER/분류기/프롬프트 자산 연결(`agents/prompts/*.md` → load_prompt → LLMClient, `LLM_PROVIDER=openai`),
   evidence reachability(SSRF-safe HEAD/GET).
 - Acceptance: LLM급 실 출력 + 스키마 검증 + evidence 도달성. Priority: P1(잔여)

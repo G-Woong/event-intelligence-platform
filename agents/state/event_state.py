@@ -18,6 +18,7 @@ class EventState(TypedDict, total=False):
     retrieved_context: list[dict]
     impact: str
     evidence: list[str]
+    evidence_status: str
     fact_check: str
     final_card: Optional[FinalEventCard]
     status: str

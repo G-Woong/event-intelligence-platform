@@ -24,20 +24,31 @@ _RESERVED_HOSTS = ("example.com", "example.org", "example.net")
 _RESERVED_HOST_SUFFIXES = (".test", ".invalid", ".localhost", ".example")
 
 
+def ip_is_public(value: str) -> bool:
+    """IP 문자열이 전역 유니캐스트(공개)면 True. DNS 결과 IP의 SSRF 적격성 판정에 재사용.
+
+    화이트리스트(`is_global`) 방식 — 사설/loopback/link-local(메타데이터 169.254.169.254)/예약/
+    멀티캐스트/공유(CGNAT 100.64/10)/미래 예약 대역을 기본 차단한다. IPv4-mapped IPv6
+    (`::ffff:a.b.c.d`)는 내장 플래그 위임이 버전마다 달라 명시적으로 언맵 후 판정한다.
+    IP가 아니면 False(불확실 → 보수적 거부).
+    """
+    try:
+        ip = ipaddress.ip_address(value)
+    except ValueError:
+        return False
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        ip = mapped
+    return bool(ip.is_global)
+
+
 def _host_is_disallowed_ip(host: str) -> bool:
     """사설/loopback/link-local(메타데이터 169.254.169.254)/예약 IP면 근거 부적격."""
     try:
-        ip = ipaddress.ip_address(host)
+        ipaddress.ip_address(host)
     except ValueError:
         return False  # 호스트명(IP 아님)
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    return not ip_is_public(host)
 
 
 def is_valid_evidence_url(value: object) -> bool:

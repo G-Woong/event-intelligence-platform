@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.core.config import settings
 from backend.app.core.logging import configure_logging
 from backend.app.core.observability import setup_langsmith
-from backend.app.core.security import require_admin_token
+from backend.app.core.security import require_admin_token, assert_startup_auth_posture
 from backend.app.db import redis as redis_db, milvus as milvus_db, postgres as postgres_db, opensearch as opensearch_db  # noqa: F401
 from backend.app.services import opensearch_index_service
 from backend.app.api import health, events, themes, sectors, comments, ai_replies, admin, internal
@@ -22,13 +22,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     setup_langsmith()
 
-    if not settings.ADMIN_API_TOKEN:
-        if settings.APP_ENV in ("production", "staging"):
-            # fail-closed: 운영 환경에서 admin 토큰 없이 기동 금지.
-            raise RuntimeError(
-                f"ADMIN_API_TOKEN required when APP_ENV={settings.APP_ENV} (refusing to start unauthenticated)"
-            )
-        logger.warning("ADMIN_API_TOKEN unset — admin endpoints unauthenticated (dev only)")
+    # admin 인증 자세 강제(prod fail-closed) + APP_ENV=dev 오배포 경고. 단일 출처: security.py.
+    assert_startup_auth_posture()
 
     if redis_db.ping():
         logger.info("Redis: connected")

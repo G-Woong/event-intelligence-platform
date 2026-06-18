@@ -193,6 +193,26 @@ services:
       start_period: 30s
     restart: on-failure
 
+  recovery-scheduler:
+    # DLQ/PEL/requeue 복구 주기 드라이버. worker 이미지(backend.db + workers + httpx 포함) 재사용,
+    # command만 스케줄러로 override. 매 60s tick: reconcile-stuck + requeue-failed-xadd + PEL reap.
+    build:
+      context: .
+      dockerfile: workers/Dockerfile
+    container_name: ei-recovery-scheduler
+    command: ["python", "-m", "workers.tools.run_recovery_scheduler", "--interval-sec", "60"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      BACKEND_INTERNAL_URL: http://backend:8000
+    env_file:
+      - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    restart: on-failure
+
   opensearch:
     image: opensearchproject/opensearch:2.13.0
     container_name: ei-opensearch

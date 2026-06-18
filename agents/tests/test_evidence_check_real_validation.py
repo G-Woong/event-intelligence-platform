@@ -78,3 +78,44 @@ def test_public_domain_accepted():
 def test_old_mock_markers_no_longer_grounded():
     # 회귀: 과거 evidence_check 고정 mock은 더 이상 근거로 인정되지 않는다.
     assert has_grounded_evidence(["[mock-source-1]", "[mock-source-2]"]) is False
+
+
+# ----- Phase 4: 도달성 검증 배선 (settings 토글) -----
+
+def test_reachability_off_keeps_structural_only(monkeypatch):
+    from backend.app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVIDENCE_REACHABILITY_CHECK", False)
+    result = evidence_check(_state("https://www.sec.gov/x"))
+    assert result["evidence"] == ["https://www.sec.gov/x"]
+    assert result["evidence_status"] == "structural_ok"
+
+
+def test_reachability_on_drops_unreachable(monkeypatch):
+    import agents.nodes.evidence_check as ec
+    from agents.nodes.evidence_reachability import ReachabilityResult
+    from backend.app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVIDENCE_REACHABILITY_CHECK", True)
+    monkeypatch.setattr(
+        ec, "check_evidence_reachable",
+        lambda url, **kw: ReachabilityResult(url, False, "http_error", "status=404", 404),
+    )
+    result = evidence_check(_state("https://www.sec.gov/missing"))
+    assert result["evidence"] == []
+    assert result["evidence_status"] == "unreachable:http_error"
+
+
+def test_reachability_on_keeps_reachable(monkeypatch):
+    import agents.nodes.evidence_check as ec
+    from agents.nodes.evidence_reachability import ReachabilityResult
+    from backend.app.core.config import settings
+
+    monkeypatch.setattr(settings, "EVIDENCE_REACHABILITY_CHECK", True)
+    monkeypatch.setattr(
+        ec, "check_evidence_reachable",
+        lambda url, **kw: ReachabilityResult(url, True, "ok", "HEAD", 200),
+    )
+    result = evidence_check(_state("https://www.reuters.com/markets/x"))
+    assert result["evidence"] == ["https://www.reuters.com/markets/x"]
+    assert result["evidence_status"] == "reachable_ok"

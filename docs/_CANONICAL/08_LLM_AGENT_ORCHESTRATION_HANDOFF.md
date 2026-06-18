@@ -21,7 +21,7 @@
 | 5 | sector_mapping | BASELINE(결정론적 keyword 분류, `baselines.map_sectors`) |
 | 6 | retrieve_past_context | REAL(Milvus top-k) |
 | 7 | impact_analysis | BASELINE(결정론적; openai일 때만 LLM 보강) |
-| 8 | evidence_check | PARTIAL(실 source URL 구조검증 채택, 도달성 미검증) |
+| 8 | evidence_check | REAL/BASELINE(실 source URL 구조검증 + SSRF-safe HTTP 도달성, `EVIDENCE_REACHABILITY_CHECK` 토글) |
 | 9 | fact_check | BASELINE(구조적 fail-closed; 빈본문/무근거→hold) |
 | 10 | final_writer | BASELINE(추출 요약; status 기본 hold=fail-closed) |
 | 11 | publish_or_hold | REAL(근거+fact_check+본문+합성마커+corroboration 게이트) |
@@ -40,7 +40,8 @@
 > - `publish_or_hold`는 **유효 근거 URL + fact_check pass + 본문 존재 + 카드 텍스트(summary/impact)에
 >   합성마커 없음**을 모두 만족할 때만 published(합성 상수 우회 노출 차단, 적대적 리뷰 지적 반영).
 > - 공개 `GET /api/events`(목록)·`GET /api/events/{id}`(단건) 모두 published 카드만 반환.
-> → 잔여: entity/sector는 **LLM급 정밀도가 아닌 baseline**, evidence **도달성(HTTP) 미검증**(T-AgtA).
+> → 잔여: entity/sector는 **LLM급 정밀도가 아닌 baseline**(T-AgtA). evidence **도달성(HTTP)은 구현 완료**
+> (`evidence_reachability.py`, SSRF-safe best-effort, 기본 off; DNS rebinding/TOCTOU 잔존은 문서화).
 >
 > **publish_or_hold corroboration(2026-06-18)**: `confirmation_policy ∈
 > {unconfirmed_until_corroborated, internal_queue_only, publish_blocked_until_corrob}` 또는

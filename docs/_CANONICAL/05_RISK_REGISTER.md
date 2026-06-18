@@ -31,9 +31,13 @@
 - evidence(P0 하드닝 유지): `evidence_check`는 실 source URL만 근거로 채택, `evidence_rules`가 http(s)+공개호스트,
   합성/로컬/플레이스홀더 + 사설/loopback/link-local(메타데이터 169.254.169.254)/예약 IP(`ipaddress`) +
   RFC2606 예약도메인 거부(SSRF 가드).
-- Remaining gap: entity/sector는 **결정론적 baseline**(LLM급 정밀도 아님), evidence_check **URL 도달성(HTTP)
-  미검증**(구조 유효성까지), LLM 보강(`LLM_PROVIDER=openai`) 미배포. → 04 T-AgtA.
-- Closure: LLM급 entity/sector + evidence 도달성 검증 완료 시 LOW.
+- DONE(source-live 라운드, 2026-06-18): **evidence_check HTTP 도달성 구현**(`evidence_reachability.py`,
+  SSRF-safe best-effort) — DNS 해석 후 is_global whitelist(IPv4-mapped 언맵), redirect 매 hop 재검증,
+  HEAD→GET, `EVIDENCE_REACHABILITY_CHECK` 토글(기본 off). 적대적 리뷰 REAL_BUG 2건(TOCTOU 문서화/철회,
+  IPv4-mapped 수정) 반영 + 회귀잠금. 잔존: DNS rebinding/TOCTOU(egress 방화벽 권고).
+- Remaining gap: entity/sector는 여전히 **결정론적 baseline**(LLM급 정밀도 아님), LLM 보강
+  (`LLM_PROVIDER=openai`) 미배포, evidence 도달성 라이브(openai/network) 미배포. → 04 T-AgtA.
+- Closure: LLM급 entity/sector 완료 시 LOW(evidence 도달성은 구조검증→HTTP까지 진행됨).
 
 ### R-Gdelt429 · gdelt provider 429  — Severity: MEDIUM
 - Area: rate-limit / cooldown / retry
@@ -68,7 +72,11 @@
 - Current mitigation: **`APP_ENV` 도입 — production/staging에서는 토큰 미설정 시 admin API 503 거부 +
   backend 기동 자체 거부**(`security.require_admin_token`, `main.py` lifespan RuntimeError). dev/test만 bypass
   유지. 토큰 설정 시 timing-safe 검사. server-only 격리로 토큰 노출 차단. 테스트: `test_admin_api_token_required_in_production.py`.
-- Remaining gap: RBAC/OAuth per-endpoint scope(04 T-OpB). `APP_ENV=dev`로 운영 오배포 시 무인증(배포 환경변수 규율 필요).
+- DONE(source-live 라운드, 2026-06-18): 인증 자세를 `security.assert_startup_auth_posture` 단일 출처로
+  통합(main.py 중복 제거 → 드리프트 차단). `APP_ENV=dev` + 토큰 미설정 시 **명시적·실행가능 경고**
+  (UNAUTHENTICATED + "공개 배포 전 APP_ENV=production 필수"). `.env.example`에 APP_ENV 보안 주석.
+- Remaining gap: RBAC/OAuth per-endpoint scope(04 T-OpB). `APP_ENV=dev`로 운영 오배포 시 여전히 무인증
+  (경고는 추가됐으나 배포 환경변수 규율이 최종 방어선).
 - Closure: RBAC + 운영 배포에서 `APP_ENV=production` 강제.
 
 ### R-Secret · 비밀 유출  — Severity: HIGH

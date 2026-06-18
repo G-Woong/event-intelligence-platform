@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     LLM_MAX_TOKENS: int = 1024
     LLM_TEMPERATURE: float = 0.2
 
+    # evidence URL HTTP 도달성 검증(SSRF-safe). 네트워크 호출이므로 기본 off.
+    # on 이면 evidence_check 가 구조검증 통과 URL 을 실제 HEAD/GET 으로 도달 확인하고,
+    # 도달 불가 근거는 채택하지 않는다(publish_or_hold 가 hold).
+    EVIDENCE_REACHABILITY_CHECK: bool = False
+    EVIDENCE_REACHABILITY_TIMEOUT_SEC: float = 5.0
+    EVIDENCE_REACHABILITY_MAX_REDIRECTS: int = 3
+
     EMBEDDING_PROVIDER: Literal["mock", "openai"] = "mock"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIM: int = 1536

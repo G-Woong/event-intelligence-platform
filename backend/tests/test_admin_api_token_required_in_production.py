@@ -64,3 +64,38 @@ def test_production_with_token_requires_header(client):
     with patch("backend.app.core.security.settings", _patched_settings("production", "prodtoken")):
         assert client.get("/api/admin/jobs").status_code == 401
         assert client.get("/api/admin/jobs", headers={"X-Admin-Token": "prodtoken"}).status_code == 200
+
+
+# ----- 기동 자세 강제(assert_startup_auth_posture): prod fail-closed + dev 오배포 경고 -----
+
+def test_startup_posture_production_missing_token_raises():
+    from backend.app.core import security
+
+    with patch("backend.app.core.security.settings", _patched_settings("production", "")):
+        with pytest.raises(RuntimeError):
+            security.assert_startup_auth_posture()
+
+
+def test_startup_posture_staging_missing_token_raises():
+    from backend.app.core import security
+
+    with patch("backend.app.core.security.settings", _patched_settings("staging", "")):
+        with pytest.raises(RuntimeError):
+            security.assert_startup_auth_posture()
+
+
+def test_startup_posture_dev_missing_token_warns_no_raise(caplog):
+    import logging
+    from backend.app.core import security
+
+    with patch("backend.app.core.security.settings", _patched_settings("dev", "")):
+        with caplog.at_level(logging.WARNING):
+            security.assert_startup_auth_posture()  # 예외 없음
+    assert any("UNAUTHENTICATED" in r.message for r in caplog.records)
+
+
+def test_startup_posture_with_token_is_silent():
+    from backend.app.core import security
+
+    with patch("backend.app.core.security.settings", _patched_settings("production", "tok")):
+        security.assert_startup_auth_posture()  # 토큰 있으면 prod라도 통과(no raise)

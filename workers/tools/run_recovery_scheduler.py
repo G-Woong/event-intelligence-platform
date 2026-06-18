@@ -116,11 +116,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-idle-ms", type=int, default=60000)
     parser.add_argument("--max-retries", type=int, default=dlq.DEFAULT_MAX_RETRIES)
     parser.add_argument("--dlq-stream", default="stream:raw_events:dlq")
+    parser.add_argument("--log-level", default="INFO", help="로그 레벨(기본 INFO)")
     args = parser.parse_args(argv)
+
+    # 운영 드라이버로서 cycle 결과가 stdout/stderr에 보이도록 로깅 구성(없으면 무출력).
+    logging.basicConfig(
+        level=getattr(logging, str(args.log_level).upper(), logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
 
     actions = _build_actions(args)
     while True:
         results = run_recovery_cycle(actions)
+        ok = sum(1 for r in results.values() if not (isinstance(r, dict) and "error" in r))
+        logger.info("recovery cycle done actions=%d ok=%d results=%s", len(results), ok, results)
         if args.once:
             # 모든 action이 실패하면 cron이 성공으로 오인하지 않도록 non-zero 반환.
             all_failed = bool(results) and all(

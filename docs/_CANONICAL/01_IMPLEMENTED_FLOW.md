@@ -82,6 +82,20 @@ workers/collectors/rss_collector.py  RSS 3소스(bbc/reuters/yna), feedparser, c
 - ✅ **Orchestration 하드닝 — admin auth 운영 fail-closed**: `APP_ENV` 도입, production/staging 토큰 미설정 시
   admin 503 + 기동 거부. **복구 주기 드라이버** `run_recovery_scheduler`(reconcile+requeue-failed-xadd+PEL reap),
   backend `POST /raw-events/requeue-failed-xadd` 엔드포인트.
-- ⚠ **남은 blocker**: ① entity/sector는 **LLM급 아닌 결정론적 baseline**, evidence **도달성(HTTP) 미검증**(T-AgtA),
-  ② production-validation **라이브 외부 수집** 미실행(우회 금지), ③ 복구 드라이버 **라이브 주기 tick**(compose/cron
-  배포)·DLQ 알림 미구현(코드·테스트는 DONE, 04 T-Ops-DLQ). 상세 04/05.
+- ✅ **Orchestration source-live 라운드(2026-06-18)**:
+  - **evidence_check HTTP 도달성(SSRF-safe, best-effort)**: `evidence_reachability.py` — DNS 해석 후
+    전역 유니캐스트(`ip_is_public`=is_global whitelist, IPv4-mapped 언맵) 검증, redirect 매 hop 재검증,
+    HEAD→GET fallback. `settings.EVIDENCE_REACHABILITY_CHECK`(기본 off). 잔존: DNS rebinding/TOCTOU(문서화).
+  - **복구 드라이버 라이브 tick + compose service**: `docker-compose.dev.yml`에 `recovery-scheduler`
+    service 추가(worker 이미지, `--interval-sec 60`). 라이브 `--once` tick 입증: reconcile/requeue/PEL reap
+    3 action 전부 backend:8000 인-네트워크 성공(`actions=3 ok=3`). scheduler logging 구성 추가.
+  - **admin auth 자세 단일화**: `security.assert_startup_auth_posture`(prod fail-closed + APP_ENV=dev
+    오배포 경고), `.env.example`에 APP_ENV 보안주석.
+  - **source-wide final_action matrix**: `run_orchestration_source_validation.py`(네트워크 0 분류)
+    → 57소스: CALLABLE_NOT_PROBED 46 / SKIPPED_POLICY_EXCLUDED 9 / RATE_LIMITED_SCHEDULED 1(gdelt) /
+    HELD_BY_POLICY 1(dcinside). 가짜 green 없음.
+  - **라이브 외부 probe 1건 직접 관찰**: vetted runner로 bbc 라이브 수집 → 36 records 실추출 →
+    34 EventQueue/raw_events(mirror) 적재, 2 DUPLICATE_COLLAPSED. rate_limited=0.
+- ⚠ **남은 blocker**: ① entity/sector는 **LLM급 아닌 결정론적 baseline**(evidence 도달성은 구현 완료),
+  ② 라이브 외부→**backend sink end-to-end**(card까지)는 in-network 토큰 friction으로 미실행(bbc는 mirror까지
+  관찰), ③ 복구 드라이버 daemon **상시 배포**·DLQ depth 알림, ④ 46 CALLABLE 소스 전수 라이브 probe. 상세 04/05.
