@@ -2,6 +2,11 @@
 
 > 11개 팀 에이전트가 독립 관점으로 레포(read-only)와 2026-06 웹 리서치를 평가한 결과 요약 + 합의/충돌 + 통합 판단. 각 관점의 IMPLEMENTED 주장은 코드 열람 근거.
 
+> ⚠️ **STALE CODE-STATE (2026-06-18, Pre-Harness Cleanup Sprint)**: 본 리뷰는 특정 시점(기준 커밋 `5491c02`)
+> 기록이다. "P0 = bridge db_writer 배선"(7.2), "mock 엔티티 위 그래프 무가치"(7.4) 등 일부 전제는 이후
+> 커밋으로 변동됐다(bridge 배선·라이브 입증, 5 mock 노드 → baseline). 합의/방향 판단은 유효하나 코드-상태는
+> `docs/_CANONICAL/01·09`로 교차확인하라. ARCHIVE_ONLY 기록물(10 Group E).
+
 ---
 
 ## 1. 관점별 요약

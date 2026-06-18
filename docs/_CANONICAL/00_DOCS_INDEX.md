@@ -55,3 +55,5 @@ opt-in), 46소스 **전수** 라이브 sweep·LLM급 카드 콘텐츠 미완(상
   canonical 대체본을 가리킨다. 전체 매핑은 `10_DOCS_COVERAGE_MANIFEST.md`.
 - `system_overview/`는 다운스트림 앱(②) 설명은 유효하나 **수집 계층 설명은 폐기**됐다(ingestion 엔진이 대체).
 - `Orchestration_Construction/`는 설계 청사진이었고 **Phase A~G-4가 실제로 구현**됐다(README의 "설계 전용" 문구는 stale → 06).
+- `_IDEATION_WEB_INTELLIGENCE/`(19개, 2026-06-16 신설)는 **확장 전략·로드맵** 세트로 "현재 구현"이 아니다.
+  전수 분류는 `10 Group E` 참조. code-state stale 4개(00·01·16·17)에는 STALE 배너를 부착했다. 현재 구현 사실은 항상 본 canonical이 권위.

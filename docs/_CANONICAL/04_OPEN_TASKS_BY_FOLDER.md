@@ -125,3 +125,40 @@
 - 509/635/648 테스트 수, "44 CORE_READY/58" → 현재 **1293** / 46 PRODUCTION_READY / 57로 갱신(또는 canonical 포인터).
 ### T-DocB · artifact_manifest_final.md에 G-4·orchestration 산출물 추가  **[P2]**
 - `community_corroboration_gate`/`source_specific_proof`/orchestration cycle 출력 미등재.
+
+## scripts/runners (정리 인벤토리)
+
+### T-RunA · runner/script 책임표 + 통폐합  **[P2 — 인벤토리 DONE 2026-06-18 / 통폐합 DEFER_TO_HARNESS_REBUILD]**
+> Pre-Harness Cleanup Sprint 전수 grep 감사. 각 파일은 **참조(doc/test/import) 근거 보유 시 삭제 불가**.
+> "확인 없이 삭제 금지"(CLAUDE.md) 준수 — 아래는 분류만, 실제 삭제/deprecate는 사용자 승인·하네스 재구축 시 진행.
+
+- **Job family별 canonical 진입점**(이것만 신규 작업의 진입점으로 사용):
+  - production orchestration → `ingestion/tools/run_production_orchestration.py`
+  - source validation(무호출 matrix) → `ingestion/tools/run_orchestration_source_validation.py`(`orchestration/source_role.py` import)
+  - P0 integration → `ingestion/tools/run_p0_integration.py`
+  - recovery → `workers/tools/run_recovery_scheduler.py`(compose 상주) / DLQ → `workers/tools/run_dlq_reaper.py`
+  - source 폐쇄 라운드(최신) → `ingestion/tools/run_final_source_closure.py`
+  - body 추출 ladder → `trafilatura_extractor → readability_extractor → dom_candidate_extractor`(+ `html_fetch_tool`/`playwright_browser_tool` fetch primitive)
+  - 단일소스/phase 드라이버 → `ingestion/runners/run_one_source.py` → `run_phase.py` → `run_all_phases.py`
+  - selector 복원 → `ingestion/runners/run_structure_explorer.py`(+ `run_playwright_probe.py`)
+  - browser/dep readiness → `run_browser_runtime_check.py` / `tools/check_dependency_readiness.py`
+  - secret/env gate → `tools/scan_secrets.py`(hook 연동) / `tools/check_env_hygiene.py`
+
+- **DEPRECATE_WITH_WARNING 후보**(상위 canonical로 대체됨, 단 catalog/readiness 러너가 문자열 참조 → 삭제 아님):
+  `runners/run_collection_probe.py`, `runners/run_api_live_probe.py`(→`run_api_connectivity_check.py`로 흡수 권장),
+  `runners/run_playwright_selector_sources_audit.py`, `runners/run_external_rate_limit_recheck.py`.
+
+- **MERGE_CANDIDATE**(소스 폐쇄 family, 이전 phase): `tools/run_last_chance_source_resurrection.py`,
+  `tools/run_source_readiness_closure.py` → 최신 `run_final_source_closure.py`/`run_production_orchestration.py`로 수렴.
+
+- **DELETE_CANDIDATE_REQUIRES_APPROVAL**(전 repo grep상 doc/test/import 참조 0건인 진짜 orphan — **삭제는 사용자 승인 필요**):
+  `ingestion/tools/search_query_builder.py`(`build_news_search_query` 무호출),
+  `ingestion/tools/screenshot_logger.py`(`screenshot_path_for` 무호출),
+  `ingestion/tools/markdown_extractor.py`(trafilatura_extractor와 중복, 무호출).
+  > 주의: `summarize_reports.py`/`inspect_last_failure.py`는 외부 참조 0건이나 운영 진단 도구라 KEEP_PROBE(삭제 후보 아님).
+
+- **DEFER_TO_HARNESS_REBUILD**(live-audit 라운드 러너 다수 — 전부 unit-test import 보유, `_audit_common.py` 공유):
+  `run_periodic_collection_simulation`, `run_enrichment_live_audit`, `run_primary_seed_live_audit`,
+  `run_conditional_sources_e2e_audit`, `run_api_partial_sources_audit`, `run_trend_fallback_enrichment_audit`,
+  `run_runner_orchestration_readiness`(meta-auditor). 하네스 배선 확정 후 구조 재편 대상.
+- Owner: orchestrator-architect + source-ingestion-engineer / Priority: P2(통폐합 잔여)

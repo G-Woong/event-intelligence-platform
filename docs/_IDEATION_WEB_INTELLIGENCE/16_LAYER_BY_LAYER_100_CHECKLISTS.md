@@ -3,6 +3,11 @@
 > L0~L14, 각 layer 100항목 = **총 1500**. Type ∈ TODO / RISK / IMPLEMENTED / COMMERCIAL / AGENT_HINT / POLICY / PARTIAL.
 > IMPLEMENTED는 실제 코드 열람 근거. 각 layer 끝에 **완전 달성 기준**. 출처/사실은 03·04·05~14 참조.
 
+> ⚠️ **STALE CODE-STATE (2026-06-18, Pre-Harness Cleanup Sprint)**: 일부 RISK/PARTIAL 항목의 상태값이
+> 이후 커밋으로 무효화됐다(예: L0#1 "A→B 미배선(P0)" → bridge 배선·라이브 입증; EventQueue redis
+> NotImplementedable → 구현됨; 6 mock 노드 → 5 baseline 대체). 본 체크리스트는 **backlog 참조**로 유지하되,
+> 현재 구현 상태는 `docs/_CANONICAL/01·09`를 권위로 삼는다. ARCHIVE_ONLY(10 Group E).
+
 ---
 
 ## L0. Product thesis / commercial positioning — 100 Insights

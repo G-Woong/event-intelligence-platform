@@ -9,9 +9,12 @@
 ### C-1 · "두 수집 경로가 같은 시스템처럼 보임"
 - Files: `system_overview/03·05·12`, `COLLECTOR_DESIGN.md` ↔ `ingestion/*`, `Orchestration_Construction/*`
 - Old statement: 수집 = workers RSS 3소스(bbc/reuters/yna)가 raw_events를 채움.
-- Current: ingestion 57소스 엔진이 별도로 존재하나 **다운스트림과 미연결**(JSON mirror).
-- Resolution: 둘은 **별개 서브시스템**이며 통합은 미구현(04 T-IngA). 동일 시스템 아님.
-- Canonical: `02_CURRENT_ARCHITECTURE §1`, `01_IMPLEMENTED_FLOW`.
+- Current: ingestion 57소스 엔진이 별개로 존재하며, 다운스트림과는 `BackendApiRawEventsWriter`
+  (`--raw-events-sink backend`)로 **배선됨**(C-9 참조, ap_news 라이브 E2E 입증). 단 **기본 sink는 여전히
+  mirror**(backend opt-in)이므로 평시 경로는 JSON mirror다.
+- Resolution: 둘은 **별개 서브시스템**이고 수집 로직은 동일 시스템이 아니다. 단 "통합 미구현"은 stale —
+  bridge는 구현·라이브 입증됨(04 T-IngA PARTIAL DONE). 남은 것은 기본 sink 채택·46소스 전수 sweep.
+- Canonical: `02_CURRENT_ARCHITECTURE §1`, `01_IMPLEMENTED_FLOW`, `06 C-9`.
 
 ### C-2 · 소스 수 / 테스트 수 불일치
 - Files: `DOCS_FINAL.md`("509 passed", "PASS 14/15"), `INGESTION_FINAL.md`("44 CORE_READY / 58"), `IMPLEMENTATION_TRACE_FINAL.md`("635"), `ENVIRONMENT_SETUP_FINAL.md`("648")

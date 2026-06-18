@@ -2,6 +2,14 @@
 
 > 모든 IMPLEMENTED 표기는 실제 코드 열람 근거. 수치·상태가 다른 문서와 어긋나면 `docs/_CANONICAL/02`와 본 문서를 따른다. 기준 커밋 `5491c02`.
 
+> ⚠️ **STALE CODE-STATE (2026-06-18, Pre-Harness Cleanup Sprint)**: 본 문서(기준 커밋 `5491c02`)의 여러
+> "현재 상태" 셀이 이후 커밋으로 **무효화**됐다. 구체적으로 — ① §0/§1 "다운스트림과 미연결(JSON mirror)
+> /통합 미구현" → bridge `BackendApiRawEventsWriter` 배선·라이브 입증(기본 sink만 mirror 잔존), ②
+> EventQueue "`_redis_*` 4개 NotImplementedError" → `pipeline/event_queue.py`에 **전부 구현됨**, ③ "LangGraph
+> 11노드 중 6 mock" → 5노드가 `agents/nodes/baselines.py` 결정론 baseline으로 대체. **따라서 코드-상태가
+> 충돌하면 본 문서가 아니라 `docs/_CANONICAL/01·09`를 따르라**(위 `>`의 "본 문서를 따른다"는 코드-상태에
+> 한해 철회). 서브시스템 자산 인벤토리·정책게이트 목록은 여전히 유효하다.
+
 ---
 
 ## 0. 결론 먼저

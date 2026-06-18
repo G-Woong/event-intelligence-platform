@@ -76,6 +76,38 @@
 | 49 | ingestion/artifact_manifest_final.md | 산출물 재생성 매니페스트 | 7 | MERGED | 09,01 | G-4 산출물 추가 필요(T-DocB) |
 | 50 | ingestion/rate_limit_evidence.md | provider rate-limit 근거 | 8 | KEEP | 05,03 | 정확·자족적 |
 
+## 그룹 E — docs/_IDEATION_WEB_INTELLIGENCE (19, 2026-06-16 신설)
+
+> 원본 50개 인벤토리(`_DOCS_MD_INVENTORY_BEFORE.txt`) **이후**에 만들어진 전략/확장 문서 세트.
+> 위 50행 집계에는 포함되지 않으며, 본 그룹으로 별도 추적한다. 성격은 "현재 구현"이 아니라 **확장 전략·로드맵**.
+> 분류: ABSORB(구현돼 canonical이 참조) / MIXED(일부 구현) / ROADMAP_ONLY(미구현 미래) / ARCHIVE(기록물) / SUPERSEDED(코드-상태 stale).
+> code-state stale 4개(00·01·16·17)에는 **STALE 배너 부착**(원문 보존, 삭제 없음). 근거: Pre-Harness Cleanup Sprint 2026-06-18.
+
+| No | Source file | 성격 | Classification | Canonical 관계 |
+|---|---|---|---|---|
+| E1 | 00_MASTER_INDEX.md | 진입점·P0 결론 | SUPERSEDED(배너) | P0=배선은 완료됨 → 01,09 |
+| E2 | 01_CURRENT_REPO_REALITY_AUDIT.md | 코드 실상태 감사 | SUPERSEDED(배너) | redis/mock/bridge stale → 01,09 |
+| E3 | 02_SEARCH_ENGINE_VS_EVENT_INTELLIGENCE_CONCEPT.md | 포지셔닝 논제 | ABSORB | 02가 참조할 불변 논제 |
+| E4 | 03_REAL_WORLD_CASES_AND_MARKET_PATTERNS.md | 36 시장 사례 | ARCHIVE | 2026-06 시점 리서치 |
+| E5 | 04_TARGET_ARCHITECTURE_LAYERS.md | L0~L14 목표 | MIXED | L4/L10 현재상태 stale, 틀은 유효 |
+| E6 | 05_DISCOVERY_AND_SOURCE_EXPANSION_LAYER.md | L1 discovery | MIXED | source_role 구현, 자동 discovery 미구현 |
+| E7 | 06_SEARCH_API_AND_WEB_EXPLORATION_LAYER.md | L2 search router | ROADMAP_ONLY | 미구현(SearchProvider 0건) |
+| E8 | 07_REDIS_QUEUE_CACHE_STREAM_LAYER.md | L4 queue | MIXED | A redis+DLQ 구현, Celery 미구현 |
+| E9 | 08_RAG_VECTOR_DB_LAYER.md | L5/L6 RAG | ROADMAP_ONLY | hybrid/rerank/nori 미구현 |
+| E10 | 09_KG_RAG_GRAPH_RAG_LAYER.md | L7 KG-RAG | ROADMAP_ONLY | 도입 보류(미구현) |
+| E11 | 10_AGENT_ORCHESTRATION_LAYER.md | L10 agent | MIXED | 결정 유효, mock 노드 진술 stale |
+| E12 | 11_LLM_SOURCE_SUPERVISOR_AND_JUDGE_LAYER.md | L9 supervisor | MIXED | decide() gate 구현, 실 provider 미배포 |
+| E13 | 12_EVENT_CLUSTERING_RANKING_AND_DEDUP_LAYER.md | L8 clustering | MIXED | cross_source_dedup 구현, 고급 algo 미구현 |
+| E14 | 13_COMMERCIALIZATION_AND_PRODUCT_STRATEGY.md | 수익화 전략 | ROADMAP_ONLY | product surface 미구현 |
+| E15 | 14_SECURITY_LEGAL_SAFETY_AND_NO_BYPASS.md | 보안·법무 | MIXED | 정책게이트 구현, SSRF/TTL/PII 미구현 |
+| E16 | 15_IMPLEMENTATION_ROADMAP.md | Phase 0~10 | ABSORB | 본문 self-reconcile, 04와 동기 |
+| E17 | 16_LAYER_BY_LAYER_100_CHECKLISTS.md | 1500 체크리스트 | ARCHIVE(배너) | backlog 참조, 일부 stale |
+| E18 | 17_TEAM_AGENT_REVIEW.md | 11관점 리뷰 | ARCHIVE(배너) | 시점 기록물, 일부 stale |
+| E19 | 18_FINAL_EXECUTIVE_SUMMARY.md | 경영 요약 | ABSORB | §B self-reconcile, 현행 서술 |
+
+> Group E 처리: ABSORB 4(E3·E16·E19·E5 일부) / MIXED 7 / ROADMAP_ONLY 4 / ARCHIVE 2 / SUPERSEDED 2.
+> STALE 배너 부착 = **4개**(E1·E2·E17·E18). 나머지는 전략/로드맵으로 유효(배너 없음).
+
 ---
 
 ## 집계
@@ -88,7 +120,9 @@
 | SUPERSEDED_ARCHIVE(배너) | 7 |
 | NEEDS_MANUAL_REVIEW | 3 |
 | 포인터 갱신(배너, DOCS_FINAL) | 1 |
-| **합계** | **50** ✅ (배너 부착 = 7 + 1 = **8개** 원본) |
+| **합계(원본 50)** | **50** ✅ (배너 부착 = 7 + 1 = **8개** 원본) |
+| (별도) Group E ideation | 19 (STALE 배너 4개 추가) |
 
-> 누락 검증: `docs/**/*.md` 카운트(원본 50 + `_CANONICAL/` 11 + `_DOCS_MD_INVENTORY_BEFORE.txt`는 .txt라 비대상)
-> == 본 표 50행. 모든 원본의 원자항목은 canonical 문서로 흡수되거나 SUPERSEDED 배너로 추적된다.
+> 누락 검증: `docs/**/*.md` 카운트(원본 50 + `_CANONICAL/` 11 + `_IDEATION_WEB_INTELLIGENCE/` 19 +
+> `_DOCS_MD_INVENTORY_BEFORE.txt`는 .txt라 비대상). 원본 50행 + Group E 19행으로 전수 추적.
+> 모든 원본의 원자항목은 canonical 문서로 흡수되거나 SUPERSEDED 배너로 추적된다.
