@@ -31,13 +31,24 @@
        (P0 핵심 전달경로는 backend stream:raw_events. 이 스트림은 A측 EventQueue durable 백엔드.)
 ```
 
+### P0 하드닝 (2026-06-18 추가) — 노출경로 봉인 + 운영 안전 부품
+
+```text
+[DONE] mock 카드 published 차단(fail-closed): evidence_check 실 source URL 채택(evidence_rules 구조검증),
+       publish_or_hold = 유효근거+fact_check pass+본문 게이트, final_writer 기본 hold,
+       공개 GET /api/events = published-only. 라이브 proof: 유효URL→published+노출, synthetic→hold+비노출.
+[DONE] DLQ/PEL 부품: workers/queue/dlq.py(route_failure 재시도/DLQ, reap_pending XAUTOCLAIM),
+       consumer 실패시 DLQ 라우팅(silent leak 제거), run_dlq_reaper CLI, requeue_failed_xadd(poison 한도).
+```
+
 ### 남은 즉시 과제 (P0 complete까지)
 
 ```text
-1) production-validation 라이브 외부 probe→backend 실적재 1회 검증 + 기본 sink를 backend로.
-2) DLQ/PEL 회수/xadd_failed 자동 requeue (팀 리뷰가 P0 운영 안전으로 승격, 04 T-Ops-DLQ).
-3) mock 해제(결정론 우선): entity_linking=NER, sector_mapping, evidence_check=URL/출처 검증,
-   fact_check 빈 본문 pass 차단. → 그래야 카드 "콘텐츠"가 실데이터(현재는 배관만 실제, 알맹이 mock).
+1) production-validation 라이브 외부 probe→backend 실적재 1회 검증 + 기본 sink를 backend로. (미실행)
+2) DLQ/PEL 자동 트리거: reaper+requeue_failed_xadd를 Celery beat/cron 주기 스케줄 + DLQ depth 알림.
+   (부품·CLI는 DONE, 자동 스케줄만 남음. 04 T-Ops-DLQ)
+3) mock 콘텐츠 해제: entity_linking=NER, sector_mapping 분류기, evidence_check URL **도달성**(HTTP) 검증,
+   impact_analysis. (published 노출은 게이트로 봉인됐으나 entity/sector/impact 콘텐츠 자체는 여전히 mock.)
 ```
 
 위는 source-ingestion-engineer / orchestrator-architect / operations-sre-agent에 위임 가능. P2~P10은 15 로드맵.

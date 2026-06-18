@@ -69,7 +69,13 @@ workers/collectors/rss_collector.py  RSS 3소스(bbc/reuters/yna), feedparser, c
   on_conflict로 전부 DUPLICATE_COLLAPSED(멱등).
 - ✅ **production runner 실배선 진입점**: `run_production_orchestration --raw-events-sink backend`로
   실 엔진이 backend에 적재 가능(기본은 mirror 보존). dry-run에서 `bridge_contract_pass=True` 확인.
-- ⚠ **남은 blocker(P0 complete 아님)**: ① LangGraph 6노드 여전히 mock → 생성 카드의
-  entity/sector/evidence/impact는 **mock 콘텐츠**(사용자 노출 전 T-AgtA 필요), ② 대표 record 4/5는
-  정적(live probe 미수행 — production-validation 라이브 외부 수집은 이번 세션 미실행), ③ DLQ/PEL
-  회수/xadd_failed 자동 requeue 미구현(04 T-Ops). 상세 04/05.
+- ✅ **P0 하드닝(2026-06-18) — mock 카드 published 노출 봉인(fail-closed)**: `evidence_check`가 실 source
+  URL만 근거로 채택(`evidence_rules` 구조검증), `publish_or_hold`가 근거+fact_check pass+본문 게이트,
+  `final_writer` 기본 `hold`, 공개 `GET /api/events`는 published-only. **라이브 proof**: 유효 URL→카드
+  `published`+목록 노출, synthetic URL→카드 `hold`+목록 비노출(`GATE_LIVE_PROOF=PASS`).
+- ✅ **P0 하드닝 — DLQ/PEL 부품**: `workers/queue/dlq.py`(route_failure 재시도/DLQ, reap_pending XAUTOCLAIM),
+  consumer 실패시 DLQ 라우팅(silent leak 제거), `run_dlq_reaper` CLI, `requeue_failed_xadd`(poison 한도).
+- ⚠ **남은 blocker(P0 complete 아님)**: ① LangGraph entity/sector/impact/fact_check 여전히 mock →
+  카드 **분석 콘텐츠는 mock**(published 노출은 게이트로 봉인됐으나 콘텐츠 신뢰 금지, T-AgtA), ② 대표 record
+  4/5 정적 + production-validation **라이브 외부 수집** 미실행(사용자 중단), ③ DLQ/PEL 자동 주기 트리거
+  (Celery beat)·DLQ 알림 미구현(부품·CLI는 DONE, 04 T-Ops-DLQ). 상세 04/05.

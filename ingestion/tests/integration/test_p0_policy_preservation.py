@@ -34,15 +34,41 @@ def test_publish_or_hold_holds_community_signal():
 
 
 def test_publish_or_hold_publishes_standard_source():
-    from backend.app.schemas.events import RawEvent, FinalEventCard
+    # P0 하드닝: 표준 소스도 published는 (유효 근거 URL + 본문 + fact_check pass) 모두 충족 시에만.
+    from datetime import datetime
+    from backend.app.schemas.events import RawEvent, FinalEventCard, NormalizedEvent
     from agents.nodes.publish_or_hold import publish_or_hold
 
-    raw = RawEvent(source="official:sec_edgar", url="https://sec.test/x", raw_text="",
+    raw = RawEvent(source="official:sec_edgar", url="https://www.sec.gov/x", raw_text="real body",
                    raw_metadata={"confirmation_policy": "official_source"})
     card = FinalEventCard(title="t", summary="s", theme="tech")
-    out = publish_or_hold({"raw": raw, "final_card": card, "fact_check": "pass"})
+    normalized = NormalizedEvent(source="official:sec_edgar", title="t", body="real body",
+                                 occurred_at=datetime.utcnow(), hash="h")
+    out = publish_or_hold({
+        "raw": raw, "final_card": card, "fact_check": "pass",
+        "normalized": normalized, "evidence": ["https://www.sec.gov/x"],
+    })
     assert out["status"] == "published"
     assert card.status == "published"
+
+
+def test_publish_or_hold_holds_standard_source_without_grounded_evidence():
+    # P0 하드닝(fail-closed): 근거 URL이 없으면 official 소스라도 hold(mock evidence 노출 차단).
+    from datetime import datetime
+    from backend.app.schemas.events import RawEvent, FinalEventCard, NormalizedEvent
+    from agents.nodes.publish_or_hold import publish_or_hold
+
+    raw = RawEvent(source="official:sec_edgar", url="https://www.sec.gov/x", raw_text="real body",
+                   raw_metadata={"confirmation_policy": "official_source"})
+    card = FinalEventCard(title="t", summary="s", theme="tech")
+    normalized = NormalizedEvent(source="official:sec_edgar", title="t", body="real body",
+                                 occurred_at=datetime.utcnow(), hash="h")
+    out = publish_or_hold({
+        "raw": raw, "final_card": card, "fact_check": "pass",
+        "normalized": normalized, "evidence": ["[mock-source-1]"],
+    })
+    assert out["status"] == "hold"
+    assert card.status == "hold"
 
 
 def test_representative_records_have_no_policy_excluded_source():

@@ -21,7 +21,7 @@ def test_full_pipeline_mock():
 
     raw = RawEvent(
         source="test-pipeline",
-        url="https://example.com/test",
+        url="https://www.reuters.com/test",
         fetched_at=datetime.utcnow(),
         raw_text="Test pipeline event: major developments in geopolitical landscape affecting energy markets.",
         raw_metadata={},

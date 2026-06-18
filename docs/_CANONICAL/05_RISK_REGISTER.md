@@ -13,15 +13,25 @@
   ② 기본 sink는 여전히 mirror(backend는 opt-in) — 정식 production 스케줄에서 backend sink 채택.
 - Closure: 라이브 외부 수집 사이클이 실 raw_events row를 idempotent 생성(backend sink 상시).
 
-### R-MockCard · 생성 event_card 콘텐츠 mock  — Severity: HIGH (사용자 노출 전)
+### R-MockCard · 생성 event_card 콘텐츠 mock  — Severity: HIGH→MEDIUM (노출경로 봉인 2026-06-18 P0하드닝)
 - Area: 정보 신뢰성(§1) / 상품성
 - Description: LangGraph 6노드(entity_linking/sector_mapping/impact_analysis/evidence_check/
-  fact_check/final_writer)가 mock → 생성 카드의 entity/sector/evidence/impact가 고정/가짜
+  fact_check/final_writer)가 mock → 생성 카드의 entity/sector/impact가 고정/가짜
   (예: 모든 입력을 geopolitics/energy/defense로 분류). raw_event 연결·status는 실제이나 알맹이는 mock.
-- Evidence: `agents/nodes/entity_linking.py` 등 상수 반환. fact_check는 raw_text="" + LLM 실패 시 무조건 "pass".
-- Current mitigation: `LLM_PROVIDER=mock` 기본이며 dev/검증 한정. community는 hold 봉인.
-- Remaining gap: 04 T-AgtA(6노드 실연결), fact_check 빈 본문 pass 차단.
-- Closure: 최소 entity/sector/evidence 실연결 전까지 카드 `published` 사용자 노출 금지.
+- Evidence: `agents/nodes/entity_linking.py` 등 상수 반환. fact_check는 LLM 실패 시 "pass" fallback.
+- Current mitigation (P0 하드닝, 노출 차단 = fail-closed):
+  ① `evidence_check`가 더 이상 `[mock-source-*]` 고정 mock을 반환하지 않고 **실 source URL**만 근거로
+     채택(`agents/nodes/evidence_rules.py`: http(s)+공개호스트, 합성/로컬/플레이스홀더 + **사설/loopback/
+     link-local(메타데이터 169.254.169.254)/예약 IP**(`ipaddress`) + **RFC2606 예약도메인(example.com,
+     .test/.invalid/.localhost/.example)** 거부 — 적대적 리뷰 SSRF/placeholder 지적 반영).
+  ② `publish_or_hold`가 **유효 근거 URL + fact_check pass + 비어있지 않은 본문**을 모두 만족할 때만
+     published; 아니면 hold(`final_writer` 기본 status도 `hold`로 fail-closed). 빈 본문 pass 차단.
+  ③ 공개 `GET /api/events`(목록) **및 `GET /api/events/{id}`(단건)** 모두 **published 카드만** 노출
+     (목록=`list_events(status="published")`, 단건=status!=published면 404 — 적대적 리뷰 단건조회 우회 지적 반영).
+  → mock 콘텐츠/근거 없는 카드는 published되지 않고, 설령 남아도 공개 API(목록·단건) 어디에도 노출되지 않는다.
+- Remaining gap: 04 T-AgtA(6노드 실연결, 특히 evidence_check URL **도달성**(HTTP) 검증 + entity/sector
+  실분류). 현재는 구조적 URL 유효성까지만 — reachability/품질은 미검증.
+- Closure: entity/sector/evidence 실연결 + 근거 도달성 검증 완료 시 MEDIUM→LOW.
 
 ### R-Gdelt429 · gdelt provider 429  — Severity: MEDIUM
 - Area: rate-limit / cooldown / retry

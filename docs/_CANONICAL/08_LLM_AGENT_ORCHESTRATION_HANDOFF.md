@@ -21,20 +21,25 @@
 | 5 | sector_mapping | MOCK |
 | 6 | retrieve_past_context | REAL(Milvus top-k) |
 | 7 | impact_analysis | MOCK |
-| 8 | evidence_check | MOCK |
-| 9 | fact_check | MOCK("pass" 고정) |
-| 10 | final_writer | MOCK |
-| 11 | publish_or_hold | REAL(fact_check + **corroboration hold** 기반 status) |
+| 8 | evidence_check | PARTIAL(실 source URL 구조검증 채택, 도달성 미검증) |
+| 9 | fact_check | MOCK("pass" fallback) |
+| 10 | final_writer | MOCK(요약 mock, status 기본 hold=fail-closed) |
+| 11 | publish_or_hold | REAL(근거+fact_check+본문+corroboration 게이트) |
 
-→ **5 REAL / 6 MOCK.** mock 6개 실연결은 04 T-AgtA.
+→ **5 REAL / 1 PARTIAL / 5 MOCK.** 잔여 mock 실연결은 04 T-AgtA.
 
-> ⚠ **mock 카드 경고(2026-06-18)**: 6 mock 노드 탓에 생성 카드의 entity/sector/evidence/impact는
-> 고정/가짜다(05 R-MockCard). P0 통합 e2e는 **배관(plumbing)**을 입증한 것이지 카드 콘텐츠 품질이
-> 아니다. T-AgtA 전까지 `published` 카드 사용자 노출 금지.
+> ⚠ **mock 카드 경고(2026-06-18, P0 하드닝으로 노출경로 봉인)**: entity/sector/impact/fact_check는 여전히
+> mock(고정/가짜, 05 R-MockCard). 단 **published 노출경로는 fail-closed로 차단**됨:
+> - `evidence_check`는 실 source URL만 근거로 채택(`evidence_rules.is_valid_evidence_url`).
+> - `publish_or_hold`는 **유효 근거 URL + fact_check pass + 본문 존재**를 모두 만족할 때만 published,
+>   아니면 hold. `final_writer` 기본 status도 `hold`.
+> - 공개 `GET /api/events`는 published 카드만 반환(`event_service.list_events(status="published")`).
+> → 근거 없는/mock evidence 카드는 published되지 않고 공개 목록 노출도 안 됨. 다만 entity/sector/impact
+>   **콘텐츠 자체는 mock**이므로 published 카드라도 그 분석필드는 신뢰 금지(T-AgtA까지).
 >
-> **publish_or_hold corroboration(2026-06-18 추가)**: `confirmation_policy ∈
-> {unconfirmed_until_corroborated, internal_queue_only, publish_blocked_until_corrob}`이면 fact_check와
-> 무관하게 `hold`. 라이브 e2e로 community 카드 hold 확인. 상수는 노드에 인라인(ingestion 미의존).
+> **publish_or_hold corroboration(2026-06-18)**: `confirmation_policy ∈
+> {unconfirmed_until_corroborated, internal_queue_only, publish_blocked_until_corrob}` 또는
+> `corroboration_required=True`이면 근거/fact_check와 무관하게 `hold`. 상수는 노드에 인라인(ingestion 미의존).
 
 ## 3. mock→real 전환 (무코드, env)
 

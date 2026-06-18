@@ -55,8 +55,16 @@ def _orm_to_card(row: EventCardORM) -> FinalEventCard:
     )
 
 
-async def list_events(session: AsyncSession, limit: int | None = None) -> list[FinalEventCard]:
+async def list_events(
+    session: AsyncSession,
+    limit: int | None = None,
+    status: str | None = None,
+) -> list[FinalEventCard]:
     stmt = select(EventCardORM).order_by(EventCardORM.created_at.desc())
+    if status is not None:
+        # 공개 API는 status="published"로 호출 — hold(미검증/mock 콘텐츠) 카드 노출 차단.
+        # admin/reindex 경로는 status 미지정 → 전체 카드(인덱싱 대상) 유지.
+        stmt = stmt.where(EventCardORM.status == status)
     if limit is not None:
         stmt = stmt.limit(limit)
     result = await session.execute(stmt)

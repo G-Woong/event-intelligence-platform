@@ -17,11 +17,16 @@
   (이번 세션 미실행, dry-run+proof-runner만), ② 카드 콘텐츠 mock(T-AgtA 의존).
 - Owner: source-ingestion-engineer + orchestrator-architect / Priority: P0(잔여)
 
-### T-Ops-DLQ · Redis DLQ / PEL 회수 / xadd_failed 자동 requeue  **[P0(운영 안전)]**
-- Files: `workers/queue/consumer.py`(예외 시 XACK 누락→PEL 영구잔류), `agents/agent_worker.py`(무조건 XACK→실패 소실), `backend/app/services/{raw_event_service,reconciler_service}.py`(requeue 부품 존재, 자동 트리거 없음)
-- Required: DLQ stream + XAUTOCLAIM reaper + status=failed row 주기 requeue(Celery beat). 부품 대부분 존재, 배선 중심.
-- Acceptance: poison 메시지 DLQ 격리, consumer 크래시 후 PEL 회수, xadd_failed 자동 회복.
-- Priority: P0(데이터 정체 직결, 팀 리뷰 지적) / Owner: operations-sre-agent
+### T-Ops-DLQ · Redis DLQ / PEL 회수 / xadd_failed 자동 requeue  **[P0 — PARTIAL DONE 2026-06-18]**
+- DONE: `workers/queue/dlq.py`(`route_failure`=재시도 사본 재발행 또는 max_retries 초과 시 DLQ 격리+원본 ack;
+  `reap_pending`=XAUTOCLAIM PEL 회수). `workers/queue/consumer.py`가 process 실패 시 DLQ 라우팅(silent
+  PEL leak 제거). `workers/tools/run_dlq_reaper.py` CLI. `reconciler_service.requeue_failed_xadd`(xadd_failed
+  행을 max_requeue 한도 내 자동 requeue, poison 무한루프 방지). 테스트: `workers/tests/test_dlq_reaper.py`(7),
+  `backend/tests/test_requeue_failed_xadd.py`(4) — FakeRedis/mock, 네트워크 0.
+- 남은 부분: ① 주기 트리거(Celery beat/cron)로 reaper+requeue_failed_xadd 자동 스케줄(현재 수동 CLI/함수),
+  ② DLQ 적재 모니터링/알림 임계값, ③ `agent_worker.py`는 무조건 XACK 유지(실패는 DB status=failed로 기록되어
+  소실 아님 — reconciler 회수 대상).
+- Acceptance(잔여): Celery beat 스케줄 가동 + DLQ depth 알림. Priority: P1(잔여) / Owner: operations-sre-agent
 
 ### T-IngB · EventQueue Redis Stream 모드 활성화  **[DONE 2026-06-18]**
 - Files: `ingestion/pipeline/event_queue.py`
@@ -48,12 +53,17 @@
 
 ## agents/ (LangGraph)
 
-### T-AgtA · 6개 mock 노드 실모델 연결  **[P1]**
-- Files: `agents/nodes/{entity_linking,sector_mapping,impact_analysis,evidence_check,fact_check,final_writer}.py`
-- Current: 6/11 노드 mock(고정/템플릿 반환). 5 REAL(parse/normalize/retrieve_context/publish_or_hold + partial deduplicate).
-- Required: NER/분류기/프롬프트 자산 연결(`agents/prompts/*.md` → load_prompt → LLMClient). `LLM_PROVIDER=openai` 전제.
-- Acceptance: 각 노드 실 출력 + 스키마 검증 통과, mock 분기 제거 아닌 실경로 추가.
-- Priority: P1
+### T-AgtA · mock 노드 실모델 연결  **[P1 — evidence_check/publish 게이트 PARTIAL DONE 2026-06-18]**
+- Files: `agents/nodes/{entity_linking,sector_mapping,impact_analysis,evidence_check,fact_check,final_writer,publish_or_hold,evidence_rules}.py`
+- DONE(P0 하드닝): `evidence_check`가 고정 mock(`[mock-source-*]`) 대신 **실 source URL**을 구조 검증
+  (`evidence_rules.is_valid_evidence_url`: http(s)+호스트, 합성/로컬/플레이스홀더 거부) 후 채택. `publish_or_hold`가
+  **유효 근거 + fact_check pass + 본문 존재** 모두 충족 시에만 published(아니면 hold, `final_writer` 기본 hold로
+  fail-closed). → mock 콘텐츠 카드 published 차단(05 R-MockCard 노출경로 봉인). 테스트: `agents/tests/
+  test_event_graph_no_mock_published.py`, `test_evidence_check_real_validation.py`.
+- 남은 mock(여전히 고정/템플릿): entity_linking(NER), sector_mapping(분류기), impact_analysis, fact_check(LLM
+  실패시 pass fallback), final_writer 요약. evidence_check도 **URL 도달성(HTTP) 검증은 미구현**(구조 유효성까지).
+- Required: NER/분류기/프롬프트 자산 연결(`agents/prompts/*.md` → load_prompt → LLMClient, `LLM_PROVIDER=openai`).
+- Acceptance: 각 노드 실 출력 + 스키마 검증 통과, mock 분기 제거 아닌 실경로 추가. Priority: P1(잔여)
 
 ### T-AgtB · deduplicate 벡터 유사도 임계값 결정  **[P2]**
 - Files: `agents/nodes/deduplicate.py`(dedupe_key는 생성, 벡터 cosine 기준 미정)

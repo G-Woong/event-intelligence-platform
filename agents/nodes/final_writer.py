@@ -33,6 +33,7 @@ def final_card_writer(state: EventState) -> EventState:
         impact_path=state.get("impact", ""),
         evidence=state.get("evidence", []),
         confidence_score=0.75,
-        status="published",
+        # fail-closed: publish_or_hold 게이트 통과 전까지 hold가 기본값(P0 하드닝).
+        status="hold",
     )
     return {**state, "final_card": card}

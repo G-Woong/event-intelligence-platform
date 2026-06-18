@@ -32,16 +32,21 @@ P7  Commercial dashboard/alert/report/API
   ③ 카드 콘텐츠 mock(Phase 3 의존), ④ DLQ/PEL/auto-requeue(신규 P0 운영, 04 T-Ops-DLQ).
 - Risks: mock 카드 콘텐츠 사용자 노출(05 R-MockCard), 라이브 수집 미검증. Do-not-do: 소스 추가, 우회.
 
-## Phase 2 — Redis stream / worker / DLQ / monitoring
+## Phase 2 — Redis stream / worker / DLQ / monitoring  — **PARTIAL DONE 2026-06-18**
 - Goal: A EventQueue Redis 배선 + DLQ/retry/quota + cost/rate 가시화.
-- 일부 DONE: `event_queue.py` `_redis_*` 구현(Stream+group+PEL ack). 남음: DLQ stream, XAUTOCLAIM 회수,
-  xadd_failed 자동 requeue, Celery beat, cost/rate 대시보드(04 T-Ops-DLQ가 P0로 승격).
+- DONE: `event_queue.py` `_redis_*`(Stream+group+PEL ack). **DLQ 부품**: `workers/queue/dlq.py`
+  (route_failure=재시도/DLQ, reap_pending=XAUTOCLAIM PEL 회수), consumer 실패시 DLQ 라우팅(silent leak 제거),
+  `run_dlq_reaper` CLI, `reconciler_service.requeue_failed_xadd`(xadd_failed 자동 requeue, poison 한도).
+- 남음: 자동 주기 트리거(Celery beat/cron), DLQ depth 모니터링/알림, cost/rate 대시보드(04 T-Ops-DLQ 잔여).
 - Acceptance: enqueue→consume→ack, PEL→DLQ 회수, cost+rate+health 3축 노출. Complexity: 중상.
 
-## Phase 3 — 6 mock 노드 해제 + dedup/clustering
-- Goal: LangGraph 6 mock 중 결정론 가능분(entity_linking=NER, evidence_check=URL/출처 검증) 실구현 + cross-source dedup/cluster.
-- Required: NER, MinHash LSH, 임베딩 HDBSCAN, prompt injection 방어 layer.
-- Acceptance: end-to-end 카드 1건 실데이터 생성, cluster purity≥0.8, leakage<10%. Complexity: 상.
+## Phase 3 — mock 노드 해제 + dedup/clustering  — **published 게이트 PARTIAL DONE 2026-06-18**
+- Goal: LangGraph mock 중 결정론 가능분(entity_linking=NER, evidence_check=URL/출처 검증) 실구현 + cross-source dedup/cluster.
+- DONE(노출 차단): `evidence_check` 실 source URL 채택(`evidence_rules` 구조검증), `publish_or_hold` 근거+본문+
+  fact_check 게이트(fail-closed), 공개 API published-only. → mock/근거없는 카드 published 차단(라이브 proof).
+- 남음: evidence_check **도달성(HTTP)** 검증, entity_linking=NER, sector_mapping 분류기, impact_analysis 실구현,
+  MinHash LSH, 임베딩 HDBSCAN, prompt injection 방어 layer.
+- Acceptance: end-to-end 카드 1건 **실데이터 콘텐츠** 생성(현재는 배관+노출게이트만, 알맹이 mock), cluster purity≥0.8, leakage<10%. Complexity: 상.
 
 ## Phase 4 — Search API expansion layer
 - Goal: provider-agnostic tiered router(무료→유료), event 트리거 enrichment.
