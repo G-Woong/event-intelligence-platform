@@ -31,8 +31,10 @@ SourceCapability            소스 선언적 능력(source_capability.py)
   `source_specific_proof.py`(격리 namespace로 소스별 eq/raw 계약 입증, G-4).
 - **runner**: `ingestion/tools/run_production_orchestration.py`(주기 사이클),
   `run_final_source_closure.py`(G-4 risk closure).
-- **검증**: ingestion 테스트 **1205 passed**(G-4 기준). secret scan PASS. 산출물 전부 gitignored.
-- **남은 경계**: bridge는 기본 **JSON mirror**(실 Postgres 미주입) → 04/05/06.
+- **검증**: ingestion 테스트 **1293 passed**(2026-06-18 role taxonomy 라운드 후; G-4 기준 1205→1293).
+  secret scan PASS. 산출물 전부 gitignored.
+- **남은 경계**: bridge는 **기본 JSON mirror**이고 backend sink(`--raw-events-sink backend`)는 opt-in이나
+  **라이브 입증됨**(ap_news E2E) → 04/05/06.
 
 ## B. 다운스트림 앱 (STEP 011, 구현 완료)
 

@@ -15,7 +15,7 @@
 
 ### C-2 · 소스 수 / 테스트 수 불일치
 - Files: `DOCS_FINAL.md`("509 passed", "PASS 14/15"), `INGESTION_FINAL.md`("44 CORE_READY / 58"), `IMPLEMENTATION_TRACE_FINAL.md`("635"), `ENVIRONMENT_SETUP_FINAL.md`("648")
-- Old vs Current: 44 CORE_READY → **46 PRODUCTION_READY / 57 총**; 509/635/648 → **ingestion 1205 passed**(G-4 기준).
+- Old vs Current: 44 CORE_READY → **46 PRODUCTION_READY / 57 총**; 509/635/648 → **ingestion 1293 passed**(2026-06-18, role taxonomy 라운드 후; G-4 기준 1205→1293).
 - Resolution: 수치 stale. Canonical: `03_SOURCE_STATUS`, `09_VALIDATION_AND_TESTS`.
 - Action: 원본 수치는 정정(04 T-DocA) 또는 canonical 포인터.
 
@@ -50,8 +50,10 @@
 ### C-9 · U-3 "RESOLVED" 표기 vs AsyncSession 미구현
 - Files: `Orchestration_Construction/01·05`
 - Statement: bridge async+pydantic+AsyncSession 계약 "RESOLVED".
-- Current: 실제론 **JSON mirror로 대체**, 실 AsyncSession 주입은 미구현.
-- Resolution: "계약 검증은 mirror로 해결, 실 PG 주입은 미해결"로 정정. Canonical: `04 T-IngA`, `05 R-Integration`.
+- Current: bridge 는 `BackendApiRawEventsWriter`(HTTP POST `/api/admin/raw-events`)로 backend PG upsert +
+  Redis XADD 를 수행한다(AsyncSession 직접 주입이 아니라 **backend API 경유**). 라이브 입증됨(ap_news E2E).
+- Resolution: "AsyncSession 직접 주입 대신 backend API 경유로 실 PG 적재, 라이브 E2E 관찰. 기본 sink 는
+  여전히 mirror(backend opt-in)"로 정정. Canonical: `04 T-IngA`, `05 R-Integration`.
 
 ### C-10 · gdelt PASS vs EXTERNAL_RATE_LIMITED
 - Files: `INGESTION_FINAL.md`/`IMPLEMENTATION_TRACE_FINAL.md`("PASS/CORE_READY") ↔ production_state("EXTERNAL_RATE_LIMITED")

@@ -122,6 +122,6 @@
 ## docs/
 
 ### T-DocA · INGESTION_FINAL/IMPLEMENTATION_TRACE 수치 갱신  **[P2]**
-- 509/635/648 테스트 수, "44 CORE_READY/58" → 현재 1205 / 46 PRODUCTION_READY / 57로 갱신(또는 canonical 포인터).
+- 509/635/648 테스트 수, "44 CORE_READY/58" → 현재 **1293** / 46 PRODUCTION_READY / 57로 갱신(또는 canonical 포인터).
 ### T-DocB · artifact_manifest_final.md에 G-4·orchestration 산출물 추가  **[P2]**
 - `community_corroboration_gate`/`source_specific_proof`/orchestration cycle 출력 미등재.

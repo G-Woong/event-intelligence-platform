@@ -8,18 +8,37 @@
 
 | 범위 | 위치 | 수 | 상태 | 기준 |
 |---|---|---:|---|---|
-| ingestion(수집+오케스트레이션) | `ingestion/tests/` | **1243** | PASS | P0 하드닝(2026-06-18): 1242 + policy 게이트 정정/추가 +1 |
+| ingestion(수집+오케스트레이션) | `ingestion/tests/` | **1293** | PASS | role taxonomy 라운드(2026-06-18): 1257 + source_role 36 |
 | P0 통합(adapter/계약/멱등/정책/redis) | `ingestion/tests/integration/test_p0_*` | **38** | PASS | 네트워크 0(MockTransport/FakeRedis) |
-| backend | `backend/tests/` | ~55 | PASS | +P0하드닝(events published 필터, requeue_failed_xadd) |
-| agents | `agents/tests/` | ~37 | PASS | +P0하드닝(no_mock_published 9, evidence_check 검증 6) |
-| workers | `workers/tests/` | ~28 | PASS | +P0하드닝(DLQ reaper 7) |
+| backend | `backend/tests/` | **106** | PASS | 2026-06-18 재집계(+4 skip: openai/milvus 통합 smoke) |
+| agents | `agents/tests/` | **86** | PASS | 2026-06-18 재집계(+1 skip: openai smoke) |
+| workers | `workers/tests/` | **32** | PASS | 2026-06-18 재집계 |
 | frontend | `frontend/src/lib/__tests__/` | 8 | PASS | node --test |
 | smoke(gate) | `tests/smoke/` | 8 | SKIP | `RUN_FULL_PIPELINE_SMOKE=1` 시 실행 |
 
-- **ingestion 1205**가 현재 권위 수치. 구 문서의 509/635/648은 stale(06 C-2).
-- 다운스트림(backend/agents/workers/frontend) 카운트는 **STEP 011 스냅샷** — 그 이후 드리프트 여부 `NEEDS_VERIFICATION`(재집계 시 갱신).
+- **ingestion 1293**이 현재 권위 수치(2026-06-18 role taxonomy 라운드 후). 구 문서의 509/635/648·1205·1243은 stale(06 C-2).
+- 다운스트림 카운트는 2026-06-18 **재집계**(combined `pytest ingestion backend workers agents` = **1517 passed/5 skip**, 회귀 0).
 
 ## 2. 검증 라운드
+
+### 2g. Source role taxonomy + docs↔code 동기화 라운드 (2026-06-18, 수행)
+- 범위: source **역할 taxonomy 파생 계층**(헌법 3 역할별 연결) + docs↔code 동기화 정리(헌법 4·5).
+- **`source_role.py`**(신규): `source_profiles.yaml`의 source_group/is_community/confirmation_policy에서
+  7역할(ARTICLE_BODY/EXPANSION_SEARCH/OFFICIAL_RECORD/STRUCTURED_SIGNAL/COMMUNITY_EARLY_SIGNAL/
+  ENRICHMENT_ONLY/PERIODIC_EVENT_QUEUE)을 **결정론적 파생**(새 데이터 0, 단일 출처 유지). routing_mode+
+  publication_policy 동반, EXPANSION/COMMUNITY는 `never_direct_publish` 강제. **역할 ⊥ final_action**(운영 상태).
+- **runner 확장(새 runner 0)**: `run_orchestration_source_validation`이 SOURCE_ROLE_MATRIX(57:
+  ARTICLE 14/COMMUNITY 9/ENRICHMENT 13/EXPANSION 7/OFFICIAL 8/STRUCTURED 6) + SOURCE_FINAL_ACTION_MATRIX
+  (CALLABLE_NOT_PROBED 46/SKIPPED 9/RATE_LIMITED 1/HELD 1) 동시 emit. 네트워크 0.
+- 단위(네트워크 0): `pytest ingestion/tests` → **1293 passed**(회귀 0, +36 `test_source_role_taxonomy`).
+  combined `pytest ingestion backend workers agents` → **1517 passed/5 skip**(회귀 0).
+- **docs 동기화**: 00 §0 한 문장 요약(JSON mirror→backend sink 라이브 E2E 정정), 02 §1 연결 셀,
+  06 C-2/C-9(수치·R-Integration framing), 01/03/05(role taxonomy), 04 T-DocA 수치. **삭제 0**(헌법 4).
+- **검증 정직성**: Explore 감사의 부정 주장 2건(`stream:to_agent`/`fact_check.py` "코드에 없음")을 직접 grep으로
+  반증 → 둘 다 코드 존재(거짓 drift 방지). `source_role` 이름은 `ingestion/runners/` audit 러너의 옛 registry
+  `role` 필드와 충돌하나 별개 개념(내 모듈 미import) — docs는 validation runner 범위로만 한정(과잉주장 없음).
+- 커밋: `86bebfb`(role taxonomy) + 본 docs 동기화 라운드.
+- secret scan: `scan_secrets --paths ingestion backend workers agents docs` → **PASS**. `git diff --check`: clean.
 
 ### 2f. Source-to-card E2E + timeout false-fail 수정 라운드 (2026-06-18, 수행)
 - 범위: 라이브 외부 source → **backend sink → event_card** end-to-end 직접 관찰(직전 verified blocker

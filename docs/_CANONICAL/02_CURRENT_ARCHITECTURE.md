@@ -13,7 +13,7 @@
 | 출력 | EventQueue JSONL → bridge(mirror **또는** backend) | event_cards PG + Milvus + OpenSearch |
 | 입력 | 공개 RSS/API/정적HTML/Playwright | `workers/` RSS 3소스 + **A 통합경유** → raw_events PG |
 | 패러다임 | deterministic, 신규 설치 0 | 컨테이너 10개, Redis Stream 기반 |
-| 연결 | **A→B 배선 PARTIAL**: `ingestion/integration/` (BackendApiRawEventsWriter). 라이브 e2e 5타입 입증. 남은 blocker는 mock 카드 콘텐츠·DLQ(01/04/05) | — |
+| 연결 | **A→B 배선 PARTIAL**: `ingestion/integration/`(BackendApiRawEventsWriter). **라이브 외부→backend sink→card E2E 관찰**(ap_news 100→event_cards 100 hold). 남은 blocker: 기본 sink mirror·46소스 전수 sweep·LLM급 카드(01/04/05) | — |
 
 ## 2. 컨테이너 (10개, docker-compose.dev.yml, project `event-intelligence-dev`)
 

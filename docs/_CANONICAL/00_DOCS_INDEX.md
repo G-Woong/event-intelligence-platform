@@ -9,11 +9,13 @@
 
 ## 0. 한 문장 요약
 
-레포에는 **두 개의 자산**이 있고 아직 **하나로 연결되지 않았다.**
+레포에는 **두 개의 자산**이 있고, 이제 **브리지로 연결돼 라이브 E2E가 관찰됐다.**
 ① `ingestion/` 57소스 수집 엔진(Phase A~G-4 **구현 완료**) ②
 `backend`/`workers`/`agents`/`frontend` 다운스트림 앱(STEP 011 **구현 완료**).
-①의 출력은 현재 **JSON mirror**로만 떨어지고, ②의 실 `raw_events` PostgreSQL은
-별도의 `workers/` RSS 수집기(3소스)가 채운다. **이 둘을 잇는 브리지 배선이 최대 미해결 과제다.**
+①→② 배선은 `BackendApiRawEventsWriter`(`--raw-events-sink backend`)로 구현·**라이브 입증**됨:
+ap_news 100 records → `raw_events` PG → Redis `stream:raw_events` → worker → LangGraph →
+`event_cards` 100(무본문이라 fail-closed hold). **남은 경계**: 기본 sink는 여전히 mirror(backend
+opt-in), 46소스 **전수** 라이브 sweep·LLM급 카드 콘텐츠 미완(상세 03·05 R-Integration).
 
 ---
 
@@ -24,7 +26,7 @@
 | 00 | **00_DOCS_INDEX.md** | (이 파일) 전체 지도 + 읽기 순서 |
 | 01 | **01_IMPLEMENTED_FLOW.md** | 구현 완료된 두 서브시스템의 흐름(짧게) |
 | 02 | **02_CURRENT_ARCHITECTURE.md** | 현재 아키텍처 단일 출처(컨테이너·API·DB·검색·LLM·프론트) |
-| 03 | **03_SOURCE_STATUS.md** | 57소스 production-state 분포 + tier 정의 |
+| 03 | **03_SOURCE_STATUS.md** | 57소스 production-state 분포 + tier 정의 + **role taxonomy(§1b)** |
 | 04 | **04_OPEN_TASKS_BY_FOLDER.md** | 폴더별 미구현 TASK |
 | 05 | **05_RISK_REGISTER.md** | RISK 등록부(심각도·종결조건) |
 | 06 | **06_CONFLICTS_AND_SUPERSEDED.md** | 문서 충돌·구버전 정리 |
