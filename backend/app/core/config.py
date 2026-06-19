@@ -1,13 +1,31 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _blank_env_means_default(cls, data: object) -> object:
+        """`.env` 의 빈 값(`KEY=`)은 '미설정 = 코드 기본값' 으로 해석한다.
+
+        `.env.example` 계약: 다수 키가 빈 값으로 선언되고 "empty = use DEFAULT" 다.
+        그러나 float/int/bool/Literal 필드는 빈 문자열을 강제 파싱하다 실패한다
+        (예: EMBEDDING_TIMEOUT_SEC='' → float_parsing 에러). 빈 문자열 키를 입력에서
+        제거하면 pydantic 이 각 필드의 기본값을 사용한다 — env 선언 구조와 타입 계약을 일치시킨다.
+        (CORS_ALLOW_ORIGINS 는 NoDecode + _parse_cors 로 별도 처리.)
+        """
+        if isinstance(data, dict):
+            return {
+                k: v for k, v in data.items()
+                if not (isinstance(v, str) and v.strip() == "")
+            }
+        return data
 
     # 실행 환경. production/staging에서는 admin API 토큰 미설정 시 인증을 fail-closed로 강제한다.
     APP_ENV: Literal["dev", "test", "staging", "production"] = "dev"
@@ -44,7 +62,10 @@ class Settings(BaseSettings):
     BACKEND_INTERNAL_URL: str = "http://backend:8000"
     ADMIN_API_TOKEN: str = ""
 
-    CORS_ALLOW_ORIGINS: list[str] = ["http://localhost:3000"]
+    # NoDecode: pydantic-settings 가 list 필드를 env 소스에서 JSON 으로 먼저 디코드하는 것을
+    # 끈다. .env 는 콤마구분 문자열(예: "http://a,http://b")로 선언하고(아래 _parse_cors 가 분할),
+    # 기본값/코드에서는 list[str] 로 다룬다. (env-as-CSV ↔ list[str] 계약 일치)
+    CORS_ALLOW_ORIGINS: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
 
     @field_validator("CORS_ALLOW_ORIGINS", mode="before")
     @classmethod
