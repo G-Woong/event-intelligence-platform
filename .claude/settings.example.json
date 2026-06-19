@@ -1,0 +1,100 @@
+{
+  "_README": "TEMPLATE — copy to .claude/settings.json (gitignored) on a fresh clone/machine/worktree to register the turn-closeout harness hooks. Contains NO secrets (model/permissions/hook wiring only). After copying, run: python scripts/harness_doctor.py  (must print PASS). Local-only overrides go in .claude/settings.local.json. See README 'Harness setup'.",
+  "model": "opusplan",
+  "language": "korean",
+  "showClearContextOnPlanAccept": true,
+  "plansDirectory": "plans",
+  "enableAllProjectMcpServers": false,
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "PowerShell(*)",
+      "Bash(*)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:docs.anthropic.com)",
+      "WebFetch(domain:docs.claude.com)",
+      "WebFetch(domain:docs.astral.sh)",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:api.semanticscholar.org)",
+      "WebFetch(domain:www.semanticscholar.org)",
+      "mcp__semantic-scholar__search_paper",
+      "Skill(update-config)"
+    ],
+    "deny": [
+      "Bash(git push)",
+      "Bash(git push *)",
+      "Bash(rm *)",
+      "Bash(rm -rf *)",
+      "Bash(del *)",
+      "Bash(erase *)",
+      "Bash(rmdir *)",
+      "PowerShell(Remove-Item *)",
+      "PowerShell(rm *)",
+      "PowerShell(del *)",
+      "PowerShell(rmdir *)",
+      "PowerShell(erase *)",
+      "Bash(git reset --hard)",
+      "Bash(git reset --hard *)",
+      "Bash(git clean -fdx)",
+      "Bash(git clean -fdx *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/forbidden_command_guard.py"],
+            "timeout": 10,
+            "statusMessage": "Checking command safety..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/audit_flagger.py"],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/secret_scan_reminder.py"],
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "py",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/docs_conflict_grep_check.py"],
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "py",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/turn_state_snapshot.py"],
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

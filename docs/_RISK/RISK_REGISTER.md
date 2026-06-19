@@ -136,9 +136,9 @@
 ### R-DeadCodeAudit · 코드 레벨 dead code 자동 감사 — ruff symbol-level 연동, vulture 미설치  — Severity: LOW-MEDIUM→LOW (phase-2 ruff 연동, 2026-06-19)
 - Area: harness / docs 동기화 정확성
 - Description: dead code(미사용 모듈/심볼/import/지역변수/obsolete runner/unreferenced config)를 식별하는 자동 파이프라인.
-- DONE(phase-2, 삭제 없음): **ruff(F401/F811/F841) symbol-level 탐지 연동** `scripts/dead_code_scan.py`(schema v2). 거짓 0(phase-1) → **449 모듈 스캔, 132 symbol 후보**(unused import/redef/지역변수, HIGH confidence·evidence 포함, 그중 59건 프로덕션 코드 예: `ingestion/agents/graph.py`). 후보별 `evidence/confidence/false_positive_risk/recommended_action/deletion_allowed:false` 기록. `tools_available`로 candidate=0을 "clean"으로 오독 방지. 보안: corpus가 `.env`/`*-key.json` 미독(skip).
-- Evidence: `scripts/dead_code_scan.py`(449 scanned, 132 symbol/0 module, ruff=True vulture=False), `.harness/dead_code_candidates.json`, SKILL step 7, dead-code-auditor 대체(adversarial+security 감사).
-- Remaining gap: **(1) vulture 미설치** — uncalled function/class/attribute(진짜 dead module/함수)는 여전히 미탐. `requirements/dev.txt`에 `vulture>=2.11` **추가(제안)**됐으나 venv 미설치(이번 턴 설치 안 함). **(2) module 휴리스틱 recall 한계** — LOW confidence, false-positive(CLI 진입점) 위험. **(3) 후보 132건 팀 감사·통폐합 미수행**(다음 phase). symbol 후보 다수가 test 파일 unused import(저가치 노이즈)임을 정직히 명시.
+- DONE(phase-2, 삭제 없음): **ruff(F401/F811/F841) symbol-level 탐지 연동** `scripts/dead_code_scan.py`(schema v2). 거짓 0(phase-1) → **450 모듈 스캔, 결정적 137 후보 = 132 symbol(HIGH) + 5 module(LOW)**. 분류: production 64 / tests 73. **신뢰 가능 수치는 132 symbol(HIGH)** = production 59 + tests 73. module 5건은 `ingestion/runners/*`(CLI 진입점, false-positive-likely로 정직 표기). 후보별 `evidence/confidence/false_positive_risk/recommended_action/deletion_allowed:false`+`category`. 결정성 수정(팀감사): corpus가 `.harness`/`.claude` 미독(run간 변동 제거) + `from a.b import c`의 `c` 포착(`downstream_contracts` 오탐 제거). 보안: `.env`/`*-key.json` 미독.
+- Evidence: `scripts/dead_code_scan.py`(450 scanned, 132 symbol/5 module, 3회 재실행 동일), `.harness/dead_code_candidates.json`, 팀감사 test-validation(production 59 샘플 진짜 unused 확인)+adversarial(수치 드리프트 지적→132로 단일화).
+- Remaining gap: **(1) vulture 미설치** — uncalled function/class/attribute는 여전히 미탐. `requirements/dev.txt`에 `vulture>=2.11` 제안됐으나 venv 미설치(이번 턴 설치 안 함). **(2) 132 후보 팀 감사·통폐합 미수행**(phase-3, dry-run→audit→소규모 commit). symbol 후보 73건이 test 파일 unused import(저가치)임을 정직히 명시. **(3) phase-3 통폐합 시 TYPE_CHECKING/조건부 import/재export 개별 검토 필수**(test-validation 경고).
 - Closure: `vulture` venv 설치 + closeout 배선 + 프로덕션 symbol 후보 1차 팀 감사 통폐합 → 종결 검토. **삭제는 항상 dry-run→팀 감사→소규모 commit.**
 
 ### R-CloseoutTrust · closeout 게이트는 구조화 자기보고 기반(LLM 실제 수행은 미검증)  — Severity: MEDIUM→LOW-MEDIUM (content-hash+evidence 게이트, 2026-06-19 재감사)
@@ -152,7 +152,22 @@
 ### R-HarnessReproducibility · `.claude/settings.json` gitignored → 신규 clone에서 훅 미등록  — Severity: MEDIUM→LOW (doctor+문서+self-check, 2026-06-19 신규)
 - Area: harness / 재현성
 - Description: `.gitignore`가 `.claude/*`를 제외하고 `agents/`·`skills/`·`hooks/`만 재포함 → **`settings.json`은 gitignored**(`git check-ignore` 확인). 신규 clone/머신/codex worktree는 훅 *스크립트*는 받지만 **훅을 등록하는 settings.json이 없어** 하네스가 조용히 비활성(Stop 스냅샷·PostToolUse flag·금지명령 가드 미동작, 무에러).
-- DONE(2026-06-19): **(a) `scripts/harness_doctor.py`** — settings.json 존재·필수 훅5 등록·디스크 파일·Stop hook loop guard·config 점검, 누락 시 FAIL+remediation(exit 1). **(b) README "하네스 setup/재현성" 섹션** — gitignored 정책·필수 훅 목록·확인 명령·증상. **(c) `machine_status.settings_health`** — 매 턴 등록상태 기록(loop-safe, stdout 없음).
-- Evidence: `scripts/harness_doctor.py`(PASS 10/0/0), README, `turn_state_snapshot._settings_health`, `.gitignore` L2.
-- Remaining gap: doctor는 **수동 실행** — fresh clone에서 아무도 안 돌리면 여전히 침묵(settings.json 없으면 self-check조차 미동작 — 가장 필요한 순간에 침묵). 자동화하려면 settings.json을 tracked로 전환(별도 결정 필요) 또는 setup 스크립트 강제.
-- Closure: settings.json tracked 전환(또는 부트스트랩 스크립트) + doctor CI/setup 배선 시 LOW→검토.
+- DONE(2026-06-19): **(a) `scripts/harness_doctor.py`** — settings.json 존재·필수 훅5 등록·디스크 파일·Stop hook loop guard·config 점검, 누락 시 FAIL+remediation(exit 1). **(b) `.claude/settings.example.json`(tracked, 비밀 없음) + `.gitignore` 예외** — 부트스트랩 결정(팀감사 orchestrator 권고 (b) template-only 채택): fresh clone이 `Copy-Item settings.example.json settings.json` 1-step으로 훅 재등록. settings.json 자체는 gitignored 유지(로컬 prefs/오버라이드 분리). **(c) README setup 섹션 + doctor가 누락 시 template 복사 명령 안내**. **(d) `machine_status.settings_health`** 매 턴 기록.
+- Evidence: `.claude/settings.example.json`(secret scan PASS), `.gitignore`(`!.claude/settings.example.json`), `scripts/harness_doctor.py`(PASS), README, `turn_state_snapshot._settings_health`.
+- Remaining gap: 복사는 **수동 1-step**(자동 아님) — fresh clone에서 doctor/copy를 안 하면 여전히 침묵(settings.json 없으면 self-check도 미동작). **settings.json 직접 tracked 전환은 user decision으로 남김**(로컬 prefs/비밀 유입 표면 trade-off — 사용자 지시상 임의 전환 금지).
+- Closure: settings.json tracked 전환 결정(user) 또는 doctor를 setup/CI에 강제 배선 시 LOW→검토. **현재 부트스트랩은 template으로 실질 해결, 자동화만 잔여.**
+
+### R-DocsLifecycle · docs 작성물의 작성-후 흐름(active→superseded→archive→trash) 규율  — Severity: LOW (audit-as-test 고정, 2026-06-19 신규)
+- Area: harness / docs lifecycle
+- Description: 작성된 docs가 이후 active/superseded/dead/archive/trash 중 어디로 흘러야 하는지 규율이 prose로만 있어 회귀·임의 이동 위험.
+- DONE(2026-06-19): **(a) `scripts/docs_lifecycle_audit.py`(read-only/dry-run)** — 136 docs를 role/expected_lifecycle/protected/move_allowed/후보로 분류, 33 protected. 이동은 머신 마커 `<!-- LIFECYCLE: superseded|dead -->` 기반(키워드 추측 배제 → 02 정책 일치). `sweep_dry_run`은 moves_applied=0·manifests_created=0(무매니페스트 trash 유지). **(b) `tests/test_docs_lifecycle.py` 19개 invariant** — PROJECT_STATUS/RISK/README/canonical/contract/source-registry/*_FINAL 보호, superseded→dry-run archive, dead→dry-run trash, apply 없이 이동 0, trash manifest 0, 월별 ledger, conflict 검출(비어있지 않을 때), stale→risk 등록. SKILL step 5 배선.
+- Evidence: `scripts/docs_lifecycle_audit.py`, `tests/test_docs_lifecycle.py`(19 passed), `.harness/docs_lifecycle_audit.json`, 팀감사 curator(보호 누락 3건→*_FINAL/manifest 보호 추가)+adversarial(동어반복 한계 명시).
+- Remaining gap(정직): 테스트는 **분류기 계약 + 디스크 불변식**을 고정하지, 실제 `Move-Item`을 수행하는 **turn-closeout 스킬의 이동 안전성은 미테스트**(adversarial 지적). dead/superseded 자동 탐지는 머신 마커 의존(현재 마커 0개 → 후보 0). archived→trash retention 전이는 후보 플래그로 미표현(선언만).
+- Closure: 스킬의 실제 이동 경로를 dry-run 통합 테스트로 커버 + 마커 운용 1회 라이브 → 검토.
+
+### R-CodeReviewLivePath · 일반 코드 변경 턴의 `/code-review` 실호출·증거 적재 미관찰  — Severity: LOW (배선 검증, 실호출 미관찰, 2026-06-19)
+- Area: harness / 감사 라우팅
+- Description: code 변경 시 `/code-review` 스킬이 실제 호출되고 audit_evidence에 리뷰 결과가 남는지.
+- DONE/관찰(2026-06-19): harmless ingestion 변경(`ingestion/core/source_registry.py`) probe로 **audit_flagger가 `code_review` flag 생성 + machine_status.audit_types에 반영 + 게이트 closeout_current=False(미커버)** 를 **라이브 관찰**(원복 완료). 라우팅 표(03 §3)는 code_review→`/code-review`+test-validation-agent+adversarial 매핑.
+- Remaining gap(정직): **`/code-review` 스킬의 실제 호출 + audit_evidence에 `audit_type:"code_review"` 레코드 적재는 미관찰**(이번 턴 application code 변경 0). 즉 flag 생성·게이트 mismatch까지만 검증, skill 실행은 self-report(soft, 게이트는 evidence 구조만 강제).
+- Closure: 실제 ingestion/backend `.py` 변경 턴에서 `/code-review` 호출 + evidence 레코드 1회 관찰 시 종결.

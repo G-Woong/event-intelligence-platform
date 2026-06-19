@@ -52,11 +52,16 @@ def main():
 
     # 1) settings.json present (the gitignored single point of failure)
     if not os.path.isfile(settings_path):
+        example = os.path.join(root, ".claude", "settings.example.json")
+        if os.path.isfile(example):
+            fix = ("Remediation: copy the tracked template -> "
+                   "Copy-Item .claude/settings.example.json .claude/settings.json")
+        else:
+            fix = ("Remediation: recreate from docs/Harness_Construction/05 "
+                   "(hooks block) + README 'Harness setup'.")
         fails.append(
             "MISSING .claude/settings.json (gitignored — NOT restored by clone). "
-            "The harness is INERT until it is recreated. Remediation: copy from a "
-            "machine that has it, or recreate from docs/Harness_Construction/05 "
-            "(hooks block) + README 'Harness setup'.")
+            "The harness is INERT until it is recreated. " + fix)
         _report(fails, warns, oks)
         return 1
     try:

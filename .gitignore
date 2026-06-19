@@ -6,6 +6,9 @@
 !.claude/skills/**
 !.claude/hooks/
 !.claude/hooks/**
+# settings.json stays gitignored (local), but track the no-secret TEMPLATE so a
+# fresh clone can re-register the harness hooks (R-HarnessReproducibility).
+!.claude/settings.example.json
 CLAUDE.md
 .claude/settings.local.json
 .claude/cache/
@@ -83,5 +86,6 @@ gcp-service-account-key.json
 .harness/closeout_stamp.json
 .harness/audit_required.json
 .harness/dead_code_candidates.json
+.harness/docs_lifecycle_audit.json
 .harness/last_test_result.json
 docs/_TRASH/

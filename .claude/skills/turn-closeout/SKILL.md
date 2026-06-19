@@ -23,7 +23,7 @@ allowed-tools: Read, Grep, Glob, Write, Edit, Bash, Agent, Skill
 2. **변경 유형 분류 확인:** audit_types/flags가 실제 변경과 맞는지 git diff로 교차 확인(훅 분류 신뢰하되 누락 보완).
 3. **[Req3] subagent 라우팅 (강제):** flags 합집합 → `03 §3` 표대로 **실제 에이전트/`/code-review` 스킬을 병렬 호출**. `adversarial-reality-critic`은 flag 1개라도 있으면 필수 포함. 같은 턴 중복은 stamp로 디바운스. **code 변경(code_review flag)이면 `/code-review` 스킬을 호출**(hook에서 무겁게 돌리지 않고 여기서).
 4. **[Req4] risk 감사:** `docs/_RISK/RISK_REGISTER.md` 각 열린 risk Closure를 **grep 근거로** 검증. 충족분 → CLOSED 이관 후보. 감사 결과 REAL 이슈 → 신규 risk 등록. machine_status.risk 카운트와 일치 확인.
-5. **[Req2a] docs 동기화 후보:** "이미 적용/미사용" 메모리 md를 grep 근거로 식별(추측 금지). 이동은 6단계 감사 통과분만.
+5. **[Req2a] docs lifecycle 감사:** `python scripts/docs_lifecycle_audit.py`(read-only/dry-run) 산출 `.harness/docs_lifecycle_audit.json` 검토 — 각 doc의 role/protected/move_allowed/후보 여부. 이동 후보는 **머신 마커 `<!-- LIFECYCLE: superseded|dead -->`** 가 붙은 비보호 doc만(키워드 추측 금지). protected(PROJECT_STATUS/RISK/README/canonical/contract/source-registry/*_FINAL)은 절대 후보 아님. 불변식은 `tests/test_docs_lifecycle.py`로 고정. 이동은 6단계 감사 통과분만.
 6. **[dry-run→audit→apply] 비가역 이동:** 승인분만 `Move-Item`/`git mv`로 `_ARCHIVE_SUPERSEDED`(+`_INDEX` 1줄)/`_TRASH`. 반대 의견 있으면 ACTIVE 유지 + risk 등록.
 7. **[dead code] 후보 갱신:** `python scripts/dead_code_scan.py` 산출 `.harness/dead_code_candidates.json` 검토 → `R-DeadCodeAudit` 갱신. **삭제는 안 함**(다음 phase, dry-run→audit→apply). ⚠ **candidate=0 은 "dead code 없음"이 아니라 "참조 휴리스틱 미탐(recall 한계)"** — 클린 판정으로 렌더하지 말 것(거짓 안심 금지).
 8. **[Req2b] 의사결정 ADR:** 설계 판단/착지/방향전환/폐기가 있었으면 **월별 ledger** `docs/_DECISIONS/<YYYY-MM>.md`에 블록 1개 append. `02 B.2` 사용자 양식 정확히(날짜·섹터·상태/문제·배경·가설·도입 아이디어·선택 이유·구현·결과·한계·후속 과제·관련 문서), 간략. 사소한 턴엔 추가 안 함.

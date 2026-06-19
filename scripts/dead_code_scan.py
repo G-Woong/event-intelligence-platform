@@ -33,7 +33,14 @@ import sys
 
 CODE_DIRS = ("ingestion", "backend", "agents", "workers", "scripts")
 SEARCH_EXT = (".py", ".json", ".yaml", ".yml", ".toml", ".md", ".cfg", ".ini", ".txt")
-SKIP_DIR = {"__pycache__", ".venv", "node_modules", ".git", "outputs", "logs"}
+SKIP_DIR = {
+    "__pycache__", ".venv", "node_modules", ".git", "outputs", "logs",
+    # volatile/generated dirs: reading these into the corpus made the module
+    # heuristic NON-DETERMINISTIC run-to-run (.harness rewrites every scan) —
+    # test-validation CONCERN-1. Excluding them stabilizes candidate counts.
+    ".harness", ".claude", "dist", "build", ".next", ".pytest_cache",
+    ".ruff_cache", ".mypy_cache", "htmlcov",
+}
 # never read secret-bearing files into the corpus (security-guardian note —
 # defense in depth; these never reached the output, this removes the in-memory read)
 SKIP_FILE_RE = re.compile(r"(^\.env)|(-key\.json$)|(service-account)", re.I)
@@ -42,6 +49,10 @@ ENTRYPOINT_BASES = {
     "conftest", "celery_app", "celeryconfig", "settings", "setup",
 }
 IMPORT_RE = re.compile(r"^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w.]+))", re.M)
+# also capture the names AFTER `from X import a, b as c` so a submodule imported
+# as `from pkg.sub import mod` registers `mod` as referenced (test-validation
+# CONCERN: IMPORT_RE alone missed submodule targets -> false dead module).
+FROM_NAMES_RE = re.compile(r"^\s*from\s+[\w.]+\s+import\s+(.+)$", re.M)
 RUFF_RULES = ("F401", "F811", "F841")
 
 
@@ -131,13 +142,21 @@ def _module_candidates(root):
 
     imported = set()
     for rel, txt in corpus.items():
-        if rel.endswith(".py"):
-            for m in IMPORT_RE.finditer(txt):
-                name = m.group(1) or m.group(2)
-                if name:
-                    imported.add(name)
-                    imported.add(name.split(".")[-1])
-                    imported.add(name.split(".")[0])
+        if not rel.endswith(".py"):
+            continue
+        for m in IMPORT_RE.finditer(txt):
+            name = m.group(1) or m.group(2)
+            if name:
+                imported.add(name)
+                imported.add(name.split(".")[-1])
+                imported.add(name.split(".")[0])
+        # imported target names: `from X import a, b as c, (d, e)` -> a,b,d,e
+        for m in FROM_NAMES_RE.finditer(txt):
+            tail = m.group(1).split("#")[0].strip().strip("()")
+            for part in tail.split(","):
+                tok = part.strip().split(" as ")[0].strip().rstrip("\\").strip()
+                if tok and tok != "*":
+                    imported.add(tok)
 
     cands = []
     for rel, bn, dotted in modules:
@@ -168,11 +187,29 @@ def _module_candidates(root):
     return cands, len(modules)
 
 
+def _category(path):
+    """Coarse bucket for phase-2 triage (NOT a deletion decision)."""
+    p = path.replace("\\", "/")
+    if "/tests/" in p or p.startswith("tests/") or "/test_" in p \
+            or os.path.basename(p).startswith("test_"):
+        return "tests"
+    if p.startswith("scripts/"):
+        return "harness_tooling"
+    if p.startswith(("ingestion/", "backend/", "agents/", "workers/")):
+        return "production"
+    return "other"
+
+
 def scan(root):
     ruff_c, ruff_ok, ruff_err = _ruff_candidates(root)
     mod_c, n_modules = _module_candidates(root)
     vulture_ok = _tool_available("vulture")
+    for c in ruff_c + mod_c:
+        c["category"] = _category(c["path"])
     candidates = sorted(ruff_c + mod_c, key=lambda c: (c["path"], c.get("symbol", "")))
+    by_cat = {}
+    for c in candidates:
+        by_cat[c["category"]] = by_cat.get(c["category"], 0) + 1
     return {
         "schema_version": 2,
         "scanned_dirs": list(CODE_DIRS),
@@ -186,6 +223,8 @@ def scan(root):
             "symbol": sum(1 for c in candidates if c["kind"] == "symbol"),
             "module": sum(1 for c in candidates if c["kind"] == "module"),
         },
+        "candidates_by_category": by_cat,
+        "candidates_high_confidence": sum(1 for c in candidates if c["confidence"] == "HIGH"),
         "candidates": candidates,
         "note": "IDENTIFY ONLY — deletion_allowed is always false. symbol=HIGH "
                 "confidence (ruff F-codes); module=LOW confidence heuristic with "

@@ -96,7 +96,8 @@ Stop 게이트: stamp.working_tree_signature ≠ 현재 sig 면 "closeout 미완
 
 > **`.claude/settings.json` 은 gitignored** 입니다(`.gitignore` 가 `.claude/*` 를 제외하고 `agents/`·`skills/`·`hooks/` 만 다시 포함). 따라서 clone 하면 훅 *스크립트*는 받지만 **훅을 등록하는 `settings.json` 은 없어** 하네스가 **조용히 비활성**(Stop 스냅샷·PostToolUse 감사 flag·금지명령 가드 모두 미동작)이 됩니다.
 
-- **등록해야 하는 훅(5):** PreToolUse `forbidden_command_guard.py` · PostToolUse `audit_flagger.py` · Stop `secret_scan_reminder.py`·`docs_conflict_grep_check.py`·`turn_state_snapshot.py`. 정확한 배선 JSON 은 `docs/Harness_Construction/05_HOOKS_AND_SKILLS_WIRING.md §3`.
+- **신규 clone/머신/worktree 1-step 복구:** `.claude/settings.example.json`(tracked, **비밀 없음**)을 `.claude/settings.json` 으로 복사 → 훅 5개가 재등록됩니다. (PowerShell: `Copy-Item .claude/settings.example.json .claude/settings.json`). 로컬 전용 오버라이드는 `.claude/settings.local.json`(gitignored) 에.
+- **등록해야 하는 훅(5):** PreToolUse `forbidden_command_guard.py` · PostToolUse `audit_flagger.py` · Stop `secret_scan_reminder.py`·`docs_conflict_grep_check.py`·`turn_state_snapshot.py`. 정확한 배선은 `settings.example.json` 또는 `docs/Harness_Construction/05_HOOKS_AND_SKILLS_WIRING.md §3`.
 - **등록 확인 명령:** `python scripts/harness_doctor.py` → 누락 시 `FAIL` + 구체 remediation 출력(exit 1).
 - **누락 증상:** PROJECT_STATUS 미갱신·`closeout_stamp.json` 미생성·턴 마감 알림 없음·`rm` 가드 미작동.
 - **content-hash 게이트:** closeout 시 `python scripts/closeout_sig.py` 출력을 stamp `working_tree_signature` 에 복사(내용변경 감지).
