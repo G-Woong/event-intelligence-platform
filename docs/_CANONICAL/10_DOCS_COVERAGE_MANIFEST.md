@@ -1,5 +1,7 @@
 # 10 — DOCS COVERAGE MANIFEST (전수 처리 증명)
 
+> ⚠️ **이 manifest 는 2026-06-16 배너-only 라운드의 증명문서다(역사 기록).** 2026-06-19 구조 리팩토링(`Harness_Construction/07` 실행)으로 docs/ 가 생애주기 구조로 재편되며, 아래 표의 다수 파일이 **삭제(history 보존)·`3_ARCHIVE/`·`5_REFERENCE/`·`2_ROADMAP/` 로 이동**됐다. 현재 docs 지도는 **`docs/00_START_HERE.md`** 가 권위. 이 표는 "원본 50 + ideation 19 가 누락 없이 추적됐다"는 과거 증명으로만 유효하다.
+
 - 원본 MD: **50개**(`docs/_DOCS_MD_INVENTORY_BEFORE.txt`와 1:1). 단 하나도 누락하지 않았다.
 - 처리 결과 분류: KEEP_AS_CANONICAL / MERGED_INTO_CANONICAL / SPLIT_INTO_TASKS_AND_RISKS / SUPERSEDED_ARCHIVE(배너) / NEEDS_MANUAL_REVIEW.
 - Final action의 (배너)는 원본 상단에 SUPERSEDED 배너를 부착했음을 뜻한다(**삭제·이동 없음**).

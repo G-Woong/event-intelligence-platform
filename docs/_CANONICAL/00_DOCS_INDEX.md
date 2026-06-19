@@ -1,9 +1,9 @@
-# 00 — DOCS INDEX (canonical 단일 진입점)
+# 00 — DOCS INDEX (canonical 현재진실 코어 index)
 
-- 생성: 2026-06-16 (docs 전수 원자분해·통폐합 라운드)
-- 기준 커밋: `93e83b6` (Phase G-4 완료 후)
-- 목적: `docs/` 전체를 현재 구현 상태 기준으로 재정렬한 **단일 출처 index**.
-  신규 세션은 이 폴더(`docs/_CANONICAL/`)를 최우선으로 읽는다.
+> 📍 **docs 최상위 진입점은 `docs/00_START_HERE.md`** (생애주기 지도). 이 파일은 그중 **"현재 사실(_CANONICAL)" 코어**의 읽기순서다.
+
+- 생성: 2026-06-16 (docs 전수 원자분해·통폐합 라운드) · 2026-06-19 구조 리팩토링 반영
+- 목적: 현재 구현 상태의 **단일 출처(current truth)** 코어. 신규 세션은 `00_START_HERE` → 이 폴더 순으로 읽는다.
 
 ---
 
@@ -53,7 +53,8 @@ opt-in), 46소스 **전수** 라이브 sweep·LLM급 카드 콘텐츠 미완(상
 
 - 원본 50개 MD는 **삭제하지 않았다.** 구버전/충돌 문서에는 상단 `SUPERSEDED` 배너를 붙이고
   canonical 대체본을 가리킨다. 전체 매핑은 `10_DOCS_COVERAGE_MANIFEST.md`.
-- `system_overview/`는 다운스트림 앱(②) 설명은 유효하나 **수집 계층 설명은 폐기**됐다(ingestion 엔진이 대체).
-- `Orchestration_Construction/`는 설계 청사진이었고 **Phase A~G-4가 실제로 구현**됐다(README의 "설계 전용" 문구는 stale → 06).
-- `_IDEATION_WEB_INTELLIGENCE/`(19개, 2026-06-16 신설)는 **확장 전략·로드맵** 세트로 "현재 구현"이 아니다.
-  전수 분류는 `10 Group E` 참조. code-state stale 4개(00·01·16·17)에는 STALE 배너를 부착했다. 현재 구현 사실은 항상 본 canonical이 권위.
+- **2026-06-19 구조 리팩토링**으로 docs/ 가 생애주기로 재편됐다(`00_START_HERE` 참조).
+  - `system_overview/`·`_IDEATION_WEB_INTELLIGENCE/` 는 **해체**됨 → 참조성은 `5_REFERENCE/`, 로드맵은 `2_ROADMAP/`, stale 스냅샷은 `3_ARCHIVE/`.
+  - `Orchestration_Construction/` 는 설계 청사진(Phase A~G-4 구현 완료). 핵심 3개(00 phase정의·06 버전ADR·11 diff baseline)만 제자리, 나머지는 `3_ARCHIVE/2026-06_orchestration_design/`.
+  - 루트 설계문서(API_CONTRACT·EVENT_SCHEMA 등)는 `5_REFERENCE/` 로 이동.
+- 아래 §2 권위 순서의 "기타 루트 설계문서·system_overview" 는 이제 **`5_REFERENCE/`** 를 가리킨다. 현재 구현 사실은 항상 본 canonical 이 권위.
