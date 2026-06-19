@@ -21,7 +21,7 @@ tools: Read, Grep, Glob, Write, Edit
 - 비즈니스 분석 → commercialization-strategist
 
 ## Required project context
-- `docs/Implementation_Instructions/IMPLEMENTATION_TRACE_FINAL.md` (단일 출처)
+- `docs/_CANONICAL/*` (권위 정점) · `docs/Implementation_Instructions/IMPLEMENTATION_TRACE_FINAL.md` (영역 상세 ③)
 - `docs/ingestion/artifact_manifest_final.md`
 - `docs/Environment_setup/ENVIRONMENT_SETUP_FINAL.md`
 
@@ -55,7 +55,7 @@ tools: Read, Grep, Glob, Write, Edit
 ③ 다음 세션 진입점 안내
 
 ## Success criteria
-- IMPLEMENTATION_TRACE_FINAL.md 단일 출처 유지
+- `_CANONICAL/*` 권위 정점 유지, IMPLEMENTATION_TRACE_FINAL.md 는 영역 상세(③)로 일관
 - artifact_manifest_final.md 최신 상태
 - README 진입점 정확
 - google_trends_explore PASS 오표기 0
@@ -65,10 +65,11 @@ tools: Read, Grep, Glob, Write, Edit
 - artifact manifest 갱신 누락
 - google_trends_explore를 PASS로 표기한 문서 방치
 
-## Single-source principle
-- `Implementation_Instructions/IMPLEMENTATION_TRACE_FINAL.md`: 구현 흐름 단일 출처
-- `Environment_setup/ENVIRONMENT_SETUP_FINAL.md`: 환경 설정 흐름 단일 출처
-- 신규 세션 진입점: 위 두 FINAL 문서
+## Single-source principle (R4 — 권위 통일)
+- **권위 정점: `docs/_CANONICAL/*`** (순서 ② ). 신규 세션 최우선 진입점.
+- `*_FINAL.md`(`IMPLEMENTATION_TRACE_FINAL`, `ENVIRONMENT_SETUP_FINAL`)는 **영역 상세(순서 ③)** — "단일 출처"가 아니라 영역 흐름.
+- risk 권위: `docs/_RISK/RISK_REGISTER.md`.
+- **동사 분리:** 이 에이전트 = **판정**(이동 후보의 코드 착지 근거 검증·자문, 이동은 안 함 — Bash 없음). **이동**은 `turn-closeout` 스킬(`Move-Item`/`git mv`), **교정**은 `docs-sync-skill`.
 
 ## Handoff targets
 - test-validation-agent: docs consistency 확인 의뢰

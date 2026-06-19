@@ -28,14 +28,14 @@ opt-in), 46소스 **전수** 라이브 sweep·LLM급 카드 콘텐츠 미완(상
 | 02 | **02_CURRENT_ARCHITECTURE.md** | 현재 아키텍처 단일 출처(컨테이너·API·DB·검색·LLM·프론트) |
 | 03 | **03_SOURCE_STATUS.md** | 57소스 production-state 분포 + tier 정의 + **role taxonomy(§1b)** |
 | 04 | **04_OPEN_TASKS_BY_FOLDER.md** | 폴더별 미구현 TASK |
-| 05 | **05_RISK_REGISTER.md** | RISK 등록부(심각도·종결조건) |
+| 05 | **`../_RISK/RISK_REGISTER.md`** | RISK 등록부(심각도·종결조건). 2026-06-19 `docs/_RISK/` 전용 폴더로 **본문 이동**(R3 단일출처). 완전종결분은 `../_RISK/RISK_CLOSED.md`. |
 | 06 | **06_CONFLICTS_AND_SUPERSEDED.md** | 문서 충돌·구버전 정리 |
 | 07 | **07_ENHANCEMENT_BACKLOG.md** | 고도화 backlog |
 | 08 | **08_LLM_AGENT_ORCHESTRATION_HANDOFF.md** | LLM 에이전트 handoff 상태 |
 | 09 | **09_VALIDATION_AND_TESTS.md** | 검증·테스트 현황 |
 | 10 | **10_DOCS_COVERAGE_MANIFEST.md** | 원본 MD 50개 전수 처리 증명 |
 
-비개발자/의사결정자: **00 → 03 → 05 → 07**.
+비개발자/의사결정자: **00 → 03 → `_RISK/RISK_REGISTER.md`(구 05) → 07**.
 구현자: **00 → 01 → 02 → 04**.
 
 ---

@@ -1,6 +1,12 @@
-# 05 — RISK REGISTER (위험 등록부)
+# RISK REGISTER (위험 등록부) — 단일 출처
 
-> RISK는 단순 TODO와 분리한다. 종결조건이 충족돼야 닫힌다.
+> 위치: `docs/_RISK/RISK_REGISTER.md`. (2026-06-19 `_CANONICAL/05_RISK_REGISTER.md` 에서 **본문 통째 이동** — R3 단일출처. `_CANONICAL/00` 이 이 경로를 가리킨다. 권위 정점 `_CANONICAL/*` 의 risk 토픽(#05)은 물리적으로 여기 존재한다.)
+>
+> **RISK ≠ TODO** — 종결조건(Closure)이 충족돼야 닫힌다.
+> **3상태(매 턴 turn-closeout 이 관리):**
+> - **열림(open):** Closure 미충족 → 이 파일.
+> - **부분종결(partial):** severity 하향됐으나 Closure 미충족 → 이 파일 유지, 종결 이력은 1줄 요약 + archive 링크로 압축.
+> - **완전종결(closed):** Closure 충족 → `RISK_CLOSED.md` 로 흐름 1~3줄만 이관, 상세 본문은 `_ARCHIVE_SUPERSEDED`.
 
 ---
 
@@ -126,3 +132,11 @@
 - Description: 외부 텍스트가 LLM 노드/SourceSupervisor 판단에 주입될 위험. synthetic URL을 안정 증거로 쓰면 안 됨.
 - Current mitigation: EvidenceGate(synthetic/dead URL 가드), SourceSupervisor는 우회 제안 거부, 수집은 deterministic(LLM은 가치 지점만).
 - Remaining gap: 6 mock 노드 실연결(04 T-AgtA) 시 입력 신뢰경계 재검토. DEFERRED_WITH_TRIGGER.
+
+### R-DeadCodeAudit · 코드 레벨 dead code 자동 감사 미구현  — Severity: LOW-MEDIUM (open, 2026-06-19 stabilization 점검에서 식별)
+- Area: harness / docs 동기화 정확성
+- Description: turn-closeout 설계는 "dead code/미사용 심볼"을 risk 출처로 **언급**(04 §3, SKILL step 3)하나, 코드 레벨 dead code 를 찾는 **구체적·자동화된 감사 메커니즘(예: vulture/pyflakes, 정의된 미사용 심볼 grep 절차)이 없다.** 현재는 에이전트 판단에만 의존 → 누락 위험.
+- Evidence: `grep dead code` → 언급만 존재, 실행 절차 없음(이 점검).
+- Current mitigation: 매 턴 closeout 의 에이전트 판단 + docs↔code grep(02 A.4)으로 부분 커버. 팀 감사(test-validation-agent) 호출 시 부분 탐지.
+- Remaining gap: 결정론적 dead code 탐지 도구/절차를 turn-closeout 에 배선(예: `python -m pyflakes`/`vulture` 화이트리스트 + 결과를 risk 로 자동 등록). Windows/venv 에서 동작 검증 필요.
+- Closure: dead code 자동 탐지 1종이 closeout 절차에 배선되고 1회 라이브 결과가 risk 로 등록되면 LOW→종결 검토.

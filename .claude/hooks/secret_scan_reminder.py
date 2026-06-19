@@ -17,6 +17,12 @@ def main() -> int:
     except (ValueError, TypeError):
         payload = {}
 
+    # Loop guard: if we are already inside a stop-hook continuation, emitting
+    # additionalContext again would re-block the turn from ending and loop
+    # (hit the block cap). Return success silently so the turn can end.
+    if payload.get("stop_hook_active"):
+        return 0
+
     cwd = payload.get("cwd") or None
 
     try:

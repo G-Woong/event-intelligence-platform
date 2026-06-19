@@ -40,6 +40,17 @@ _RULES = [
     # reading the real .env (allow .env.example / .env.* templates)
     (re.compile(_P + r"(?:type|cat|gc|Get-Content)\s+[^\n;&|]*\.env(?![.\w])", re.I),
      "reading .env contents is forbidden (.env values must not be printed)"),
+    # BEST-EFFORT guard (R7): blocks the most direct exfiltration vector — a
+    # literal Move-Item/mv of the real .env / key files (the harness uses
+    # Move-Item for the docs lifecycle). It does NOT catch variable indirection
+    # ($f=".env"; Move-Item $f ...), Copy-Item, or Rename-Item — a regex command
+    # filter cannot. Primary secret defense remains .gitignore + os.getenv +
+    # output isolation (R-Secret). allow .env.example / .env.* templates.
+    (re.compile(_P + r"(?:Move-Item|mi|move|mv)\b[^\n;&|]*\.env(?![.\w])", re.I),
+     "moving the real .env is forbidden (secret exfiltration risk)"),
+    # moving key / service-account files
+    (re.compile(_P + r"(?:Move-Item|mi|move|mv)\b[^\n;&|]*(?:-key\.json|service-account)", re.I),
+     "moving key/service-account files is forbidden (secret exfiltration risk)"),
     (re.compile(_P + r"docker\s+system\s+prune", re.I), "docker system prune is forbidden"),
     (re.compile(_P + r"docker\s+volume\s+(?:rm|prune)", re.I), "docker volume rm/prune is forbidden"),
 ]

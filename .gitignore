@@ -76,3 +76,9 @@ gcp-service-account-key.json
 
 # Backups
 *.bak
+
+# Turn-closeout harness runtime (config.json is tracked; these are per-machine state)
+.harness/machine_status.json
+.harness/narrative_marker.json
+.harness/last_test_result.json
+docs/_TRASH/

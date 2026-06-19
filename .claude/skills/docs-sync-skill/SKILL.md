@@ -14,8 +14,13 @@ TRACE_FINAL / README / checklist / docs/70·86·92 / Environment_setup 문서의
 - 새 feature 구현 완료 후, status 변경 후, 세션 종료 전
 - "문서 정리 / drift 점검 / trace 갱신" 류 요청
 
+## 권위 순서 (R4 — 단일 출처 통일)
+> docs 권위 정점은 **`docs/_CANONICAL/*`**. 순서: ① 코드+최신 산출물 → ② `_CANONICAL/*` → ③ 영역 FINAL(`*_FINAL.md`, `INGESTION_FINAL` 등) → ④ 기타 설계문서.
+> 즉 `*_FINAL.md` 는 "단일 출처"가 아니라 **영역 상세(순서 ③)**. risk 권위는 `docs/_RISK/RISK_REGISTER.md`.
+> **동사 분리:** 이 스킬 = **교정**(status 라벨 drift in-place 수정). 파일 lifecycle **이동**은 `turn-closeout`, 이동 후보 **판정**은 `docs-memory-curator`.
+
 ## procedure
-1. **단일 출처 확인**:
+1. **영역 상세(순서 ③) 확인**:
    - 수집: `docs/Implementation_Instructions/IMPLEMENTATION_TRACE_FINAL.md`
    - 환경: `docs/Environment_setup/ENVIRONMENT_SETUP_FINAL.md`
 2. **drift grep** (아래 patterns) 실행, 위반 라인 식별

@@ -37,6 +37,12 @@ def main() -> int:
         payload = json.loads(raw) if raw.strip() else {}
     except (ValueError, TypeError):
         payload = {}
+
+    # Loop guard: don't re-emit additionalContext during a stop-hook
+    # continuation (would re-block the turn and loop to the block cap).
+    if payload.get("stop_hook_active"):
+        return 0
+
     cwd = payload.get("cwd") or os.getcwd()
 
     try:

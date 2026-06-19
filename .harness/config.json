@@ -1,0 +1,8 @@
+{
+  "enforce": "soft",
+  "audit_loc_threshold": 40,
+  "audit_files_threshold": 5,
+  "archive_retention_turns": 30,
+  "loc_whitelist": ["*.lock", "requirements*.lock*", "ingestion/outputs/**"],
+  "status_path": "PROJECT_STATUS.md"
+}
