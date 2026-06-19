@@ -109,62 +109,7 @@ opensearch ─────┴→ backend ─┬→ worker
 
 ## .env 키 목록 (실값 비포함)
 
-> **경고**: 실제 API 키 값을 절대 커밋하지 마세요. 아래는 키 이름만 나열합니다.
-
-### LangSmith 관측
-```
-LANGSMITH_TRACING=true/false
-LANGSMITH_ENDPOINT=https://api.smith.langchain.com
-LANGSMITH_API_KEY=<LangSmith 발급 키>
-LANGSMITH_PROJECT=<프로젝트명>
-```
-
-### OpenAI
-```
-OPENAI_API_KEY=<OpenAI 발급 키>
-```
-
-### Milvus 연결
-```
-MILVUS_HOST=milvus-standalone  (컨테이너 내부명)
-MILVUS_PORT=19530
-MILVUS_COLLECTION=event_embeddings
-```
-
-### Redis 연결
-```
-REDIS_URL=redis://redis:6379/0
-```
-
-### LLM / Embedding 프로바이더 선택
-```
-LLM_PROVIDER=mock          (mock | openai)
-LLM_MODEL=gpt-4o-mini
-EMBEDDING_PROVIDER=mock    (mock | openai)
-EMBEDDING_MODEL=text-embedding-3-small
-EMBEDDING_DIM=1536
-```
-
-### Admin 인증
-```
-ADMIN_API_TOKEN=<비밀 토큰>  (빈값이면 dev 모드 bypass)
-```
-
-### Frontend URL
-```
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-INTERNAL_API_BASE_URL=http://backend:8000
-```
-
-### Backend
-```
-DATABASE_URL=postgresql+asyncpg://event_user:event_pass@postgres:5432/event_intel
-CORS_ORIGINS=http://localhost:3000
-OPENSEARCH_HOST=opensearch
-OPENSEARCH_PORT=9200
-OPENSEARCH_EVENT_INDEX=event_cards
-BACKEND_INTERNAL_URL=http://backend:8000
-```
+> **단일 출처로 통합됨 (2026-06-19):** env-key 카탈로그는 `docs/5_REFERENCE/ENV_KEYS.md`(기본값·용도·컨테이너 매핑) + 루트 `.env.example`(키 이름 권위 출처)로 일원화. 인프라/런타임 키 표·수집 소스 키 목록은 거기서 본다. (구 이 섹션의 `CORS_ORIGINS`는 stale — 정식 키는 `CORS_ALLOW_ORIGINS`.)
 
 ---
 

@@ -44,6 +44,6 @@
 - **REFERENCE 통합:** 루트 설계문서 12 + system_overview 참조 6 → `5_REFERENCE/`.
 - **ROADMAP 통합:** ideation 레이어 14 → `2_ROADMAP/`.
 - **유지(live 연동):** `_CANONICAL/`·`_RISK/`·`_DECISIONS/`·`Harness_Construction/`·`ingestion/`·`Environment_setup/`·`Implementation_Instructions/` 는 하네스 skill/agent/코드가 직접 참조하므로 제자리(rename 안 함).
-- 복구: `git tag pre-refactor-2026-06-19`. 상세 맵: `Harness_Construction/07`.
+- 복구: `git tag pre-refactor-2026-06-19`. 결과 지도: `_CANONICAL/10_DOCS_COVERAGE_MANIFEST` · 원본 스펙(이관): `3_ARCHIVE/2026-06_harness_design/07`.
 
 > `_ARCHIVE_SUPERSEDED/`·`_TRASH/` 는 **하네스가 자동 관리하는 tombstone**(turn-closeout 이 superseded doc 을 이동). 사람이 읽는 과거 기록은 `3_ARCHIVE/`.

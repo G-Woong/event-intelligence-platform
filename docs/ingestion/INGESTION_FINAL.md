@@ -1,5 +1,7 @@
 # docs/ingestion/INGESTION_FINAL.md — 수집 계층 최종 상태 (단일 출처)
 
+> ⚠️ **수치 SUPERSEDED (2026-06-19):** 본 문서의 테스트/소스 기준선(**509 passed**, **44 CORE_READY / 58**)은 작성 시점 기록이며 **현재 권위 수치가 아니다.** 현재값 = `docs/_CANONICAL/09_VALIDATION_AND_TESTS.md`(ingestion **1293 passed**) · `docs/_CANONICAL/03_SOURCE_STATUS.md`(**46 PRODUCTION_READY / 57**). 충돌 대장: `_CANONICAL/06_CONFLICTS_AND_SUPERSEDED.md`(C-2). 본문은 수집 설계 근거로 보존한다.
+
 - 최종 갱신: 2026-06-14
 - 대체 문서: docs/ingestion/00~93 (91개 제거 → git history 보존)
 - 근거: docs/70~73 (master), docs/84 (pre-orchestration risk closure), docs/86/92/93 (live audit final), IMPLEMENTATION_TRACE_FINAL.md

@@ -1,6 +1,7 @@
 # 07 — REPO REFACTOR & CONSOLIDATION SPEC (삭제·통폐합·이관 구현 명세서)
 
 > ✅ **실행 완료: 2026-06-19** (`git tag pre-refactor-2026-06-19` 로 복구 가능). 결과 지도: `docs/00_START_HERE.md`.
+> ✅ **후속 마감(2026-06-19, 검증 라운드):** Phase 6/7/8 잔여 완료 — **P4** env-key 4벌→`5_REFERENCE/ENV_KEYS.md` 단일화(+`CORS_ORIGINS`→`CORS_ALLOW_ORIGINS` stale 정정)·commercialization 단일출처화, **P5** `*_FINAL`(509/648/635) SUPERSEDED 배너, **P6** 본 폴더의 `10_DOCS_COVERAGE_MANIFEST` → 리팩토 결과 manifest 재작성, **P7** 잔여 `Orchestration_Construction/`(00·06·11) 이관(06→`2_ROADMAP/16`, 11→`_CANONICAL/11`, 00→`_CANONICAL/12`+헤더 정정). **잔여(정책 차단):** untracked smoke 10개·`narrative_marker.json`·빈 폴더 3개는 `rm` deny 게이트로 사용자 수동 삭제 필요(§5.1/§6).
 > **실행 시 편차(의도적):** §2 의 `_CANONICAL→1_CURRENT`·`_RISK→governance` **rename 은 수행하지 않음**. 이유 — 해당 폴더는 live 하네스(skill/hook/agent 41파일)와 코드가 직접 참조하므로 rename 시 **살아있는 턴-마감 하네스를 파손**. `_CANONICAL` 은 이미 깨끗한 "현재 진실" 코어이며 sprawl 통증의 원인이 아니다. 따라서 생애주기 구조를 **주변 sprawl 제거 + 신규 진입점(`00_START_HERE`)** 으로 달성하고, current-truth 코어는 `_CANONICAL/` 로 유지. 마찬가지로 `INGESTION_FINAL`·`*_FINAL`·`docs/ingestion/*` 는 9 agents+4 skills 연동이라 제자리 유지. plans slug 3개는 scratch 가 아니라 실제 history → DEL 대신 ARCHIVE 로 정정.
 
 - 작성: 2026-06-19 (Pre-Harness 정리 마감 — 전수조사 라운드)

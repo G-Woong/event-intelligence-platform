@@ -102,7 +102,7 @@
 **한 줄 설명**: 다른 도메인/포트에서 오는 HTTP 요청을 허용하는 보안 정책  
 **왜 필요한가**: 프론트엔드(3000)가 백엔드(8000)를 호출할 때 브라우저가 차단하지 않도록  
 **비유**: 건물 출입증 — "3000번 건물 직원이 8000번 건물에 방문해도 됩니다"  
-**현재 repo에서의 역할**: `backend/app/main.py`에서 `CORS_ORIGINS` 환경변수로 설정  
+**현재 repo에서의 역할**: `backend/app/main.py`에서 `CORS_ALLOW_ORIGINS` 환경변수로 설정  
 **관련 파일**: `backend/app/main.py`, `backend/app/core/config.py`  
 **아직 부족한 점**: 운영 환경에서 정확한 도메인 화이트리스트 설정 필요
 

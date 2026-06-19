@@ -97,6 +97,8 @@ RUN_FULL_PIPELINE_SMOKE=1 LLM_PROVIDER=mock pytest tests/smoke/test_full_pipelin
 
 ## 환경 변수 주요 항목
 
+> 전체 키 카탈로그·기본값 단일출처: `5_REFERENCE/ENV_KEYS.md`. 아래는 배포 런북에 직접 관련된 프런트엔드/CORS 변수만.
+
 | 변수 | 용도 |
 |---|---|
 | `NEXT_PUBLIC_API_BASE_URL` | 브라우저 → backend URL. dev: `http://localhost:8000`. prod: public domain |

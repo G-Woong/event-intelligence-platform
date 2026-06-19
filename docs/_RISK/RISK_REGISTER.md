@@ -124,8 +124,8 @@
 ### R-StaleDocs · 구버전 문서 충돌  — Severity: LOW
 - Area: outdated docs conflict
 - Description: 다수 문서가 stale 수치(509/635/648 테스트, 44소스, DART/SEC TODO) 보유 → 신규 세션 오인 유발.
-- Current mitigation: 이 라운드에서 canonical 정렬 + SUPERSEDED 배너(06). **통폐합 실행 계획서: `docs/Harness_Construction/07_REPO_REFACTOR_AND_CONSOLIDATION_SPEC.md`**(134문서 삭제/통폐합/이관 맵, 실행 대기).
-- Closure: 06 충돌목록 전부 배너/정정 완료(이 라운드에서 처리). 잔여 stale 수치(509/635/648 등) 정정은 07 명세 Phase 7에서 일괄.
+- Current mitigation: 통폐합 **실행 완료**(2026-06-19, 생애주기 재편 + 후속 검증). 실행 명세는 `docs/3_ARCHIVE/2026-06_harness_design/07_REPO_REFACTOR_AND_CONSOLIDATION_SPEC.md`로 이관, 결과 지도 = `_CANONICAL/10_DOCS_COVERAGE_MANIFEST`. Phase 7: `*_FINAL`(509/648/635)에 SUPERSEDED 배너 부착, `CORS_ORIGINS`→`CORS_ALLOW_ORIGINS` drift 정정.
+- Closure: 핵심 stale 수치/충돌은 canonical 정렬 + 배너로 처리. **잔여(LOW open):** `_CANONICAL/06_CONFLICTS`·`07_BACKLOG`의 구 `Orchestration_Construction/` 경로 인용(역사 ledger) sweep 미수행 → 완전 종결 보류.
 
 ### R-PromptInjection · LLM 노드 prompt injection  — Severity: MEDIUM(미래)
 - Area: LLM supervisor 판단 위험 / hallucinated evidence

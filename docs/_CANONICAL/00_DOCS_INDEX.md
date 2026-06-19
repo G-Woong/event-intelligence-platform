@@ -44,7 +44,7 @@ opt-in), 46소스 **전수** 라이브 sweep·LLM급 카드 콘텐츠 미완(상
 
 1. **코드 + 최신 산출물**(`ingestion/outputs/state/production_source_state.json` 등) — 최종 진실.
 2. `docs/_CANONICAL/*` — 이 라운드에서 코드와 대조해 정렬한 문서.
-3. `docs/ingestion/INGESTION_FINAL.md`, `docs/Orchestration_Construction/00·11·12` — 영역별 상세(일부 수치 stale, 06 참조).
+3. `docs/ingestion/INGESTION_FINAL.md`, `docs/_CANONICAL/11`(구현 diff 청사진)·`12`(오케스트레이션 개요) — 영역별 상세(구 `Orchestration_Construction/`에서 이관, 일부 수치 stale, 06 참조).
 4. 기타 루트 설계문서·`system_overview/` — 설계 참조용. **수치/상태가 02·03과 어긋나면 02·03을 따른다.**
 
 ---

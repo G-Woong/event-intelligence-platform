@@ -1,5 +1,7 @@
 # ENVIRONMENT_SETUP_FINAL
 
+> ⚠️ **수치 SUPERSEDED (2026-06-19):** 본 문서가 인용하는 pytest 기준선(**648 passed**)은 작성 시점 기록이며 **현재 권위 수치가 아니다.** 현재값 = `docs/_CANONICAL/09_VALIDATION_AND_TESTS.md`(ingestion **1293 passed**). 환경 세팅 절차/CLOSED 상태 자체는 유효하다.
+
 > **상태**: 환경 세팅 **CLOSED** (2026-06-13)
 > **목적**: `docs/Environment_setup/`의 단일 canonical 최종 문서. 이 디렉터리에서 읽어야 할 문서는 **이 파일 하나**다.
 > **다음 작업**: 오케스트레이션 설계/구현 (Celery/LangGraph, plans/012). 환경 세팅 문제로 다시 돌아올 필요 없음.

@@ -106,7 +106,7 @@ backend(8000), frontend(3000)은 브라우저 접근 필요로 `0.0.0.0` 유지.
 - 이번 단계 build/up 미수행
 
 ## .env 점검
-실값 미노출. 길이만 확인.
+실값 미노출. 길이만 확인. (아래는 두 worktree의 **키 존재 점검**이며 정의가 아님 — 키 기본값·용도 단일출처: `5_REFERENCE/ENV_KEYS.md`.)
 
 | 키 | claude/.env | codex/.env |
 |---|---|---|

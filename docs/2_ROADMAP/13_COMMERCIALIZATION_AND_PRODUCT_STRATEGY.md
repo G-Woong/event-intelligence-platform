@@ -1,5 +1,7 @@
 # 13 — COMMERCIALIZATION & PRODUCT STRATEGY (L0 / L13 / L14)
 
+> **상업화 단일 출처 (2026-06-19):** 상업화·수익모델·가격 논의는 이 문서가 권위. 구 중복본 `Orchestration_Construction/10_COMMERCIALIZATION`(→ `3_ARCHIVE/2026-06_orchestration_design/`로 보관)과 `18_FINAL_EXECUTIVE_SUMMARY`의 상업화 단편은 여기로 통합됨. 전부 **미구현 ROADMAP**이다(현재 구현 사실은 `_CANONICAL/*`).
+
 > 결론: 이 플랫폼은 검색엔진이 아니라 event intelligence platform이고, **1차 수익은 광고가 아닌 B2B alert/report/API**다. MVP는 단일 vertical로 좁히고, source coverage보다 event quality로 차별한다. 단, **P0 브리지(A→B)가 풀리기 전 영업은 공허**하다(데모 불가).
 
 ---

@@ -171,14 +171,14 @@ AI 분석이 완료된 최종 사건 카드.
 # backend/app/main.py
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,  # .env의 CORS_ORIGINS
+    allow_origins=settings.CORS_ALLOW_ORIGINS,  # .env의 CORS_ALLOW_ORIGINS
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 ```
 
-`CORS_ORIGINS` 환경변수 예시: `http://localhost:3000`
+`CORS_ALLOW_ORIGINS` 환경변수 예시: `http://localhost:3000` (콤마구분 다중 가능). 단일출처: `5_REFERENCE/ENV_KEYS.md`.
 
 ---
 

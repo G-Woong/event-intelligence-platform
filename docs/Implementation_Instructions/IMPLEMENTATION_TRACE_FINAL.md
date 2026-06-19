@@ -1,5 +1,7 @@
 # IMPLEMENTATION_TRACE_FINAL — 소스 연결 Closing 라운드 통합 trace
 
+> ⚠️ **수치 SUPERSEDED (2026-06-19):** 본 문서의 pytest 수치(**635 passed**)는 작성 시점 기록이며 **현재 권위 수치가 아니다.** 현재값 = `docs/_CANONICAL/09_VALIDATION_AND_TESTS.md`(ingestion **1293 passed**). 적용 완료 trace 자체는 유효하다.
+
 - 최종 갱신: 2026-06-13 (UTC)
 - 목적: 흩어진 지시문(00~10) + 진행 문서의 **적용 완료 상태를 하나의 trace로 통합**한다.
   신규 에이전트가 상태를 오해하지 않도록 단일 출처를 제공한다. 원본 지시문은 삭제하지 않고

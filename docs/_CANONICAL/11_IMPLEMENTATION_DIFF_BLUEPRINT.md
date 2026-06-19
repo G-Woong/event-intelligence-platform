@@ -1,5 +1,7 @@
 # 11 — 구현 Diff 청사진 (Implementation Diff Blueprint)
 
+> ⚠️ **상태 정정 (2026-06-19, 이관):** `docs/Orchestration_Construction/`(폐지)에서 `_CANONICAL/`로 이관됨. **아래 blueprint 의 Phase A~H 는 현재 대부분 실현됨**(현재 구현 사실: `_CANONICAL/01·02`). 본 문서는 **do-not-modify 계약 + phase 테스트 baseline 참조**로 보존한다 — "이번 턴에 적용하지 않는다"는 작성 시점 framing 이다.
+
 > **목적**: 다음 구현 턴에서 Claude Code가 **그대로 따라갈** 수 있는 파일 단위 변경 계획. Phase A~H로 단계화한다.
 > **절대 원칙**: **이번 턴에 diff를 적용하지 않는다.** 모든 diff는 blueprint다. 경로가 불확실하면 `VERIFY PATH BEFORE APPLY`. 삭제 diff는 사용하지 않는다. 기존 수집 코드(runner/tools/configs/tests)는 **수정하지 않는다**.
 
