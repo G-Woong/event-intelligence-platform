@@ -71,7 +71,22 @@ class Settings(BaseSettings):
     @classmethod
     def _parse_cors(cls, v: object) -> list[str]:
         if isinstance(v, str):
-            return [o.strip() for o in v.split(",") if o.strip()]
+            s = v.strip()
+            # JSON 배열 형태(`["a","b"]`)도 허용 — NoDecode 로 raw 문자열이 오므로
+            # 여기서 직접 처리한다. 깨진 JSON 은 콤마분할이 아니라 fail-loud(조용한
+            # garbage origin 방지, adversarial 리뷰 57a0049 반영).
+            if s.startswith("["):
+                import json
+                try:
+                    parsed = json.loads(s)
+                except ValueError as exc:
+                    raise ValueError(
+                        f"CORS_ALLOW_ORIGINS looks like JSON but failed to parse: {exc}"
+                    ) from exc
+                if not isinstance(parsed, list):
+                    raise ValueError("CORS_ALLOW_ORIGINS JSON must be a list of origins")
+                return [str(o).strip() for o in parsed if str(o).strip()]
+            return [o.strip() for o in s.split(",") if o.strip()]
         return v  # type: ignore[return-value]
 
     OPENSEARCH_HOST: str = "opensearch"
