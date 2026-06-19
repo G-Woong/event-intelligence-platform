@@ -4,11 +4,11 @@
 ``.claude/settings.json`` is **gitignored** (``.gitignore`` ignores ``.claude/*``
 and only re-includes ``agents/``, ``skills/``, ``hooks/``). So a fresh clone /
 another machine / a codex worktree gets the hook *scripts* but NOT the
-``settings.json`` that REGISTERS them — the turn-closeout harness then silently
+``settings.json`` that REGISTERS them - the turn-closeout harness then silently
 does nothing (no Stop snapshot, no PostToolUse audit flags, no forbidden-command
 guard) with no error. This doctor detects that drift and prints remediation.
 
-Run manually (NEVER from a Stop hook — output there would loop):
+Run manually (NEVER from a Stop hook - output there would loop):
     python scripts/harness_doctor.py
 
 Exit 0 = all required wiring present; exit 1 = at least one FAIL. stdlib only.
@@ -44,7 +44,18 @@ def _registered_hooks(settings):
     return out
 
 
+def _ascii_safe_stdout():
+    """Windows console stdout is cp949; printing non-ASCII (e.g. an em-dash)
+    raises UnicodeEncodeError and crashes the tool. Reconfigure to UTF-8 so
+    operational output never crashes (R1 - operational stability)."""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+
 def main():
+    _ascii_safe_stdout()
     root = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
     fails, warns, oks = [], [], []
     hooks_dir = os.path.join(root, ".claude", "hooks")
@@ -60,7 +71,7 @@ def main():
             fix = ("Remediation: recreate from docs/Harness_Construction/05 "
                    "(hooks block) + README 'Harness setup'.")
         fails.append(
-            "MISSING .claude/settings.json (gitignored — NOT restored by clone). "
+            "MISSING .claude/settings.json (gitignored - NOT restored by clone). "
             "The harness is INERT until it is recreated. " + fix)
         _report(fails, warns, oks)
         return 1

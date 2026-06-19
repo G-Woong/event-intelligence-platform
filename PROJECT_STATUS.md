@@ -4,51 +4,45 @@
 > 사실 원본(자동): `.harness/machine_status.json` · 완료 증거: `.harness/closeout_stamp.json` · 서술: 이 파일(에이전트).
 
 ## 🟢 한눈에 (비개발자용 3줄)
-- **지금 무엇을 하는 중인가:** (웹 인텔리전스 프로젝트) 작성된 문서가 이후 어디로 흘러가야 하는지(계속/덮어쓰기/보관/휴지통)를 **글이 아니라 자동 테스트로 고정**하고, 턴 마감 하네스의 남은 위험을 다음 단계로 넘길 준비를 했습니다.
-- **이번 턴에 실제로 끝낸 것:** docs lifecycle을 분류기+19개 테스트로 동결, code-review 자동 감지 경로를 라이브로 확인(실제 리뷰 호출은 미관찰), dead-code 후보 스캔을 결정적으로 안정화(137건), 설정 재현성을 템플릿으로 실질 해결. 팀 검토 4종이 찾은 결함(스캔 비결정성·오탐·보호 누락·R3 과장)을 모두 반영.
-- **지금 막힌 것:** 없음. 단, 자기보고 한계·`/code-review` 실호출 미관찰·dead-code 통폐합 미수행은 아래에 정직히 남김.
+- **지금 무엇을 하는 중인가:** (웹 인텔리전스 프로젝트) 다음 턴부터 실제 수집/큐/크롤러 개발에 들어갈 수 있도록, 턴 마감 하네스의 **운영 결함**(출력 깨짐·헛알림·미검증 경로·죽은코드 도구)을 점검·정리했습니다.
+- **이번 턴에 실제로 끝낸 것:** Stop hook 한글 깨짐 해결(영문 ASCII 출력), commit 직후 헛알림 제거, code-review 자동 경로를 **실제로 한 번 돌려** 진짜 결함 1건(CRLF) 잡아 고침, 죽은코드 도구에 vulture를 붙여 미사용 함수/클래스까지 탐지. 팀 검토 4종 반영.
+- **지금 막힌 것:** 없음(닫을 수 없는 한계는 아래 ⚠️에 정직히 명시).
 
 ## 📋 자동 수집 사실 (machine_status.json)
-- repo 정체성: **WEB_INTELLIGENCE_CONFIRMED** (remote=event-intelligence-platform, ingestion/source_registry/orchestration/event-queue 존재)
-- 변경: harness 훅·스킬·스크립트·테스트·문서 (애플리케이션 코드 변경 0). 감사 유형: adversarial / evidence / harness_runtime / risk_closure / security
-- 열린 RISK: **18건** (HIGH 3 · MEDIUM 7 · LOW 8) — 신규 R-DocsLifecycle, R-CodeReviewLivePath
-- 비밀 스캔: PASS · dead-code 후보: **137건(결정적)** = 132 symbol(HIGH) + 5 module(LOW, CLI runner) · 삭제 0
-- docs lifecycle: 136 docs 분류, **33 protected**, 이동 후보 0(마커 0) · lifecycle 테스트 **19 passed**
-- 팀 감사: orchestrator-architect + docs-memory-curator + test-validation-agent + adversarial-reality-critic (4종)
+- repo: WEB_INTELLIGENCE_CONFIRMED (remote=event-intelligence-platform) · HEAD 정리 대상
+- 변경: harness 훅·스크립트·테스트·문서 + ingestion 주석 1(의미 있는 개선, 유지)
+- 열린 RISK: **17건** — R-CodeReviewLivePath 완전종결(→RISK_CLOSED), R-HookOutputEncoding 종결 기록
+- 비밀 스캔: PASS · dead-code 후보: **221건(결정적)** = 132 ruff symbol + 84 vulture(정의레벨 81: func42/class32/method6/property1) + 5 module · 삭제 0
+- 팀 감사: adversarial-reality-critic + orchestrator-architect + security-permission-guardian + docs-memory-curator + **/code-review 라이브** (5)
 
-## ✅ 이번 턴에 달성한 것
-- **docs lifecycle audit-as-test (핵심):** `scripts/docs_lifecycle_audit.py`(read-only/dry-run 분류기) + `tests/test_docs_lifecycle.py`(19 invariant). 작성된 문서의 흐름(active→superseded→archive→trash)과 보호 규칙을 테스트로 고정. 이동은 머신 마커 `<!-- LIFECYCLE: ... -->` 기반(키워드 추측 배제), `moves_applied=0`/`manifests_created=0`.
-- **code-review live path 라이브 관찰:** ingestion harmless probe → `audit_flagger`가 `code_review` flag 생성 + 게이트 mismatch 확인 후 원복. (단 `/code-review` 스킬 **실호출·evidence 적재는 미관찰** — R-CodeReviewLivePath로 정직히 남김.)
-- **dead-code 스캔 결정성 수정:** corpus가 `.harness`/`.claude` 미독 → run간 변동 제거(137 고정), `from a.b import c` 포착 → `downstream_contracts` 오탐 제거. production 59(ruff symbol, HIGH)·tests 73·module 5(runner, LOW).
-- **settings 재현성 (b) template:** `.claude/settings.example.json`(tracked, 비밀 없음) + gitignore 예외 → fresh clone `Copy-Item` 1-step 복구. settings.json 자체는 gitignored 유지(사용자 지시).
+## ✅ 이번 턴에 달성한 것 (운영 risk 정리)
+- **R1 Stop hook 인코딩(종결):** nudge를 ASCII-safe 영문으로(+`json.dumps` ensure_ascii=True), harness CLI 4종 stdout UTF-8 reconfigure(doctor의 em-dash crash 포함). stdout 순수 ASCII 디코드 검증. `tests/test_harness_hooks.py`.
+- **R2 commit 직후 헛알림(제거):** nudge를 uncommitted(porcelain) non-narration 기준으로 전환(`should_nudge`). clean tree+HEAD-only advance=무알림, dirty=알림. 테스트 4종.
+- **R3 code-review live path(종결):** ingestion 주석 변경 → `code_review` flag → **`/code-review` 스킬 라이브 실호출** → CRLF churn 1건 적발 → 수정 → stamp evidence 적재. end-to-end 1회 관찰.
+- **R4 vulture(연동):** `uv pip install vulture==2.16`, dead_code_scan 연동. per-kind confidence(정의=60, var/import=90)로 **uncalled function/class** 탐지(ruff 못 잡던 고유 가치), alembic 제외. 221 결정적, 삭제 0.
 
 ## ❌ 달성하지 못한 것 & 왜
-- **`/code-review` 실호출 검증:** 이번 턴 application 코드 변경 0이라 실제 리뷰 호출/evidence 적재는 미관찰. 배선·flag·게이트까지만 검증.
-- **dead-code 통폐합:** 후보 식별만(삭제 금지 준수). vulture 미설치로 uncalled function/class는 여전히 미탐.
-- **settings.json 자동 재현:** template 복사는 수동 1-step. 완전 자동화는 settings.json tracked 전환(=user decision)이 필요.
+- **dead-code 통폐합:** 후보 식별만(삭제 금지 준수). production 정의 레벨 70건은 phase-3에서 framework entrypoint 개별 검토 후 소규모 batch.
+- **docs lifecycle actual apply:** LIFECYCLE 마커 0개 → 후보 0 → apply 대상 없음(공집합). 첫 apply는 마커 부여 + `02 §A.4` 팀 감사 + confirm 필요.
+- **settings.json tracked 전환:** template(settings.example.json)로 부트스트랩 해결. 직접 tracked 전환은 **user decision**(임의 전환 금지).
 
 ## 🚧 닫을 수 없는 문제 (BLOCKED/UNKNOWN)
-- **자기보고 한계:** evidence 게이트도 가짜로 채우면 통과(위조 비용만↑). transcript 사후검증이 최종 방어선. → R-CloseoutTrust.
-- **lifecycle 테스트 범위:** 분류기 계약+디스크 불변식은 고정하나, 실제 `Move-Item`을 수행하는 turn-closeout 스킬의 이동 안전성은 미테스트. → R-DocsLifecycle.
+- **evidence 자기보고 한계:** 게이트는 구조화 evidence 기록을 요구하나 LLM 실제 수행은 미검증(transcript 사후검증이 최종 방어선). → R-CloseoutTrust.
+- **commit-first nudge 침묵(R2 trade-off):** `/turn-closeout` 없이 commit-first 하면 미마감 audit이 nudge로 안 뜸(machine_status.closeout_current=False에만 흔적). 보완: closeout 스킬이 진입 시 machine_status 소비. → R-CloseoutTrust gap(4).
+- **Claude Code feedback 디코드:** ASCII 출력으로 깨짐 불가하게 했으나, feedback 채널의 디코드 자체는 repo 코드로 증명 불가(합리적 방어까지).
 
-## ⚠️ 이번 턴 신규/갱신 RISK
-- **R-DocsLifecycle (신규, LOW):** docs 흐름을 audit-as-test로 고정. 잔존: 스킬 이동 경로 미테스트, 마커 운용 미관찰.
-- **R-CodeReviewLivePath (신규, LOW):** flag/게이트 라이브 검증, `/code-review` 실호출 미관찰.
-- **R-DeadCodeAudit (갱신, LOW):** 결정적 137(132 HIGH/5 LOW), 오탐 수정. 잔존: vulture·통폐합.
-- **R-HarnessReproducibility (갱신, LOW):** template으로 부트스트랩 실질 해결. 잔존: 자동화·settings.json tracked 결정(user).
+## ⚠️ 이번 턴 종결/갱신 RISK
+- **R-CodeReviewLivePath → CLOSED:** /code-review 라이브 실호출·finding·fix·evidence 1회 관찰.
+- **R-HookOutputEncoding → CLOSED(신규 기록):** ASCII-safe 출력 + reconfigure.
+- **R-DeadCodeAudit(갱신, LOW):** vulture 설치·연동, 221 후보. 잔존: 통폐합 미수행.
+- **R-DocsLifecycle(갱신):** 첫 apply 승인 조건(02 A.4 팀 감사+confirm) 명시.
+- **R-CloseoutTrust(갱신):** commit-first nudge 침묵 residual 추가.
 
-## 🧭 settings 재현성 결정 (user decision 잔여)
-- 채택: **(b) template만 추적**(settings.example.json) — orchestrator 권고, 비밀 누출 0, settings.json 미전환.
-- 사용자 결정 필요: **(c) settings.json 직접 tracked 전환** 여부(완전 자동 재현 ↔ 로컬 prefs/비밀 유입 표면 trade-off). 임의 전환은 사용자 지시상 금지 → 보류.
-
-## 👉 다음에 할 일 (우선순위)
-1. **dead-code phase-3 통폐합:** `uv pip install vulture` → 재스캔, production 59 symbol 후보부터 dry-run→팀 감사→소규모 commit(TYPE_CHECKING/조건부 import/재export 개별 검토).
-2. **settings 정책 결정:** (c) settings.json tracked 전환할지 사용자 결정.
-3. **docs 실제 archive/trash apply:** 마커 부여 + 팀 감사 후 첫 lifecycle 이동 1회 라이브.
-4. **`/code-review` 실호출 관찰:** 실제 ingestion/backend 코드 턴에서 evidence 적재 확인(R-CodeReviewLivePath 종결).
-5. source registry/ingestion pipeline risk audit · closeout 안정성 관찰.
+## 👉 다음 턴 개발 진입 조건
+- **바로 기능 개발 가능:** ✅ 운영 결함(R1/R2/R3)이 닫혔고 하네스가 안정적. 다음 턴부터 source registry/ingestion/crawler/event queue 개발 진입 가능.
+- **개발과 병행 가능한 잔여(차단 아님):** dead-code phase-3 통폐합, docs 첫 lifecycle apply, settings.json tracked 결정.
 
 ## 📁 근거 (이번 턴 핵심)
-- `scripts/docs_lifecycle_audit.py`·`tests/test_docs_lifecycle.py`(신규), `scripts/dead_code_scan.py`(결정성·오탐 수정)
-- `.claude/settings.example.json`(신규)·`.gitignore`·`scripts/harness_doctor.py`·README(setup)
-- `.claude/skills/turn-closeout/SKILL.md`(step 5 배선), `docs/_RISK/RISK_REGISTER.md`, `docs/_DECISIONS/2026-06.md`
+- `.claude/hooks/turn_state_snapshot.py`(should_nudge/_nudge_message ASCII), `scripts/{harness_doctor,dead_code_scan,docs_lifecycle_audit,closeout_sig}.py`(reconfigure), `scripts/dead_code_scan.py`(vulture)
+- `tests/test_harness_hooks.py`(신규 11), `tests/test_docs_lifecycle.py`(19), `ingestion/core/source_registry.py`(주석)
+- `docs/_RISK/RISK_REGISTER.md`·`RISK_CLOSED.md`·`docs/_DECISIONS/2026-06.md`

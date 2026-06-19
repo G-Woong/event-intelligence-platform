@@ -225,6 +225,10 @@ def sweep_dry_run(root):
 
 
 def main():
+    try:  # Windows cp949 stdout would crash on non-ASCII; emit UTF-8 (R1)
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     root = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
     result = audit(root)
     result["sweep_dry_run"] = sweep_dry_run(root)

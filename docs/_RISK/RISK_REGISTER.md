@@ -133,20 +133,20 @@
 - Current mitigation: EvidenceGate(synthetic/dead URL 가드), SourceSupervisor는 우회 제안 거부, 수집은 deterministic(LLM은 가치 지점만).
 - Remaining gap: 6 mock 노드 실연결(04 T-AgtA) 시 입력 신뢰경계 재검토. DEFERRED_WITH_TRIGGER.
 
-### R-DeadCodeAudit · 코드 레벨 dead code 자동 감사 — ruff symbol-level 연동, vulture 미설치  — Severity: LOW-MEDIUM→LOW (phase-2 ruff 연동, 2026-06-19)
+### R-DeadCodeAudit · 코드 레벨 dead code 자동 감사 — ruff+vulture 연동, 통폐합 미수행  — Severity: LOW-MEDIUM→LOW (phase-2 vulture 연동, 2026-06-19)
 - Area: harness / docs 동기화 정확성
-- Description: dead code(미사용 모듈/심볼/import/지역변수/obsolete runner/unreferenced config)를 식별하는 자동 파이프라인.
-- DONE(phase-2, 삭제 없음): **ruff(F401/F811/F841) symbol-level 탐지 연동** `scripts/dead_code_scan.py`(schema v2). 거짓 0(phase-1) → **450 모듈 스캔, 결정적 137 후보 = 132 symbol(HIGH) + 5 module(LOW)**. 분류: production 64 / tests 73. **신뢰 가능 수치는 132 symbol(HIGH)** = production 59 + tests 73. module 5건은 `ingestion/runners/*`(CLI 진입점, false-positive-likely로 정직 표기). 후보별 `evidence/confidence/false_positive_risk/recommended_action/deletion_allowed:false`+`category`. 결정성 수정(팀감사): corpus가 `.harness`/`.claude` 미독(run간 변동 제거) + `from a.b import c`의 `c` 포착(`downstream_contracts` 오탐 제거). 보안: `.env`/`*-key.json` 미독.
-- Evidence: `scripts/dead_code_scan.py`(450 scanned, 132 symbol/5 module, 3회 재실행 동일), `.harness/dead_code_candidates.json`, 팀감사 test-validation(production 59 샘플 진짜 unused 확인)+adversarial(수치 드리프트 지적→132로 단일화).
-- Remaining gap: **(1) vulture 미설치** — uncalled function/class/attribute는 여전히 미탐. `requirements/dev.txt`에 `vulture>=2.11` 제안됐으나 venv 미설치(이번 턴 설치 안 함). **(2) 132 후보 팀 감사·통폐합 미수행**(phase-3, dry-run→audit→소규모 commit). symbol 후보 73건이 test 파일 unused import(저가치)임을 정직히 명시. **(3) phase-3 통폐합 시 TYPE_CHECKING/조건부 import/재export 개별 검토 필수**(test-validation 경고).
-- Closure: `vulture` venv 설치 + closeout 배선 + 프로덕션 symbol 후보 1차 팀 감사 통폐합 → 종결 검토. **삭제는 항상 dry-run→팀 감사→소규모 commit.**
+- Description: dead code(미사용 모듈/심볼/import/지역변수 + **uncalled function/class/method**)를 식별하는 자동 파이프라인.
+- DONE(phase-2, 삭제 없음): **ruff(F401/F811/F841) + vulture(2.16, .venv 설치) 연동** `scripts/dead_code_scan.py`. **450 모듈 스캔, 결정적 221 후보 = 132 symbol(ruff) + 84 vulture + 5 module**(2회 재실행 동일). 분류: production 131 / tests 90. **vulture가 ruff 못 잡는 정의 레벨 dead code(uncalled function 42/class 32/method 6/property 1) 추가** — per-kind confidence floor(정의=60, var/import=90, attribute=80)로 노이즈 억제, alembic/migrations 제외(프레임워크 entrypoint FP). 후보별 `evidence/confidence/false_positive_risk/recommended_action/deletion_allowed:false`+`category`.
+- Evidence: `scripts/dead_code_scan.py`(ruff=True vulture=True, 221, 2회 동일), `.harness/dead_code_candidates.json`, 팀감사 adversarial(vulture conf80은 ruff 중복 지적→conf60 정의레벨로 정정)+test-validation(production 샘플 진짜 unused 확인).
+- Remaining gap: **(1) 통폐합 미수행**(phase-3, dry-run→audit→소규모 commit) — production 정의 레벨 70건 우선, alembic 외 framework entrypoint(tool 등록·plugin) 개별 검토 필수. **(2) vulture 정의 레벨 다수가 LOW confidence(60%)** — dynamic dispatch/CLI entrypoint FP 위험, 삭제 전 수동 확인. **(3) test 후보 90건은 저가치**.
+- Closure: 프로덕션 정의 레벨 후보 1차 팀 감사 통폐합(소규모 batch) → 종결 검토. **삭제는 항상 dry-run→팀 감사→소규모 commit.**
 
 ### R-CloseoutTrust · closeout 게이트는 구조화 자기보고 기반(LLM 실제 수행은 미검증)  — Severity: MEDIUM→LOW-MEDIUM (content-hash+evidence 게이트, 2026-06-19 재감사)
 - Area: harness / closeout 무결성
 - Description: stamp 게이트는 ① `machine_status.audit_types(객관·훅계산) ⊆ audit_types_addressed`(커버리지) ② required audit별 `audit_evidence` 구조화 레코드(executed=true+verdict) ③ `working_tree_signature == 현재 sig`(content-hash 포함) ④ unresolved 없음을 검사한다.
 - DONE(phase-2, 2026-06-19 — 라이브 green 입증): **(a) content-hash signature** — `compute_signature`가 중요 파일군(RISK/PROJECT_STATUS/hooks/skills/scripts/configs/tests/_canonical/harness_construction)의 내용 hash를 sig에 합성 → **동일 경로 내용-only 변경도 mismatch**(R2 닫힘). hook과 `scripts/closeout_sig.py`가 **동일 함수+동일 경로집합**(`collect_changed_paths`, commit 대칭) 사용. **(b) evidence 게이트** — `_audit_attested`가 required audit마다 구조화 evidence 요구 → 자기보고 `code_review_completed=true`만으론 **불통과**. 실증: 무evidence stamp closeout_current=False, evidence stamp=True, content-only 변경 sig flip, commit 대칭 sig 일치(이번 턴 closeout_stamp가 새 게이트를 라이브 통과).
 - Evidence: `turn_state_snapshot.py`(`compute_signature`/`_audit_attested`/`collect_changed_paths`), `scripts/closeout_sig.py`, 이번 턴 closeout_stamp.json(audit_evidence 채워진 v2), 팀감사 orchestrator(REAL_BUG 수정 반영)·adversarial(과장 톤다운 반영).
-- Remaining gap(정직): **(1) evidence는 여전히 에이전트 자기보고** — `executed/verdict`를 가짜로 채우면 통과(위조 *비용*만 상승, 본질 자기보고). 진짜 강화는 subagent 산출물 파일 존재 요구이나 `03 §4`(영구 리포트 파일 금지)와 상충 → 보류. transcript 사후검증이 최종 방어선. **(2) enforce=block 미실증**(soft 유지). **(3) closeout_sig.py 실행 누락 시 조용히 약화**(절차 규율 의존).
+- Remaining gap(정직): **(1) evidence는 여전히 에이전트 자기보고** — `executed/verdict`를 가짜로 채우면 통과(위조 *비용*만 상승, 본질 자기보고). 진짜 강화는 subagent 산출물 파일 존재 요구이나 `03 §4`(영구 리포트 파일 금지)와 상충 → 보류. transcript 사후검증이 최종 방어선. **(2) enforce=block 미실증**(soft 유지). **(3) closeout_sig.py 실행 누락 시 조용히 약화**(절차 규율 의존). **(4) commit-first nudge 침묵(R2 trade-off)** — `should_nudge`가 uncommitted(porcelain) 기준이라 commit 직후 transient nudge는 제거됐으나, `/turn-closeout` 없이 commit-first 하면 미마감 audit이 stdout nudge로 노출 안 됨(`machine_status.closeout_current=False`에만 흔적 잔존, fail-open 침묵). 보완: closeout 스킬 진입 시 machine_status 소비(orchestrator 지적).
 - Closure: subagent 산출물 hash/존재를 게이트 증거로 요구(03 §4 절충안 마련) 또는 enforce=block 실증 시 LOW. **자기보고 한계는 "완화됨, 완전 제거 불가"로 잔존.**
 
 ### R-HarnessReproducibility · `.claude/settings.json` gitignored → 신규 clone에서 훅 미등록  — Severity: MEDIUM→LOW (doctor+문서+self-check, 2026-06-19 신규)
@@ -163,11 +163,6 @@
 - DONE(2026-06-19): **(a) `scripts/docs_lifecycle_audit.py`(read-only/dry-run)** — 136 docs를 role/expected_lifecycle/protected/move_allowed/후보로 분류, 33 protected. 이동은 머신 마커 `<!-- LIFECYCLE: superseded|dead -->` 기반(키워드 추측 배제 → 02 정책 일치). `sweep_dry_run`은 moves_applied=0·manifests_created=0(무매니페스트 trash 유지). **(b) `tests/test_docs_lifecycle.py` 19개 invariant** — PROJECT_STATUS/RISK/README/canonical/contract/source-registry/*_FINAL 보호, superseded→dry-run archive, dead→dry-run trash, apply 없이 이동 0, trash manifest 0, 월별 ledger, conflict 검출(비어있지 않을 때), stale→risk 등록. SKILL step 5 배선.
 - Evidence: `scripts/docs_lifecycle_audit.py`, `tests/test_docs_lifecycle.py`(19 passed), `.harness/docs_lifecycle_audit.json`, 팀감사 curator(보호 누락 3건→*_FINAL/manifest 보호 추가)+adversarial(동어반복 한계 명시).
 - Remaining gap(정직): 테스트는 **분류기 계약 + 디스크 불변식**을 고정하지, 실제 `Move-Item`을 수행하는 **turn-closeout 스킬의 이동 안전성은 미테스트**(adversarial 지적). dead/superseded 자동 탐지는 머신 마커 의존(현재 마커 0개 → 후보 0). archived→trash retention 전이는 후보 플래그로 미표현(선언만).
-- Closure: 스킬의 실제 이동 경로를 dry-run 통합 테스트로 커버 + 마커 운용 1회 라이브 → 검토.
+- Closure: 스킬의 실제 이동 경로를 dry-run 통합 테스트로 커버 + 마커 운용 1회 라이브 → 검토. **첫 apply 승인 = `02 §A.4` 팀 감사(docs-memory-curator + adversarial-reality-critic) 통과 + 명시 confirm, 단독 이동 금지**(curator 지적 반영).
 
-### R-CodeReviewLivePath · 일반 코드 변경 턴의 `/code-review` 실호출·증거 적재 미관찰  — Severity: LOW (배선 검증, 실호출 미관찰, 2026-06-19)
-- Area: harness / 감사 라우팅
-- Description: code 변경 시 `/code-review` 스킬이 실제 호출되고 audit_evidence에 리뷰 결과가 남는지.
-- DONE/관찰(2026-06-19): harmless ingestion 변경(`ingestion/core/source_registry.py`) probe로 **audit_flagger가 `code_review` flag 생성 + machine_status.audit_types에 반영 + 게이트 closeout_current=False(미커버)** 를 **라이브 관찰**(원복 완료). 라우팅 표(03 §3)는 code_review→`/code-review`+test-validation-agent+adversarial 매핑.
-- Remaining gap(정직): **`/code-review` 스킬의 실제 호출 + audit_evidence에 `audit_type:"code_review"` 레코드 적재는 미관찰**(이번 턴 application code 변경 0). 즉 flag 생성·게이트 mismatch까지만 검증, skill 실행은 self-report(soft, 게이트는 evidence 구조만 강제).
-- Closure: 실제 ingestion/backend `.py` 변경 턴에서 `/code-review` 호출 + evidence 레코드 1회 관찰 시 종결.
+> **R-CodeReviewLivePath** 는 2026-06-19 **CLOSED**(→ `RISK_CLOSED.md`): harmless ingestion 변경 → `code_review` flag → `/code-review` 라이브 실호출 → CRLF finding → fix → stamp evidence 적재 1회 관찰.

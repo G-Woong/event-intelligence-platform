@@ -45,6 +45,10 @@ def _prev_head():
 
 
 def main():
+    try:  # Windows cp949 stdout would crash on non-ASCII; emit UTF-8 (R1)
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     paths, _head, _incomplete = ts.collect_changed_paths(ROOT, _prev_head())
     sig = ts.compute_signature(ROOT, ts._norm_set(paths))
     print(json.dumps({"signature": sig, "count": len(sig)},

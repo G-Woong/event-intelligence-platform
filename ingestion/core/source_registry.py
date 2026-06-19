@@ -37,6 +37,9 @@ class SourceSpec:
         }
 
 
+# declared SourceSpec fields; any registry key NOT in this set is preserved
+# verbatim in SourceSpec.extra and re-emitted by to_dict() (forward-compatible
+# with new YAML keys without a code change).
 _KNOWN_FIELDS = {
     "id", "name", "type", "evidence_level", "role",
     "phase", "base_url", "layer", "known_blockers", "expected_fields",

@@ -119,6 +119,65 @@ def _ruff_candidates(root):
     return out, True, None
 
 
+VULTURE_RE = re.compile(
+    r"^(.+?):(\d+):\s+unused\s+(\w[\w ]*?)\s+'([^']+)'\s+\((\d+)%\s+confidence\)")
+VULTURE_SCAN_CONFIDENCE = 60  # scan low, filter per-kind below.
+# Per-kind confidence floor. vulture's UNIQUE value over ruff is DEFINITION-level
+# dead code (uncalled function/method/class/property) — those land at ~60%, so we
+# keep them at 60. import/variable overlap ruff (F401/F841) and only add noise
+# unless near-certain, so we gate them high. attribute is framework-prone -> 80.
+_VULTURE_KIND_MIN = {
+    "function": 60, "method": 60, "class": 60, "property": 60,
+    "attribute": 80, "variable": 90, "import": 90,
+}
+
+
+def _vulture_candidates(root):
+    """Run vulture for AST-level dead code ruff cannot see (uncalled
+    function/method/class). Returns (candidates, available, error). Degrades
+    gracefully if absent. Per-kind confidence floors keep the high-value
+    definition-level findings while suppressing low-confidence arg/var noise."""
+    if not _tool_available("vulture"):
+        return [], False, "vulture not importable"
+    dirs = [d for d in CODE_DIRS if os.path.isdir(os.path.join(root, d))]
+    if not dirs:
+        return [], True, None
+    # exclude framework-invoked entrypoints that are guaranteed vulture
+    # false positives (alembic migration upgrade/downgrade are called by the
+    # migration runner, never statically).
+    cmd = [sys.executable, "-m", "vulture", *dirs,
+           "--exclude", "*/alembic/*,*/migrations/*",
+           "--min-confidence", str(VULTURE_SCAN_CONFIDENCE)]
+    try:
+        r = subprocess.run(cmd, capture_output=True, cwd=root, timeout=120)
+    except Exception as e:
+        return [], True, "vulture invocation failed: %s" % e
+    out = []
+    for line in r.stdout.decode("utf-8", "replace").splitlines():
+        m = VULTURE_RE.match(line.strip())
+        if not m:
+            continue
+        path, _ln, kind, name, conf = m.groups()
+        kind, conf = kind.strip(), int(conf)
+        if conf < _VULTURE_KIND_MIN.get(kind, 80):
+            continue
+        definition = kind in ("function", "method", "class", "property")
+        out.append({
+            "path": _rel(root, os.path.join(root, path)),
+            "symbol": "%s '%s'" % (kind, name),
+            "kind": "vulture",
+            "evidence": "vulture unused %s @ line %s (%d%%)" % (kind, _ln, conf),
+            "reference_count": 0,
+            "confidence": "HIGH" if conf >= 90 else ("MEDIUM" if conf >= 70 else "LOW"),
+            "false_positive_risk": ("MEDIUM (dynamic dispatch / framework callback / "
+                                    "entrypoint)" if definition
+                                    else "HIGH (fixture / framework-set / dynamic)"),
+            "recommended_action": "inspect",
+            "deletion_allowed": False,
+        })
+    return out, True, None
+
+
 def _module_candidates(root):
     """LOW-confidence module-level reference heuristic (recall-limited)."""
     modules = []
@@ -202,11 +261,12 @@ def _category(path):
 
 def scan(root):
     ruff_c, ruff_ok, ruff_err = _ruff_candidates(root)
+    vul_c, vulture_ok, vul_err = _vulture_candidates(root)
     mod_c, n_modules = _module_candidates(root)
-    vulture_ok = _tool_available("vulture")
-    for c in ruff_c + mod_c:
+    for c in ruff_c + vul_c + mod_c:
         c["category"] = _category(c["path"])
-    candidates = sorted(ruff_c + mod_c, key=lambda c: (c["path"], c.get("symbol", "")))
+    candidates = sorted(ruff_c + vul_c + mod_c,
+                        key=lambda c: (c["path"], c.get("kind", ""), c.get("symbol", "")))
     by_cat = {}
     for c in candidates:
         by_cat[c["category"]] = by_cat.get(c["category"], 0) + 1
@@ -216,11 +276,14 @@ def scan(root):
         "total_modules_scanned": n_modules,
         "tools_available": {
             "ruff": ruff_ok, "vulture": vulture_ok,
-            "ruff_rules": list(RUFF_RULES), "ruff_error": ruff_err,
+            "ruff_rules": list(RUFF_RULES),
+            "vulture_kind_min_confidence": _VULTURE_KIND_MIN,
+            "ruff_error": ruff_err, "vulture_error": vul_err,
         },
         "candidate_count": len(candidates),
         "candidates_by_kind": {
             "symbol": sum(1 for c in candidates if c["kind"] == "symbol"),
+            "vulture": sum(1 for c in candidates if c["kind"] == "vulture"),
             "module": sum(1 for c in candidates if c["kind"] == "module"),
         },
         "candidates_by_category": by_cat,
@@ -235,6 +298,10 @@ def scan(root):
 
 
 def main():
+    try:  # Windows cp949 stdout would crash on non-ASCII; emit UTF-8 (R1)
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
     root = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
     result = scan(root)
     out_dir = os.path.join(root, ".harness")
@@ -243,11 +310,11 @@ def main():
     with open(out, "w", encoding="utf-8") as fh:
         json.dump(result, fh, ensure_ascii=False, indent=2)
     t = result["tools_available"]
-    print("dead_code_scan: %d modules, %d candidates (symbol=%d module=%d) "
+    k = result["candidates_by_kind"]
+    print("dead_code_scan: %d modules, %d candidates (symbol=%d vulture=%d module=%d) "
           "[ruff=%s vulture=%s] -> %s"
           % (result["total_modules_scanned"], result["candidate_count"],
-             result["candidates_by_kind"]["symbol"],
-             result["candidates_by_kind"]["module"],
+             k["symbol"], k["vulture"], k["module"],
              t["ruff"], t["vulture"], out))
     return 0
 

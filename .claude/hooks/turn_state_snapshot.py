@@ -316,6 +316,26 @@ def compute_signature(cwd, norm_paths):
     return path_sig + content_sig
 
 
+def _nudge_message(n_dirty, a_types):
+    """ASCII-safe Stop-hook feedback (R1). Windows stdout is cp949; keeping the
+    string pure-ASCII + json.dumps(ensure_ascii=True) guarantees it never
+    mojibakes in PowerShell or Claude Code feedback. Detail stays Korean in
+    PROJECT_STATUS."""
+    extra = (" Required audits: " + ", ".join(a_types)) if a_types else ""
+    return ("[turn-closeout] closeout incomplete (stamp mismatch): "
+            "{n} uncommitted change(s). Run /turn-closeout to update "
+            "PROJECT_STATUS/risk/_DECISIONS and route audits.{e}").format(
+                n=n_dirty, e=extra)
+
+
+def should_nudge(dirty_work, closeout_current, stop_active):
+    """Nudge only for UNCOMMITTED non-narration work (R2): a post-commit
+    HEAD-only advance (clean tree -> dirty_work empty) is benign and silent;
+    a dirty tree (incl. content-only edits, which show up in porcelain) nudges.
+    Never during a stop-hook continuation (loop guard)."""
+    return bool(dirty_work) and not closeout_current and not stop_active
+
+
 def _audit_attested(audit_type, evidence_by_type, has_unresolved):
     """R-CloseoutTrust gate: a required audit counts as addressed only if the
     stamp carries a STRUCTURED evidence record for it — executed=true AND a
@@ -430,6 +450,11 @@ def main():
     # Shared with scripts/closeout_sig.py so stamp & gate use the same path set.
     prev_head = prev.get("head")
     paths, head, delta_incomplete = collect_changed_paths(cwd, prev_head)
+    # uncommitted-only set, kept separate so the NUDGE keys off real dirty work
+    # (not files already committed since the last snapshot) — closes the
+    # commit-time transient nudge (R2): a clean tree where only HEAD advanced
+    # does not nag, while a dirty working tree still does.
+    uncommitted = _norm_set(_porcelain_paths(cwd))
 
     norm_paths = _norm_set(paths)
     whitelist = cfg.get("loc_whitelist", [])
@@ -531,20 +556,19 @@ def main():
         return 0  # fail-open
 
     # (R6) soft nudge only — never block, never combine with a block decision.
-    # Keyed off the stamp gate (sig != stamped sig => closeout not done for the
-    # current state). A static uncommitted tree that is already closed out does
-    # not nag. stop_hook_active=true is always silent (loop guard).
-    if sig and not closeout_current and not stop_active:
-        extra = (" 감사 필요 유형: " + ", ".join(a_types)) if a_types else ""
-        # count distinct changed paths, not signature entries (content-hash adds
-        # a second 'content:...' entry per important file — don't double-count).
-        n_paths = sum(1 for s in sig if not s.startswith("content:"))
-        msg = ("[turn-closeout 권장] 비-서술 변경 {n}건·closeout 미완(stamp mismatch). "
-               "turn-closeout 실행으로 PROJECT_STATUS/risk/_DECISIONS/감사 라우팅을 "
-               "마감하세요.{e}").format(n=n_paths, e=extra)
-        out = {"hookSpecificOutput": {"hookEventName": "Stop",
-                                      "additionalContext": msg}}
-        sys.stdout.write(json.dumps(out, ensure_ascii=False))
+    # (R2) keyed off UNCOMMITTED non-narration work, NOT the full sig: a
+    # post-commit HEAD-only advance leaves a clean tree (uncommitted empty) and
+    # must not nag, while a dirty tree (incl. content-only edits, which appear in
+    # porcelain) still does. (R1) ASCII-safe English output — Windows stdout is
+    # cp949, so ensure_ascii=True keeps the bytes pure-ASCII and the feedback
+    # never mojibakes across PowerShell/Claude Code. Detail stays Korean in
+    # PROJECT_STATUS. stop_hook_active=true is always silent (loop guard).
+    dirty_work = [p for p in uncommitted if not _is_narration_output(p)]
+    if should_nudge(dirty_work, closeout_current, stop_active):
+        out = {"hookSpecificOutput": {
+            "hookEventName": "Stop",
+            "additionalContext": _nudge_message(len(dirty_work), a_types)}}
+        sys.stdout.write(json.dumps(out))  # ascii-safe (no ensure_ascii=False)
     return 0
 
 
