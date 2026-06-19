@@ -1,5 +1,7 @@
 # 01 — 턴 진행 리포트 (Req 1)  · rev2
 
+> ⚠️ **SUPERSEDED 부분(2026-06-19):** 본 문서가 언급하는 `narrative_marker.json`(narrated_sig/narrative_turn_id)는 **`.harness/closeout_stamp.json`(working_tree_signature+audit_evidence, stamp-gated Option C)로 대체됨.** freshness 신호는 이제 stamp 게이트가 담당(코드: `turn_state_snapshot.py`가 `narrative_marker.json`을 읽지/쓰지 않음). 권위 구현은 `.claude/skills/turn-closeout/SKILL.md`. `narrative_fresh`는 `closeout_current`의 back-compat alias로만 잔존.
+
 > 산출물: **`PROJECT_STATUS.md`** (레포 루트, git tracked, **매 턴 전체 덮어쓰기**, 누적 안 함)
 > 독자: **비개발자/비연구자 포함 누구나** "지금 어디까지·무엇이 안 됐고·왜"를 즉시 이해.
 > **rev2 변경(R1 race 해소):** PROJECT_STATUS.md 는 **에이전트만 쓴다.** 훅은 이 파일을 건드리지 않고 사실을 `.harness/machine_status.json` 에만 기록한다. 에이전트가 그 JSON 을 읽어 사람이 읽을 요약으로 렌더링한다. → 두 주체가 같은 파일을 동시에 쓰던 race 제거.

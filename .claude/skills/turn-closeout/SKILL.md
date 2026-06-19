@@ -28,19 +28,32 @@ allowed-tools: Read, Grep, Glob, Write, Edit, Bash, Agent, Skill
 7. **[dead code] 후보 갱신:** `python scripts/dead_code_scan.py` 산출 `.harness/dead_code_candidates.json` 검토 → `R-DeadCodeAudit` 갱신. **삭제는 안 함**(다음 phase, dry-run→audit→apply). ⚠ **candidate=0 은 "dead code 없음"이 아니라 "참조 휴리스틱 미탐(recall 한계)"** — 클린 판정으로 렌더하지 말 것(거짓 안심 금지).
 8. **[Req2b] 의사결정 ADR:** 설계 판단/착지/방향전환/폐기가 있었으면 **월별 ledger** `docs/_DECISIONS/<YYYY-MM>.md`에 블록 1개 append. `02 B.2` 사용자 양식 정확히(날짜·섹터·상태/문제·배경·가설·도입 아이디어·선택 이유·구현·결과·한계·후속 과제·관련 문서), 간략. 사소한 턴엔 추가 안 함.
 9. **[Req1] PROJECT_STATUS.md 덮어쓰기:** `01 §3` 템플릿, machine_status 사실 렌더 + 비개발자 톤 서술(목표·달성/미달성·왜·다음·닫을 수 없는 문제). 감사 결과 요약 포함. test_stale면 STALE 배지.
-10. **[stamp] 완료 증거 기록:** `.harness/closeout_stamp.json`에 아래 스키마로 기록. `working_tree_signature`는 machine_status.`sig`를 **그대로** 복사(=Stop hook 게이트 일치). 호출/완료한 subagents, code_review 완료 여부, 미해결 작업을 정직히 남긴다.
+10. **[stamp] 완료 증거 기록:** 먼저 **`python scripts/closeout_sig.py` 를 실행**(9단계 PROJECT_STATUS/risk/_DECISIONS 편집을 모두 마친 *뒤*)하여 출력 `signature` 배열을 `working_tree_signature`에 **그대로 복사**한다. (sig가 이제 **content-hash 를 포함**하므로 stale machine_status.sig 복사는 게이트를 못 맞춘다 — 반드시 이 스크립트로 현재 트리에서 재계산. commit 전에 실행.) 그 다음 `.harness/closeout_stamp.json`에 아래 스키마로 기록. **required audit 별 구조화 evidence**(`audit_evidence`)를 채우고, 호출/완료한 subagents, 미해결 작업을 정직히 남긴다.
 11. **[보고]** 아래 output format으로 한국어 요약.
 
 ## closeout_stamp.json 스키마 (이 스킬만 기록)
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "session_id": "<machine_status.session_id>",
   "git_head": "<machine_status.head>",
-  "working_tree_signature": ["<machine_status.sig 그대로 복사>"],
+  "working_tree_signature": ["<scripts/closeout_sig.py 의 signature 배열 그대로>"],
   "audit_types_addressed": ["<machine_status.audit_types 중 이번 closeout에서 처리한 것 — 전부 커버해야 게이트 통과>"],
+  "audit_evidence": [
+    {
+      "audit_type": "<machine_status.audit_types 의 각 항목>",
+      "reviewer_or_skill": "<호출한 에이전트/스킬, 예: adversarial-reality-critic>",
+      "executed": true,
+      "verdict": "<한 줄 결론 — 비면 게이트 실패>",
+      "findings_count": 0,
+      "blocking_findings_count": 0,
+      "addressed_findings_count": 0,
+      "summary": "<핵심 지적 1~2줄 (영구 리포트 파일 만들지 말 것, 03 §4)>",
+      "completed_at": "<turn # 또는 ISO 시각>"
+    }
+  ],
   "closeout_turn": "<machine_status.turn>",
-  "closeout_skill_version": "1.2",
+  "closeout_skill_version": "1.3",
   "project_status_updated": true,
   "decisions_updated": false,
   "risk_registry_updated": false,
@@ -53,8 +66,9 @@ allowed-tools: Read, Grep, Glob, Write, Edit, Bash, Agent, Skill
   "generated_outputs": ["PROJECT_STATUS.md", "..."]
 }
 ```
-> **게이트(Stop hook 강제):** `machine_status.audit_types ⊆ audit_types_addressed` AND `working_tree_signature == 현재 sig` AND `unresolved 비어있음` 이어야 closeout_current=true(다음 턴 무알림). **required 측(audit_types)은 훅이 객관 계산하므로 감사를 빠뜨리고 stamp에서 누락해도 게이트가 잡는다.** 처리 못 한 감사는 반드시 `unresolved_required_actions`에 남겨라(숨기지 말 것).
-> **정직한 한계:** 게이트는 "required 유형을 다뤘다고 *기록*했는가"를 검증하지, LLM이 실제로 그 추론을 했는지는 검증 못 한다(어떤 훅도 불가). 적대적이 아닌 "깜빡" 누락은 잡고, 의도적 거짓 기록은 못 잡는다 — `R-CloseoutTrust`로 등록.
+> **게이트(Stop hook 강제):** 아래가 **모두** 참이어야 closeout_current=true(다음 턴 무알림):
+> ① `machine_status.audit_types ⊆ audit_types_addressed` (커버리지), ② **required audit_type 마다 `audit_evidence`에 구조화 레코드 존재**(`executed=true` + 비어있지 않은 `verdict`; blocking>addressed 면 `unresolved_required_actions`에 반영) — 단순 type 나열·`code_review_completed=true` 자기보고만으로는 **불통과**, ③ `working_tree_signature == 현재 sig`(**content-hash 포함** → 동일 경로 내용변경도 mismatch로 잡힘, R2 차단), ④ `unresolved 비어있음`. **required 측(audit_types)은 훅이 객관 계산하므로 감사를 빠뜨리고 stamp에서 누락해도 게이트가 잡는다.** 처리 못 한 감사는 반드시 `unresolved_required_actions`에 남겨라(숨기지 말 것).
+> **정직한 한계(완화됨, 완전 제거 불가):** evidence 게이트는 "각 required 유형에 대해 *구조화 증거를 기록*했는가"까지 검증한다(자기보고 한 줄보다 위조 비용 ↑). 그러나 LLM이 그 추론을 실제로 했는지는 어떤 훅도 검증 못 한다 — 의도적 거짓 evidence 기록은 여전히 통과 가능(transcript 사후검증이 최종 방어선) — `R-CloseoutTrust`로 등록.
 
 ## safety constraints
 - `rm`/`Remove-Item`/`rmdir`/`git push`/`git reset --hard`/`git clean` 금지. 이동은 `Move-Item`/`git mv`.
@@ -63,7 +77,8 @@ allowed-tools: Read, Grep, Glob, Write, Edit, Bash, Agent, Skill
 - google_trends_explore PASS 오표기 금지. 추측 금지(모르면 UNKNOWN).
 
 ## success criteria
-- closeout_stamp.working_tree_signature == machine_status.sig (Stop hook 게이트 통과 → 다음 턴 무알림).
+- closeout_stamp.working_tree_signature == `scripts/closeout_sig.py` 출력(content-hash 포함, Stop hook 게이트 통과 → 다음 턴 무알림).
+- required audit_type 마다 `audit_evidence` 구조화 레코드(executed=true+verdict) 존재 — 자기보고만으로 통과 불가.
 - audit_types/flags의 모든 항목이 subagents_completed 또는 unresolved_required_actions에 반영.
 - 열린 risk 카운트 = machine_status.risk. PROJECT_STATUS 갱신. 비가역 이동은 감사 통과분만.
 

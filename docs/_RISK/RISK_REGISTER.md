@@ -133,18 +133,26 @@
 - Current mitigation: EvidenceGate(synthetic/dead URL 가드), SourceSupervisor는 우회 제안 거부, 수집은 deterministic(LLM은 가치 지점만).
 - Remaining gap: 6 mock 노드 실연결(04 T-AgtA) 시 입력 신뢰경계 재검토. DEFERRED_WITH_TRIGGER.
 
-### R-DeadCodeAudit · 코드 레벨 dead code 자동 감사 — 파이프라인 구축, 탐지 recall 낮음  — Severity: LOW-MEDIUM (open→partial, 2026-06-19 파이프라인 phase-1)
+### R-DeadCodeAudit · 코드 레벨 dead code 자동 감사 — ruff symbol-level 연동, vulture 미설치  — Severity: LOW-MEDIUM→LOW (phase-2 ruff 연동, 2026-06-19)
 - Area: harness / docs 동기화 정확성
-- Description: dead code(미사용 모듈/스크립트/stale hook/obsolete runner/unreferenced config/dead source connector/docs-only path/uncalled module)를 식별하는 자동 파이프라인.
-- DONE(phase-1, 삭제 없음): **참조 기반 보수적 스캐너 구현** `scripts/dead_code_scan.py` → `.harness/dead_code_candidates.json` 출력, `turn-closeout` step 7에 배선(후보 검토→risk 갱신), dry-run→audit→apply 정책 명문화. 447 모듈 스캔.
-- Evidence: `scripts/dead_code_scan.py`(447 scanned, candidate 0), `.harness/dead_code_candidates.json`, SKILL step 7, `04 §3`.
-- Remaining gap: **(1) 참조 휴리스틱 recall 한계** — 447 모듈 패키지에서 basename 충돌로 미임포트 모듈이 "참조됨"으로 가려져 candidate 0(거짓 0 위험). **(2) AST/import-graph 도구 부재** — `vulture`·`pyflakes` 둘 다 venv 미설치(import 실패 확인). 정밀 탐지 불가.
-- Closure: `vulture`(또는 동급 AST 도구)를 venv에 추가하고 closeout 파이프라인에 배선 + 1회 라이브 후보를 팀 감사로 검증 → 종결 검토. **삭제는 항상 dry-run→팀 감사→소규모 commit.**
+- Description: dead code(미사용 모듈/심볼/import/지역변수/obsolete runner/unreferenced config)를 식별하는 자동 파이프라인.
+- DONE(phase-2, 삭제 없음): **ruff(F401/F811/F841) symbol-level 탐지 연동** `scripts/dead_code_scan.py`(schema v2). 거짓 0(phase-1) → **449 모듈 스캔, 132 symbol 후보**(unused import/redef/지역변수, HIGH confidence·evidence 포함, 그중 59건 프로덕션 코드 예: `ingestion/agents/graph.py`). 후보별 `evidence/confidence/false_positive_risk/recommended_action/deletion_allowed:false` 기록. `tools_available`로 candidate=0을 "clean"으로 오독 방지. 보안: corpus가 `.env`/`*-key.json` 미독(skip).
+- Evidence: `scripts/dead_code_scan.py`(449 scanned, 132 symbol/0 module, ruff=True vulture=False), `.harness/dead_code_candidates.json`, SKILL step 7, dead-code-auditor 대체(adversarial+security 감사).
+- Remaining gap: **(1) vulture 미설치** — uncalled function/class/attribute(진짜 dead module/함수)는 여전히 미탐. `requirements/dev.txt`에 `vulture>=2.11` **추가(제안)**됐으나 venv 미설치(이번 턴 설치 안 함). **(2) module 휴리스틱 recall 한계** — LOW confidence, false-positive(CLI 진입점) 위험. **(3) 후보 132건 팀 감사·통폐합 미수행**(다음 phase). symbol 후보 다수가 test 파일 unused import(저가치 노이즈)임을 정직히 명시.
+- Closure: `vulture` venv 설치 + closeout 배선 + 프로덕션 symbol 후보 1차 팀 감사 통폐합 → 종결 검토. **삭제는 항상 dry-run→팀 감사→소규모 commit.**
 
-### R-CloseoutTrust · closeout 게이트는 자기보고 기반(LLM이 감사 실제 수행 여부 미검증)  — Severity: MEDIUM (open, 2026-06-19 stamp-gated 팀감사에서 식별)
+### R-CloseoutTrust · closeout 게이트는 구조화 자기보고 기반(LLM 실제 수행은 미검증)  — Severity: MEDIUM→LOW-MEDIUM (content-hash+evidence 게이트, 2026-06-19 재감사)
 - Area: harness / closeout 무결성
-- Description: stamp 게이트는 `machine_status.audit_types(객관·훅계산) ⊆ stamp.audit_types_addressed` + sig 일치 + unresolved 없음을 검사한다. required 측은 훅이 계산하므로 **감사 유형을 빠뜨리고 숨길 수는 없으나**, "addressed로 적은 감사를 LLM이 실제로 수행했는지"는 어떤 훅도 검증 불가 — 적대적/거짓 기록은 통과 가능. 또한 **sig는 경로 집합 기반이라 동일 경로의 내용-only 변경을 게이트가 못 잡는다**(untracked는 numstat에도 안 잡혀 이중 누수; tracked 내용변경은 audit_required는 살아나나 sig는 불변).
-- Evidence: `turn_state_snapshot.py`(게이트 로직), 팀감사 adversarial #1/#3·orchestrator #1.
-- Current mitigation: ① required 커버리지 검사로 "깜빡 누락"은 적발(stamp에 addressed 안 적으면 게이트 실패). ② subagent 호출은 transcript에 남아 사람 사후검증 가능. ③ enforce=soft이나 미완은 다음 턴 재알림으로 지속 노출. **"강제"가 아니라 "객관 커버리지 게이트 + 자기보고"임을 문서에 정직 표기**(03/05/SKILL 톤다운 반영).
-- Remaining gap: (1) subagent 산출물(리뷰 리포트 파일) 존재를 게이트 증거로 요구. (2) sig에 tracked content-hash 합성(내용변경 감지). (3) enforce=block 경로 실증.
-- Closure: 위 (1)(2) 중 하나 이상 구현 + 라이브 검증 시 LOW.
+- Description: stamp 게이트는 ① `machine_status.audit_types(객관·훅계산) ⊆ audit_types_addressed`(커버리지) ② required audit별 `audit_evidence` 구조화 레코드(executed=true+verdict) ③ `working_tree_signature == 현재 sig`(content-hash 포함) ④ unresolved 없음을 검사한다.
+- DONE(phase-2, 2026-06-19 — 라이브 green 입증): **(a) content-hash signature** — `compute_signature`가 중요 파일군(RISK/PROJECT_STATUS/hooks/skills/scripts/configs/tests/_canonical/harness_construction)의 내용 hash를 sig에 합성 → **동일 경로 내용-only 변경도 mismatch**(R2 닫힘). hook과 `scripts/closeout_sig.py`가 **동일 함수+동일 경로집합**(`collect_changed_paths`, commit 대칭) 사용. **(b) evidence 게이트** — `_audit_attested`가 required audit마다 구조화 evidence 요구 → 자기보고 `code_review_completed=true`만으론 **불통과**. 실증: 무evidence stamp closeout_current=False, evidence stamp=True, content-only 변경 sig flip, commit 대칭 sig 일치(이번 턴 closeout_stamp가 새 게이트를 라이브 통과).
+- Evidence: `turn_state_snapshot.py`(`compute_signature`/`_audit_attested`/`collect_changed_paths`), `scripts/closeout_sig.py`, 이번 턴 closeout_stamp.json(audit_evidence 채워진 v2), 팀감사 orchestrator(REAL_BUG 수정 반영)·adversarial(과장 톤다운 반영).
+- Remaining gap(정직): **(1) evidence는 여전히 에이전트 자기보고** — `executed/verdict`를 가짜로 채우면 통과(위조 *비용*만 상승, 본질 자기보고). 진짜 강화는 subagent 산출물 파일 존재 요구이나 `03 §4`(영구 리포트 파일 금지)와 상충 → 보류. transcript 사후검증이 최종 방어선. **(2) enforce=block 미실증**(soft 유지). **(3) closeout_sig.py 실행 누락 시 조용히 약화**(절차 규율 의존).
+- Closure: subagent 산출물 hash/존재를 게이트 증거로 요구(03 §4 절충안 마련) 또는 enforce=block 실증 시 LOW. **자기보고 한계는 "완화됨, 완전 제거 불가"로 잔존.**
+
+### R-HarnessReproducibility · `.claude/settings.json` gitignored → 신규 clone에서 훅 미등록  — Severity: MEDIUM→LOW (doctor+문서+self-check, 2026-06-19 신규)
+- Area: harness / 재현성
+- Description: `.gitignore`가 `.claude/*`를 제외하고 `agents/`·`skills/`·`hooks/`만 재포함 → **`settings.json`은 gitignored**(`git check-ignore` 확인). 신규 clone/머신/codex worktree는 훅 *스크립트*는 받지만 **훅을 등록하는 settings.json이 없어** 하네스가 조용히 비활성(Stop 스냅샷·PostToolUse flag·금지명령 가드 미동작, 무에러).
+- DONE(2026-06-19): **(a) `scripts/harness_doctor.py`** — settings.json 존재·필수 훅5 등록·디스크 파일·Stop hook loop guard·config 점검, 누락 시 FAIL+remediation(exit 1). **(b) README "하네스 setup/재현성" 섹션** — gitignored 정책·필수 훅 목록·확인 명령·증상. **(c) `machine_status.settings_health`** — 매 턴 등록상태 기록(loop-safe, stdout 없음).
+- Evidence: `scripts/harness_doctor.py`(PASS 10/0/0), README, `turn_state_snapshot._settings_health`, `.gitignore` L2.
+- Remaining gap: doctor는 **수동 실행** — fresh clone에서 아무도 안 돌리면 여전히 침묵(settings.json 없으면 self-check조차 미동작 — 가장 필요한 순간에 침묵). 자동화하려면 settings.json을 tracked로 전환(별도 결정 필요) 또는 setup 스크립트 강제.
+- Closure: settings.json tracked 전환(또는 부트스트랩 스크립트) + doctor CI/setup 배선 시 LOW→검토.

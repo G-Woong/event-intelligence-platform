@@ -26,6 +26,7 @@ Responsibilities (deterministic, no LLM):
 Fail-open: any error exits 0 silently. stdlib only. Runs under ``py``.
 """
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -44,6 +45,28 @@ _DEFAULT_CFG = {
 _CODE_PREFIXES = ("ingestion/", "backend/", "agents/", "workers/")
 _SEV_RE = re.compile(r"\b(HIGH|MEDIUM|LOW)\b")
 _MAX_SESSIONS = 200  # bound the turn map so it can't grow unbounded
+
+# (R-CloseoutTrust phase-2) important file groups whose *content* — not just
+# path — must be captured in the working-tree signature. A path-only signature
+# missed content-only edits to an already-dirty file (R2): claim/risk-evidence/
+# config changes under an unchanged path set passed the gate silently. These
+# include narration-important files (RISK register, PROJECT_STATUS) on purpose;
+# a content-only risk-evidence edit MUST re-trigger review.
+_IMPORTANT_CONTENT = (
+    "project_status.md",
+    "docs/_risk/",
+    "docs/_decisions/",
+    "docs/_canonical/",
+    "docs/harness_construction/",
+    ".claude/hooks/",
+    ".claude/skills/",
+    ".claude/settings.json",
+    "scripts/",
+    "configs/",
+    "tests/",
+    ".harness/config.json",
+)
+_IMPORTANT_EXT = (".py", ".md", ".json", ".yaml", ".yml", ".toml", ".csv", ".txt")
 
 
 def _git(args, cwd):
@@ -203,6 +226,151 @@ def _is_narration_output(norm):
     )
 
 
+def _is_important(norm):
+    """True if this changed path belongs to a content-tracked important group.
+    Restricted to known text extensions so binary/large generated files are not
+    hashed. May overlap with narration files (intentional — see _IMPORTANT_CONTENT)."""
+    n = norm.lower()
+    if not n.endswith(_IMPORTANT_EXT):
+        return False
+    return any(n == pat or n.startswith(pat) for pat in _IMPORTANT_CONTENT)
+
+
+_MAX_HASH_BYTES = 4 * 1024 * 1024  # cap per-file hashing so a huge fixture/CSV
+#                                    can't blow the Stop-hook timeout (architect
+#                                    CONCERN). Oversize files are summarized by
+#                                    size, which still changes when they change.
+
+
+def _file_hash(path):
+    """sha256 (first 16 hex) of a file's bytes; ``'size:<n>'`` for files over the
+    cap; ``''`` if unreadable/deleted (then it drops out of the content
+    signature, itself a change the gate notices). Catches *any* exception so the
+    hook keeps its fail-open contract (architect CONCERN: non-OSError errors must
+    not crash the Stop hook)."""
+    try:
+        if os.path.getsize(path) > _MAX_HASH_BYTES:
+            return "size:%d" % os.path.getsize(path)
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()[:16]
+    except Exception:
+        return ""
+
+
+def collect_changed_paths(cwd, prev_head):
+    """The authoritative changed-path set for the signature: uncommitted
+    (porcelain, incl. untracked) PLUS files moved by HEAD advancing since the
+    last snapshot (``prev_head``). Returns ``(paths_set, head, delta_incomplete)``.
+
+    Extracted so the Stop hook AND ``scripts/closeout_sig.py`` build the signature
+    from the *identical* path set — otherwise (architect REAL_BUG) a stamp written
+    from a porcelain-only set would never match the hook's porcelain+moved set
+    once a commit lands, leaving the gate stuck off."""
+    head = _git(["rev-parse", "HEAD"], cwd).strip()
+    paths = _porcelain_paths(cwd)
+    delta_incomplete = False
+    if prev_head and head and prev_head != head:
+        # only diff if prev_head is still reachable; after a rebase/reset it may
+        # be gone -> flag instead of silently undercounting.
+        try:
+            valid = subprocess.run(
+                ["git", "cat-file", "-e", prev_head + "^{commit}"],
+                cwd=cwd, capture_output=True, timeout=8
+            ).returncode == 0
+        except Exception:
+            valid = False
+        if valid:
+            moved = _git(["diff", "--name-only", prev_head, head], cwd)
+            paths |= {ln.strip() for ln in moved.splitlines() if ln.strip()}
+        else:
+            delta_incomplete = True
+    return paths, head, delta_incomplete
+
+
+def compute_signature(cwd, norm_paths):
+    """Canonical working-tree signature.
+
+    Two components, concatenated:
+    - path component: sorted non-narration changed paths (the "real work" signal;
+      narration outputs the agent rewrites every closeout are excluded so closeout
+      does not re-trigger its own nudge and a static dirty tree stops nagging).
+    - content component: ``content:<path>#<hash>`` for every *important* changed
+      file (incl. narration-important ones like the RISK register / PROJECT_STATUS).
+
+    The content component closes R2: content-only edits under an unchanged path
+    set were invisible to a path-only signature. Both the Stop hook and
+    ``scripts/closeout_sig.py`` (which the agent runs at stamp time, AFTER its
+    narration edits) call THIS function, so a correct closeout converges
+    (stamp == hook recompute) while a later content-only edit diverges and
+    re-triggers review. Committed content is captured separately by ``head``."""
+    path_sig = sorted(p for p in norm_paths if not _is_narration_output(p))
+    content_sig = []
+    for p in sorted(norm_paths):
+        if _is_important(p):
+            digest = _file_hash(os.path.join(cwd, p.replace("/", os.sep)))
+            if digest:
+                content_sig.append("content:%s#%s" % (p, digest))
+    return path_sig + content_sig
+
+
+def _audit_attested(audit_type, evidence_by_type, has_unresolved):
+    """R-CloseoutTrust gate: a required audit counts as addressed only if the
+    stamp carries a STRUCTURED evidence record for it — executed=true AND a
+    non-empty verdict — not merely the type name in audit_types_addressed.
+    Unaddressed blocking findings must be surfaced in unresolved_required_actions
+    (else the audit is not considered closed). This raises the bar from "list a
+    type" to "produce a per-audit record"; it still cannot prove an LLM *really*
+    reasoned (honest, documented limit)."""
+    for e in evidence_by_type.get(audit_type, ()):
+        if e.get("executed") is True and str(e.get("verdict", "")).strip():
+            try:
+                blocking = int(e.get("blocking_findings_count", 0) or 0)
+                addressed = int(e.get("addressed_findings_count", 0) or 0)
+            except (TypeError, ValueError):
+                blocking, addressed = 0, 0
+            if blocking > addressed and not has_unresolved:
+                continue  # open blocking findings not surfaced -> not closed
+            return True
+    return False
+
+
+_REQUIRED_HOOKS = {
+    "PreToolUse": {"forbidden_command_guard.py"},
+    "PostToolUse": {"audit_flagger.py"},
+    "Stop": {"secret_scan_reminder.py", "docs_conflict_grep_check.py",
+             "turn_state_snapshot.py"},
+}
+
+
+def _settings_health(cwd):
+    """Loop-safe self-check: is every required hook still registered in
+    settings.json? (settings.json is gitignored, so on a fresh clone it is
+    absent and the harness is inert — R-HarnessReproducibility.) Returns a small
+    summary recorded into machine_status; emits NO stdout (no Stop loop). Full
+    diagnosis: scripts/harness_doctor.py."""
+    path = os.path.join(cwd, ".claude", "settings.json")
+    try:
+        settings = json.load(open(path, encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"ok": False, "missing": ["settings.json"]}
+    missing = []
+    hooks = settings.get("hooks") or {}
+    for event, required in _REQUIRED_HOOKS.items():
+        seen = set()
+        for g in hooks.get(event, []) or []:
+            for h in g.get("hooks", []) or []:
+                for a in h.get("args", []) or []:
+                    if isinstance(a, str):
+                        seen.add(os.path.basename(a))
+        for r in required:
+            if r not in seen:
+                missing.append("%s/%s" % (event, r))
+    return {"ok": not missing, "missing": sorted(missing)}
+
+
 def _count_risks(path):
     """Count risk headings + current severity in RISK_REGISTER.md.
 
@@ -258,26 +426,10 @@ def main():
         for stale in list(turns)[: len(turns) - _MAX_SESSIONS]:
             turns.pop(stale, None)
 
-    # (R2) delta = uncommitted (porcelain incl. untracked) + files moved by HEAD
-    head = _git(["rev-parse", "HEAD"], cwd).strip()
-    paths = _porcelain_paths(cwd)
-    delta_incomplete = False
+    # (R2) delta = uncommitted (porcelain incl. untracked) + files moved by HEAD.
+    # Shared with scripts/closeout_sig.py so stamp & gate use the same path set.
     prev_head = prev.get("head")
-    if prev_head and head and prev_head != head:
-        # (R3-fix) only diff if prev_head is still a reachable commit; after a
-        # rebase/reset it may be gone -> flag instead of silently undercounting.
-        try:
-            valid = subprocess.run(
-                ["git", "cat-file", "-e", prev_head + "^{commit}"],
-                cwd=cwd, capture_output=True, timeout=8
-            ).returncode == 0
-        except Exception:
-            valid = False
-        if valid:
-            moved = _git(["diff", "--name-only", prev_head, head], cwd)
-            paths |= {ln.strip() for ln in moved.splitlines() if ln.strip()}
-        else:
-            delta_incomplete = True
+    paths, head, delta_incomplete = collect_changed_paths(cwd, prev_head)
 
     norm_paths = _norm_set(paths)
     whitelist = cfg.get("loc_whitelist", [])
@@ -301,10 +453,12 @@ def main():
 
     risk = _count_risks(os.path.join(cwd, "docs", "_RISK", "RISK_REGISTER.md"))
 
-    # (R5, rev3) change signature = sorted non-narration uncommitted paths.
-    # Nudge keys off THIS, not the raw dirty-tree state, so a static dirty tree
-    # stops nagging every turn (adversarial M2 fix).
-    sig = sorted(p for p in norm_paths if not _is_narration_output(p))
+    # (R5, rev3 + R-CloseoutTrust phase-2) change signature = non-narration
+    # uncommitted paths PLUS content hashes of important changed files. Nudge
+    # keys off THIS, not the raw dirty-tree state, so a static dirty tree stops
+    # nagging every turn (adversarial M2 fix); content hashes additionally catch
+    # content-only edits the path-only sig missed (R2).
+    sig = compute_signature(cwd, norm_paths)
 
     # (Option C: stamp-gated) closeout is "current" iff the agent's
     # closeout_stamp recorded exactly this working-tree signature for this
@@ -320,11 +474,26 @@ def main():
     stamp = _read_json(os.path.join(harness, "closeout_stamp.json"), {})
     addressed = set(stamp.get("audit_types_addressed", []))
     audit_covered = set(a_types).issubset(addressed)
+    # (R-CloseoutTrust phase-1) coverage is necessary but no longer sufficient:
+    # each required audit must also carry a STRUCTURED evidence record in the
+    # stamp (executed=true + verdict). A bare audit_types_addressed list or a
+    # self-reported code_review_completed=true no longer passes the gate.
+    ev_list = stamp.get("audit_evidence", [])
+    evidence_by_type = {}
+    if isinstance(ev_list, list):
+        for e in ev_list:
+            if isinstance(e, dict) and e.get("audit_type"):
+                evidence_by_type.setdefault(e["audit_type"], []).append(e)
+    has_unresolved = bool(stamp.get("unresolved_required_actions"))
+    audit_attested = all(
+        _audit_attested(t, evidence_by_type, has_unresolved) for t in a_types
+    )
     closeout_current = bool(
         stamp.get("session_id") == sid
         and stamp.get("working_tree_signature") == sig
         and not stamp.get("unresolved_required_actions")
         and audit_covered
+        and audit_attested
     )
 
     status = {
@@ -344,6 +513,8 @@ def main():
         "risk": risk,
         "sig": sig,
         "audit_covered": audit_covered,
+        "audit_attested": audit_attested,
+        "settings_health": _settings_health(cwd),
         "closeout_current": closeout_current,
         "narrative_fresh": closeout_current,  # back-compat alias
         # enforce is reserved; this hook is ALWAYS soft (never blocks). "block"
@@ -365,9 +536,12 @@ def main():
     # not nag. stop_hook_active=true is always silent (loop guard).
     if sig and not closeout_current and not stop_active:
         extra = (" 감사 필요 유형: " + ", ".join(a_types)) if a_types else ""
+        # count distinct changed paths, not signature entries (content-hash adds
+        # a second 'content:...' entry per important file — don't double-count).
+        n_paths = sum(1 for s in sig if not s.startswith("content:"))
         msg = ("[turn-closeout 권장] 비-서술 변경 {n}건·closeout 미완(stamp mismatch). "
                "turn-closeout 실행으로 PROJECT_STATUS/risk/_DECISIONS/감사 라우팅을 "
-               "마감하세요.{e}").format(n=len(sig), e=extra)
+               "마감하세요.{e}").format(n=n_paths, e=extra)
         out = {"hookSpecificOutput": {"hookEventName": "Stop",
                                       "additionalContext": msg}}
         sys.stdout.write(json.dumps(out, ensure_ascii=False))

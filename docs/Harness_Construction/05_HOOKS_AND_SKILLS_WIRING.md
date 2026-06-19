@@ -1,5 +1,7 @@
 # 05 — 배선: 훅 · 스킬 · settings  · rev2
 
+> ⚠️ **SUPERSEDED 부분(2026-06-19, stamp-gated Option C / ADR #6):** 본 문서의 `narrative_marker.json` / `narrative_fresh`(§1 의사코드·§2 procedure 9·§5) 패러다임은 **`.harness/closeout_stamp.json`(working_tree_signature[**content-hash 포함**]+audit_evidence) 기반 stamp 게이트로 대체됨.** 실코드(`turn_state_snapshot.py`)는 marker 파일을 읽지/쓰지 않으며, 게이트는 `closeout_current`(= sig 일치 + audit_covered + audit_attested + unresolved 없음)다. 신규 setup/재현성은 README "하네스 setup" + `scripts/harness_doctor.py`. 권위 구현 절차는 `.claude/skills/turn-closeout/SKILL.md`. 아래 본문은 설계 맥락 보존용(역사적).
+
 > Windows 11 / PowerShell 5.1 / `py` 런처 / stdlib-only / fail-open.
 > rev2 변경: R1(훅은 JSON만), R2(status porcelain + HEAD delta), R5(turn 카운터·narrative_turn_id), R6(soft, block 안 함), R7(Move-Item 가드), R8(캐시 as_of), R10(timeout 15 통일).
 

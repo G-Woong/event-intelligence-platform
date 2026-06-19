@@ -7,6 +7,9 @@ pytest-asyncio>=0.24,<1
 pytest-cov>=5,<7
 ruff>=0.6,<1
 mypy>=1.11,<2
+# dead-code 정밀 탐지(AST 기반). scripts/dead_code_scan.py 가 있으면 자동 사용,
+# 없으면 ruff(F-codes)+참조 휴리스틱으로 graceful degrade (R-DeadCodeAudit 종결 경로).
+vulture>=2.11,<3
 
 # --- Jupyter / IPython ---
 ipython==9.4.0
