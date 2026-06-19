@@ -80,5 +80,8 @@ gcp-service-account-key.json
 # Turn-closeout harness runtime (config.json is tracked; these are per-machine state)
 .harness/machine_status.json
 .harness/narrative_marker.json
+.harness/closeout_stamp.json
+.harness/audit_required.json
+.harness/dead_code_candidates.json
 .harness/last_test_result.json
 docs/_TRASH/

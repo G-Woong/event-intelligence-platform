@@ -65,24 +65,32 @@ repo-sunny-barto/
 └── .claude/                     # 🤖 하네스 (오케스트레이션 구성)
     ├── settings.json            #    모델·권한(allow/deny)·훅 배선
     ├── agents/ (15종)           #    감사·구현 서브에이전트
-    ├── skills/ (5+1종)          #    docs-sync / test-validation / turn-closeout[신규] …
-    └── hooks/                   #    PreToolUse(금지명령 차단) + Stop(secret/docs/turn_state[신규])
+    ├── skills/ (6종)            #    docs-sync / test-validation / turn-closeout(오케스트레이터) …
+    └── hooks/                   #    PreToolUse(금지명령 차단) · PostToolUse(audit_flagger) · Stop(secret/docs/turn_state)
 ```
 
 ---
 
-## 턴 종료 하네스 (매 턴 자동 동작)
+## 턴 종료 하네스 (stamp-gated, agent-orchestrated)
 
-매 턴 끝에 **Stop 훅 → `turn-closeout` 스킬** 2계층이 4가지를 자동 수행합니다. 설계도: `docs/Harness_Construction/`.
+역할 분리: **hook=센서/게이트 · main agent=오케스트레이터 · skills=절차 · subagents=감사단 · stamp=완료 증거.**
+
+```
+PostToolUse(audit_flagger) → .harness/audit_required.json (변경유형 flag)
+Stop(turn_state_snapshot)  → .harness/machine_status.json (사실 + audit_types + sig)
+main agent (turn-closeout) → flag별 subagents/`/code-review` 라우팅 → PROJECT_STATUS/_RISK/_DECISIONS 갱신
+                           → .harness/closeout_stamp.json (완료 증거)
+Stop 게이트: stamp.working_tree_signature ≠ 현재 sig 면 "closeout 미완" 1회 알림 (stop_hook_active 가드)
+```
 
 | # | 기능 | 산출물 | 담당 |
 |---|---|---|---|
 | 1 | 진행 현황 리포트(비개발자용) | `PROJECT_STATUS.md` (덮어쓰기) | 사실=훅 / 서술=에이전트 |
-| 2 | docs 코드기반 동기화 + 사고 로그 | `_ARCHIVE_SUPERSEDED/`·`_TRASH/`·`_DECISIONS/` | 에이전트(curator) + 훅 |
-| 3 | 유의미 변경 시 팀 다각도 감사 | (결과를 1·2·4에 반영) | 메인 에이전트 → fleet |
-| 4 | RISK 수집·종결 | `docs/_RISK/` | 사실=훅 / 판정=에이전트 |
+| 2 | docs 코드기반 동기화 + 의사결정 ledger | `_ARCHIVE_SUPERSEDED/`·`_TRASH/`·`_DECISIONS/<YYYY-MM>.md`(월별) | 에이전트(curator) + 훅 |
+| 3 | 변경유형별 팀 다각도 감사(flag→라우팅) | `closeout_stamp.subagents_*` + 1·2·4 반영 | 훅(flag) → 메인 에이전트(호출) |
+| 4 | RISK 수집·종결 + dead-code 후보 | `docs/_RISK/` · `scripts/dead_code_scan.py`→`.harness/dead_code_candidates.json` | 사실=훅 / 판정=에이전트 |
 
-> 원칙: 진짜 삭제(`rm`) 없이 `Move-Item` 기반 되돌림 가능 lifecycle. 팀 감사엔 항상 `adversarial-reality-critic`(긍정편향 차단).
+> 원칙: 진짜 삭제(`rm`) 없이 `Move-Item`/`git mv` 되돌림 가능 lifecycle, destructive는 **dry-run→audit→apply**. 팀 감사엔 항상 `adversarial-reality-critic`(긍정편향 차단). 모든 Stop 훅은 `stop_hook_active` 가드(무한루프 방지). 설계도: `docs/Harness_Construction/`.
 
 ---
 

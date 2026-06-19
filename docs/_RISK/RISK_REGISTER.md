@@ -133,10 +133,18 @@
 - Current mitigation: EvidenceGate(synthetic/dead URL 가드), SourceSupervisor는 우회 제안 거부, 수집은 deterministic(LLM은 가치 지점만).
 - Remaining gap: 6 mock 노드 실연결(04 T-AgtA) 시 입력 신뢰경계 재검토. DEFERRED_WITH_TRIGGER.
 
-### R-DeadCodeAudit · 코드 레벨 dead code 자동 감사 미구현  — Severity: LOW-MEDIUM (open, 2026-06-19 stabilization 점검에서 식별)
+### R-DeadCodeAudit · 코드 레벨 dead code 자동 감사 — 파이프라인 구축, 탐지 recall 낮음  — Severity: LOW-MEDIUM (open→partial, 2026-06-19 파이프라인 phase-1)
 - Area: harness / docs 동기화 정확성
-- Description: turn-closeout 설계는 "dead code/미사용 심볼"을 risk 출처로 **언급**(04 §3, SKILL step 3)하나, 코드 레벨 dead code 를 찾는 **구체적·자동화된 감사 메커니즘(예: vulture/pyflakes, 정의된 미사용 심볼 grep 절차)이 없다.** 현재는 에이전트 판단에만 의존 → 누락 위험.
-- Evidence: `grep dead code` → 언급만 존재, 실행 절차 없음(이 점검).
-- Current mitigation: 매 턴 closeout 의 에이전트 판단 + docs↔code grep(02 A.4)으로 부분 커버. 팀 감사(test-validation-agent) 호출 시 부분 탐지.
-- Remaining gap: 결정론적 dead code 탐지 도구/절차를 turn-closeout 에 배선(예: `python -m pyflakes`/`vulture` 화이트리스트 + 결과를 risk 로 자동 등록). Windows/venv 에서 동작 검증 필요.
-- Closure: dead code 자동 탐지 1종이 closeout 절차에 배선되고 1회 라이브 결과가 risk 로 등록되면 LOW→종결 검토.
+- Description: dead code(미사용 모듈/스크립트/stale hook/obsolete runner/unreferenced config/dead source connector/docs-only path/uncalled module)를 식별하는 자동 파이프라인.
+- DONE(phase-1, 삭제 없음): **참조 기반 보수적 스캐너 구현** `scripts/dead_code_scan.py` → `.harness/dead_code_candidates.json` 출력, `turn-closeout` step 7에 배선(후보 검토→risk 갱신), dry-run→audit→apply 정책 명문화. 447 모듈 스캔.
+- Evidence: `scripts/dead_code_scan.py`(447 scanned, candidate 0), `.harness/dead_code_candidates.json`, SKILL step 7, `04 §3`.
+- Remaining gap: **(1) 참조 휴리스틱 recall 한계** — 447 모듈 패키지에서 basename 충돌로 미임포트 모듈이 "참조됨"으로 가려져 candidate 0(거짓 0 위험). **(2) AST/import-graph 도구 부재** — `vulture`·`pyflakes` 둘 다 venv 미설치(import 실패 확인). 정밀 탐지 불가.
+- Closure: `vulture`(또는 동급 AST 도구)를 venv에 추가하고 closeout 파이프라인에 배선 + 1회 라이브 후보를 팀 감사로 검증 → 종결 검토. **삭제는 항상 dry-run→팀 감사→소규모 commit.**
+
+### R-CloseoutTrust · closeout 게이트는 자기보고 기반(LLM이 감사 실제 수행 여부 미검증)  — Severity: MEDIUM (open, 2026-06-19 stamp-gated 팀감사에서 식별)
+- Area: harness / closeout 무결성
+- Description: stamp 게이트는 `machine_status.audit_types(객관·훅계산) ⊆ stamp.audit_types_addressed` + sig 일치 + unresolved 없음을 검사한다. required 측은 훅이 계산하므로 **감사 유형을 빠뜨리고 숨길 수는 없으나**, "addressed로 적은 감사를 LLM이 실제로 수행했는지"는 어떤 훅도 검증 불가 — 적대적/거짓 기록은 통과 가능. 또한 **sig는 경로 집합 기반이라 동일 경로의 내용-only 변경을 게이트가 못 잡는다**(untracked는 numstat에도 안 잡혀 이중 누수; tracked 내용변경은 audit_required는 살아나나 sig는 불변).
+- Evidence: `turn_state_snapshot.py`(게이트 로직), 팀감사 adversarial #1/#3·orchestrator #1.
+- Current mitigation: ① required 커버리지 검사로 "깜빡 누락"은 적발(stamp에 addressed 안 적으면 게이트 실패). ② subagent 호출은 transcript에 남아 사람 사후검증 가능. ③ enforce=soft이나 미완은 다음 턴 재알림으로 지속 노출. **"강제"가 아니라 "객관 커버리지 게이트 + 자기보고"임을 문서에 정직 표기**(03/05/SKILL 톤다운 반영).
+- Remaining gap: (1) subagent 산출물(리뷰 리포트 파일) 존재를 게이트 증거로 요구. (2) sig에 tracked content-hash 합성(내용변경 감지). (3) enforce=block 경로 실증.
+- Closure: 위 (1)(2) 중 하나 이상 구현 + 라이브 검증 시 LOW.

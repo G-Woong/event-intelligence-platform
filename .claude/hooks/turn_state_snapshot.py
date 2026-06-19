@@ -2,10 +2,11 @@
 """Stop hook: deterministic turn-state snapshot.
 
 Writes ONLY ``.harness/machine_status.json`` (the "fact" layer, hook-exclusive).
-The agent's freshness signal lives in a SEPARATE file
-``.harness/narrative_marker.json`` (agent-exclusive, written by turn-closeout).
-PROJECT_STATUS.md is authored only by the agent. So no file has two writers —
-the R1 race is removed for real (not merely moved).
+The agent's closeout evidence lives in a SEPARATE file
+``.harness/closeout_stamp.json`` (agent-exclusive, written by turn-closeout) —
+this hook only READS it for the stamp gate. PROJECT_STATUS.md is authored only
+by the agent. So no file has two writers — the R1 race is removed for real.
+(The earlier ``narrative_marker.json`` is superseded by closeout_stamp.json.)
 
 Responsibilities (deterministic, no LLM):
 - classify changed files via ``git status --porcelain -z`` (untracked included,
@@ -160,6 +161,33 @@ def _new_source(norm_paths):
     return any(p.startswith("ingestion/sources/") for p in norm_paths)
 
 
+def audit_types(norm_paths):
+    """Map changed paths -> required review flags for the closeout orchestrator.
+
+    The hook is a SENSOR: it only raises flags. The turn-closeout skill (the
+    main agent) consumes them and actually calls the subagents / code-review
+    skill. Dead-code/refactor review is a judgment the skill/scanner adds, not
+    derivable from path alone, so it is not raised here.
+    """
+    f = set()
+    for p in norm_paths:
+        if ".claude/hooks" in p or ".claude/settings" in p or p.endswith(".ps1"):
+            f |= {"harness_runtime_review", "security_review", "adversarial_review"}
+        if p == ".env" or p.startswith(".env/") or "/.env" in p:
+            f |= {"security_review", "adversarial_review"}
+        if p.startswith("ingestion/") and p.endswith(".py"):
+            f |= {"code_review", "pipeline_review", "test_review"}
+        if any(k in p for k in ("source_registry", "rate_limit", "publication_policy", "retry_policy")):
+            f |= {"source_integrity_review", "data_quality_review"}
+        if p.startswith("docs/_ARCHIVE") or p.startswith("docs/_TRASH"):
+            f |= {"docs_lifecycle_review", "destructive_action_review", "safety_review"}
+        if p.startswith("docs/_RISK"):
+            f |= {"risk_closure_review", "evidence_review"}
+        if (p.startswith(("backend/", "agents/", "workers/")) and p.endswith(".py")):
+            f |= {"code_review", "architecture_review", "test_review"}
+    return sorted(f)
+
+
 def _is_narration_output(norm):
     """The closeout's own outputs. Excluded from the change signature so that
     (a) running closeout doesn't re-trigger its own nudge, and (b) a static
@@ -256,11 +284,14 @@ def main():
     buckets, code_files = _classify(paths, whitelist)
     code_loc = _code_py_loc(cwd, whitelist)
 
-    # file-path audit triggers only (semantic triggers belong to the skill)
+    # file-path audit triggers (semantic triggers belong to the skill). The
+    # per-type flags below are the SENSOR output the closeout orchestrator
+    # consumes to route subagents.
+    a_types = audit_types(norm_paths)
     audit_required = bool(
-        code_loc >= cfg["audit_loc_threshold"]
+        a_types
+        or code_loc >= cfg["audit_loc_threshold"]
         or len(code_files) >= cfg["audit_files_threshold"]
-        or _touched(norm_paths, ".claude/settings", ".env", ".claude/hooks")
         or _new_source(norm_paths)
     )
 
@@ -272,13 +303,28 @@ def main():
 
     # (R5, rev3) change signature = sorted non-narration uncommitted paths.
     # Nudge keys off THIS, not the raw dirty-tree state, so a static dirty tree
-    # stops nagging every turn (adversarial M2 fix). Narrative is "fresh" iff
-    # the agent's marker recorded exactly the current signature — i.e. nothing
-    # new (besides narration outputs) changed since the last closeout.
+    # stops nagging every turn (adversarial M2 fix).
     sig = sorted(p for p in norm_paths if not _is_narration_output(p))
-    marker = _read_json(os.path.join(harness, "narrative_marker.json"), {})
-    narrative_fresh = bool(
-        marker.get("session_id") == sid and marker.get("narrated_sig") == sig
+
+    # (Option C: stamp-gated) closeout is "current" iff the agent's
+    # closeout_stamp recorded exactly this working-tree signature for this
+    # session, left no unresolved required actions, AND addressed every audit
+    # type the SENSOR (this hook) objectively requires. The required set
+    # (a_types) is hook-computed, so the agent cannot hide a required audit by
+    # omitting it from the stamp — a skipped audit leaves a_types ⊄ addressed
+    # and the gate fails (closes the "self-report skips audit" gap raised by
+    # the orchestrator/adversarial review). NOTE: the gate enforces COVERAGE of
+    # required types; it still trusts the agent's claim that a listed audit was
+    # actually performed (no hook can verify an LLM "really" reasoned). This is
+    # an honest limit, documented in 05 / R-CloseoutTrust.
+    stamp = _read_json(os.path.join(harness, "closeout_stamp.json"), {})
+    addressed = set(stamp.get("audit_types_addressed", []))
+    audit_covered = set(a_types).issubset(addressed)
+    closeout_current = bool(
+        stamp.get("session_id") == sid
+        and stamp.get("working_tree_signature") == sig
+        and not stamp.get("unresolved_required_actions")
+        and audit_covered
     )
 
     status = {
@@ -292,11 +338,14 @@ def main():
         "code_files": code_files,
         "code_py_loc": code_loc,
         "audit_required": audit_required,
+        "audit_types": a_types,
         "tests": tc,
         "test_stale": test_stale,
         "risk": risk,
         "sig": sig,
-        "narrative_fresh": narrative_fresh,
+        "audit_covered": audit_covered,
+        "closeout_current": closeout_current,
+        "narrative_fresh": closeout_current,  # back-compat alias
         # enforce is reserved; this hook is ALWAYS soft (never blocks). "block"
         # is unsupported until the stop_hook_active loop guard is verified (R6).
         "enforce": cfg.get("enforce", "soft"),
@@ -311,12 +360,14 @@ def main():
         return 0  # fail-open
 
     # (R6) soft nudge only — never block, never combine with a block decision.
-    # Keyed off sig (new non-narration work since last closeout), not the raw
-    # dirty tree, so a static uncommitted tree does not nag every turn.
-    if sig and not narrative_fresh and not stop_active:
-        msg = ("[turn-closeout 권장] 비-서술 변경 {n}건·미마감. "
-               "PROJECT_STATUS/risk/_DECISIONS 갱신을 위해 turn-closeout 실행을 "
-               "권장합니다.").format(n=len(sig))
+    # Keyed off the stamp gate (sig != stamped sig => closeout not done for the
+    # current state). A static uncommitted tree that is already closed out does
+    # not nag. stop_hook_active=true is always silent (loop guard).
+    if sig and not closeout_current and not stop_active:
+        extra = (" 감사 필요 유형: " + ", ".join(a_types)) if a_types else ""
+        msg = ("[turn-closeout 권장] 비-서술 변경 {n}건·closeout 미완(stamp mismatch). "
+               "turn-closeout 실행으로 PROJECT_STATUS/risk/_DECISIONS/감사 라우팅을 "
+               "마감하세요.{e}").format(n=len(sig), e=extra)
         out = {"hookSpecificOutput": {"hookEventName": "Stop",
                                       "additionalContext": msg}}
         sys.stdout.write(json.dumps(out, ensure_ascii=False))

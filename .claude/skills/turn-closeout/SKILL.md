@@ -1,53 +1,78 @@
 ---
 name: turn-closeout
-description: 매 턴 종료 직전 실행하는 단일 마감 절차. 자동 수집된 사실(.harness/machine_status.json)을 읽어 PROJECT_STATUS 서술을 갱신하고, docs 코드기반 동기화 후보를 점검하고, risk를 감사하고, 의미형 트리거(결정 완료/risk 종결/archive)를 판정하고, 유의미 변경 시 팀 감사를 라우팅하고, 중요한 설계 판단을 _DECISIONS ADR로 남긴다.
-when_to_use: 매 턴 응답을 마치기 직전(코드/문서/설정 변경이 있던 모든 턴). "턴 마감 / closeout / 진행현황 갱신 / risk 감사" 류 요청.
+description: 매 턴 종료 직전 실행하는 stamp-gated 마감 오케스트레이터. 훅이 모은 사실(.harness/machine_status.json)과 감사 flag(.harness/audit_required.json)를 읽어, 변경 유형별 subagents/code-review 스킬을 라우팅 호출하고, PROJECT_STATUS·_RISK·_DECISIONS를 갱신하고, dead-code 후보를 식별하고, 완료 증거를 .harness/closeout_stamp.json에 남긴다.
+when_to_use: 매 턴 응답을 마치기 직전(코드/문서/설정 변경이 있던 모든 턴). "턴 마감 / closeout / 진행현황 갱신 / risk 감사 / 감사 라우팅" 류 요청.
 user-invocable: true
-allowed-tools: Read, Grep, Glob, Write, Edit, Bash, Agent
+allowed-tools: Read, Grep, Glob, Write, Edit, Bash, Agent, Skill
 ---
 
-# turn-closeout
+# turn-closeout (stamp-gated 마감 오케스트레이터)
 
-매 턴 마감을 한 절차로 묶는 단일 진입점. 사실 계층(훅)과 의미 계층(이 스킬)의 책임을 분리한다 —
-훅은 `.harness/machine_status.json`에 사실을 자동 기록하고, 이 스킬은 그 사실을 사람이 읽을 의미로 해석한다.
+매 턴 마감의 **총괄 오케스트레이터**다. 단순 작성자가 아니라 closeout orchestration owner.
+역할 분담: **훅=센서/게이트, 이 스킬=오케스트레이터, subagents=다각도 감사단, stamp=완료 증거.**
 
 ## 핵심 불변식 (어기지 말 것)
-- **파일 writer 단일화(R1):** `PROJECT_STATUS.md`와 `.harness/narrative_marker.json`은 **이 스킬(에이전트)만** 쓴다. `.harness/machine_status.json`은 **훅만** 쓴다 — 이 스킬은 읽기만.
-- **삭제 금지:** `rm`/`Remove-Item` 금지. 파일 정리는 `Move-Item`/`git mv`(되돌림 가능)만.
-- **단일 출처(R4):** docs 권위 정점은 `docs/_CANONICAL/*`. risk 권위는 `docs/_RISK/RISK_REGISTER.md`.
-- **비가역 이동은 감사 후에만:** docs/risk archive·trash 이동은 팀 감사(아래 5단계) 통과분만.
+- **파일 writer 단일화:** `PROJECT_STATUS.md`·`.harness/closeout_stamp.json`은 **이 스킬(에이전트)만** 쓴다. `.harness/machine_status.json`·`audit_required.json`은 **훅만** 쓴다(이 스킬은 읽기만).
+- **삭제 금지:** `rm`/`Remove-Item` 금지. 정리는 `Move-Item`/`git mv`(되돌림 가능)만.
+- **dry-run → audit → apply:** destructive action(docs 이동, code/dead-code 통폐합)은 반드시 ①후보 식별(dry-run) ②팀 감사 ③소규모 apply 순서. **이번 단계에서 즉시 삭제 금지.**
+- **단일 출처:** docs 권위 정점 `docs/_CANONICAL/*`, risk 권위 `docs/_RISK/RISK_REGISTER.md`.
+- **flag 강제:** `audit_required.json`/`machine_status.audit_types`에 flag가 있으면 대응 감사를 **반드시 호출**하고 stamp의 `subagents_completed`에 기록. 호출 없이 stamp를 쓰면 Stop hook이 mismatch로 다음 턴 재적발.
 
-## procedure
-1. **사실 읽기:** `.harness/machine_status.json` 읽기 (turn, changed buckets, code_files, audit_required, risk 카운트, test_stale, delta_incomplete).
-2. **의미형 트리거 판정(훅 불가, 03 §2b):**
-   - `docs/_DECISIONS/*.md`에 `상태: 진행중→완료` 전이 + 대응 코드 변경 동시 → "인사이트→코드 구현" 트리거.
-   - `docs/_RISK/*`에서 risk severity→CLOSED 전이 + 코드 변경 → "risk 종결" 트리거.
-   - docs/risk archive·trash 이동 의도 있음 → "archive 게이트" (이동 직전 항상 감사).
-3. **[Req4] risk 감사:** `docs/_RISK/RISK_REGISTER.md`의 각 열린 risk Closure 조건을 **grep 근거로** 검증. 충족 후보(→CLOSED 이관 후보) 표시. 이번 턴 신규 risk(에러·dead code·감사 결과) 식별.
-4. **[Req2a] docs 동기화 후보:** "이미 적용/미사용" 메모리 md를 grep 근거로 식별(`02 A.4`). 추측 금지, 근거 첨부. 이동은 5단계 감사 후.
-5. **[Req3] 팀 감사 라우팅:** `machine_status.audit_required==true` 또는 2단계 의미형 트리거가 있으면 `03 §3` 표대로 에이전트를 **병렬 호출**(항상 `adversarial-reality-critic` 포함). 같은 턴 중복 발동은 디바운스. 결과 종합 → REAL 이슈는 risk 등록, archive/trash 후보 승인/기각.
-6. **[확정 이동] 승인분만** `Move-Item`/`git mv`로 `docs/_ARCHIVE_SUPERSEDED/`(+`_INDEX.md` 1줄) 또는 `docs/_TRASH/`. 반대 의견 있으면 ACTIVE 유지 + risk 등록.
-7. **[Req2b] 의사결정 ADR:** 이번 턴에 설계 판단/아이디어 착지/방향 전환/폐기가 있었으면 `docs/_DECISIONS/SESSION_<날짜>_<해시>.md`에 블록 1개 append. **`02 B.2`의 사용자 지정 양식 정확히 사용** — `날짜·섹터·상태 / 문제·배경·가설·도입 아이디어·선택 이유·구현·결과·한계·후속 과제·관련 문서`. "왜 > 무엇", 각 필드 1~2줄 간략, 구현체-비종속. 사소한 턴엔 추가 안 함.
-8. **[Req1] PROJECT_STATUS.md 덮어쓰기:** `01 §3` 템플릿으로, machine_status 사실을 렌더 + 비개발자 톤 서술(목표·달성/미달성·왜·다음·닫을 수 없는 문제). `as_of`(turn/commit) 표기. test_stale 이면 "테스트 결과 STALE" 배지.
-9. **freshness 신호:** `.harness/narrative_marker.json`에 `{"session_id": <machine_status.session_id>, "narrated_sig": <machine_status.sig 그대로 복사>, "narrative_turn_id": <machine_status.turn>}` 기록. `narrated_sig`는 machine_status의 `sig` 배열을 **그대로** 복사한다(= "이 비-서술 변경 집합까지 서술 반영함"). 이게 다음 턴 nudge 억제의 핵심. **machine_status.json은 절대 쓰지 말 것.**
-10. **(필요 시) 테스트 캐시:** 코드 변경이 컸으면 `test-validation-skill`로 pytest 실행 후 `.harness/last_test_result.json`에 `{"as_of_commit": <HEAD>, "passed": n, "failed": m}` 기록.
+## procedure (오케스트레이션)
+1. **사실/플래그 읽기:** `.harness/machine_status.json`(turn, sig, **audit_types**, risk, test_stale) + `.harness/audit_required.json`(flags) 읽기. **`machine_status.audit_types`가 권위**(Stop hook이 git 전체 재스캔 → Bash 변경분도 포함). `audit_required.json`은 PostToolUse 보조(Edit/Write만 잡아 Bash 변경 누락 가능) — 둘의 **합집합**을 routing 대상으로 삼되 audit_types를 우선. `git status/diff` 요약.
+2. **변경 유형 분류 확인:** audit_types/flags가 실제 변경과 맞는지 git diff로 교차 확인(훅 분류 신뢰하되 누락 보완).
+3. **[Req3] subagent 라우팅 (강제):** flags 합집합 → `03 §3` 표대로 **실제 에이전트/`/code-review` 스킬을 병렬 호출**. `adversarial-reality-critic`은 flag 1개라도 있으면 필수 포함. 같은 턴 중복은 stamp로 디바운스. **code 변경(code_review flag)이면 `/code-review` 스킬을 호출**(hook에서 무겁게 돌리지 않고 여기서).
+4. **[Req4] risk 감사:** `docs/_RISK/RISK_REGISTER.md` 각 열린 risk Closure를 **grep 근거로** 검증. 충족분 → CLOSED 이관 후보. 감사 결과 REAL 이슈 → 신규 risk 등록. machine_status.risk 카운트와 일치 확인.
+5. **[Req2a] docs 동기화 후보:** "이미 적용/미사용" 메모리 md를 grep 근거로 식별(추측 금지). 이동은 6단계 감사 통과분만.
+6. **[dry-run→audit→apply] 비가역 이동:** 승인분만 `Move-Item`/`git mv`로 `_ARCHIVE_SUPERSEDED`(+`_INDEX` 1줄)/`_TRASH`. 반대 의견 있으면 ACTIVE 유지 + risk 등록.
+7. **[dead code] 후보 갱신:** `python scripts/dead_code_scan.py` 산출 `.harness/dead_code_candidates.json` 검토 → `R-DeadCodeAudit` 갱신. **삭제는 안 함**(다음 phase, dry-run→audit→apply). ⚠ **candidate=0 은 "dead code 없음"이 아니라 "참조 휴리스틱 미탐(recall 한계)"** — 클린 판정으로 렌더하지 말 것(거짓 안심 금지).
+8. **[Req2b] 의사결정 ADR:** 설계 판단/착지/방향전환/폐기가 있었으면 **월별 ledger** `docs/_DECISIONS/<YYYY-MM>.md`에 블록 1개 append. `02 B.2` 사용자 양식 정확히(날짜·섹터·상태/문제·배경·가설·도입 아이디어·선택 이유·구현·결과·한계·후속 과제·관련 문서), 간략. 사소한 턴엔 추가 안 함.
+9. **[Req1] PROJECT_STATUS.md 덮어쓰기:** `01 §3` 템플릿, machine_status 사실 렌더 + 비개발자 톤 서술(목표·달성/미달성·왜·다음·닫을 수 없는 문제). 감사 결과 요약 포함. test_stale면 STALE 배지.
+10. **[stamp] 완료 증거 기록:** `.harness/closeout_stamp.json`에 아래 스키마로 기록. `working_tree_signature`는 machine_status.`sig`를 **그대로** 복사(=Stop hook 게이트 일치). 호출/완료한 subagents, code_review 완료 여부, 미해결 작업을 정직히 남긴다.
+11. **[보고]** 아래 output format으로 한국어 요약.
+
+## closeout_stamp.json 스키마 (이 스킬만 기록)
+```json
+{
+  "schema_version": 1,
+  "session_id": "<machine_status.session_id>",
+  "git_head": "<machine_status.head>",
+  "working_tree_signature": ["<machine_status.sig 그대로 복사>"],
+  "audit_types_addressed": ["<machine_status.audit_types 중 이번 closeout에서 처리한 것 — 전부 커버해야 게이트 통과>"],
+  "closeout_turn": "<machine_status.turn>",
+  "closeout_skill_version": "1.2",
+  "project_status_updated": true,
+  "decisions_updated": false,
+  "risk_registry_updated": false,
+  "docs_sync_checked": true,
+  "code_review_required": false,
+  "code_review_completed": false,
+  "subagents_required": ["..."],
+  "subagents_completed": ["..."],
+  "unresolved_required_actions": ["..."],
+  "generated_outputs": ["PROJECT_STATUS.md", "..."]
+}
+```
+> **게이트(Stop hook 강제):** `machine_status.audit_types ⊆ audit_types_addressed` AND `working_tree_signature == 현재 sig` AND `unresolved 비어있음` 이어야 closeout_current=true(다음 턴 무알림). **required 측(audit_types)은 훅이 객관 계산하므로 감사를 빠뜨리고 stamp에서 누락해도 게이트가 잡는다.** 처리 못 한 감사는 반드시 `unresolved_required_actions`에 남겨라(숨기지 말 것).
+> **정직한 한계:** 게이트는 "required 유형을 다뤘다고 *기록*했는가"를 검증하지, LLM이 실제로 그 추론을 했는지는 검증 못 한다(어떤 훅도 불가). 적대적이 아닌 "깜빡" 누락은 잡고, 의도적 거짓 기록은 못 잡는다 — `R-CloseoutTrust`로 등록.
 
 ## safety constraints
-- `rm`/`Remove-Item`/`rmdir` 금지(이동은 `Move-Item`/`git mv`). `git push`/`git reset --hard`/`git clean` 금지.
-- `.env` 값 출력·로그 금지(존재/길이만). 비밀이 든 파일을 `_TRASH`로 옮기지 말 것(guard가 차단).
-- google_trends_explore를 PASS로 오표기 금지(CONFIRMED_EXTERNAL_RATE_LIMIT 유지).
-- 추측을 사실처럼 적지 말 것. 모르면 UNKNOWN, 막히면 BLOCKED.
+- `rm`/`Remove-Item`/`rmdir`/`git push`/`git reset --hard`/`git clean` 금지. 이동은 `Move-Item`/`git mv`.
+- `.env` 값 출력 금지(존재/길이만). 비밀 파일을 `_TRASH`로 옮기지 말 것(guard 차단).
+- dead code/통폐합 **즉시 삭제 금지** — 후보 식별 + 감사까지만.
+- google_trends_explore PASS 오표기 금지. 추측 금지(모르면 UNKNOWN).
 
 ## success criteria
-- PROJECT_STATUS.md가 이번 턴 사실+서술로 갱신됨, narrative_marker.narrative_turn_id == machine_status.turn.
-- 열린 risk 카운트가 machine_status.risk와 일치.
-- 비가역 이동은 전부 팀 감사 통과분.
+- closeout_stamp.working_tree_signature == machine_status.sig (Stop hook 게이트 통과 → 다음 턴 무알림).
+- audit_types/flags의 모든 항목이 subagents_completed 또는 unresolved_required_actions에 반영.
+- 열린 risk 카운트 = machine_status.risk. PROJECT_STATUS 갱신. 비가역 이동은 감사 통과분만.
 
 ## output format (한국어 보고)
 ```
-턴 마감: turn #N
-- 갱신: PROJECT_STATUS ✅ / _DECISIONS (추가 여부) / risk (신규 a·종결 b)
-- 팀 감사: (트리거/호출 에이전트/결론) 또는 "트리거 없음"
-- docs 이동: (이동 파일 또는 "없음")
+턴 마감(stamp-gated): turn #N
+- 갱신: PROJECT_STATUS ✅ / _DECISIONS(추가 여부) / risk(신규 a·종결 b)
+- 감사 flag: [..] → 호출: [에이전트/스킬..] / 결론: ..
+- docs 이동: (이동 또는 "없음")  · dead-code 후보: n건(삭제 안 함)
+- stamp: working_tree_signature 기록 ✅ / unresolved: [..]
 - WARNING/BLOCKED/UNKNOWN
 ```

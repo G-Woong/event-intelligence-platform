@@ -39,20 +39,32 @@
 
 ---
 
-## 3. 라우팅 표 (트리거 → 호출 에이전트)
-> **모든 감사에 `adversarial-reality-critic` 필수** = 긍정편향 차단 게이트(사용자 "긍정편향 없는" 요구의 구현).
+## 3. 라우팅 표 — audit flag → 실제 에이전트 (rev3, stamp-gated)
+> **모든 감사에 `adversarial-reality-critic` 필수** = 긍정편향 차단 게이트.
+> 훅(`turn_state_snapshot.audit_types` / PostToolUse `audit_flagger`)이 `.harness/audit_required.json` 에 **flag** 를 세우고, `turn-closeout` 이 이 표로 **실제 에이전트/스킬**을 호출한다. flag→에이전트는 결정론적.
 
-| 트리거 | 필수 호출 | 도메인 추가(해당 시) |
-|---|---|---|
-| 코드 착지 / 대규모 리팩토링 | adversarial-reality-critic + test-validation-agent | ingestion→source-ingestion-engineer, 오케스트레이션→orchestrator-architect, 품질→data-quality-auditor |
-| risk 종결 | adversarial-reality-critic + test-validation-agent | risk 영역 도메인 1종 |
-| docs archive/trash 이동 | adversarial-reality-critic + docs-memory-curator | — |
-| 권한/보안 변경 | security-permission-guardian(BLOCKED 권한) + adversarial-reality-critic | — |
-| **신규 소스/수집방식** | legal-safety-compliance-reviewer + adversarial-reality-critic | source-ingestion-engineer |
+| audit flag (sensor) | 호출 대상 (이 레포 실제 에이전트/스킬) |
+|---|---|
+| `adversarial_review` | **adversarial-reality-critic** (어떤 flag든 1개 서면 자동 포함되는 횡단 게이트의 명시 행) |
+| `harness_runtime_review` | security-permission-guardian + orchestrator-architect + **adversarial-reality-critic** |
+| `security_review` | security-permission-guardian + **adversarial-reality-critic** |
+| `code_review` | **`/code-review` 스킬(built-in)** + test-validation-agent + **adversarial-reality-critic** |
+| `pipeline_review` | orchestrator-architect + **adversarial-reality-critic** |
+| `source_integrity_review` | source-ingestion-engineer + legal-safety-compliance-reviewer + **adversarial-reality-critic** |
+| `data_quality_review` | data-quality-auditor + **adversarial-reality-critic** |
+| `test_review` / `test_coverage_review` | test-validation-agent (+ `/test-validation-skill` 캐시) |
+| `docs_lifecycle_review` | docs-memory-curator + **adversarial-reality-critic** |
+| `destructive_action_review` / `safety_review` | security-permission-guardian + legal-safety-compliance-reviewer + **adversarial-reality-critic** |
+| `risk_closure_review` / `evidence_review` | test-validation-agent + **adversarial-reality-critic** |
+| `architecture_review` | orchestrator-architect + **adversarial-reality-critic** |
+| `dead_code_review` | test-validation-agent + orchestrator-architect + **adversarial-reality-critic** |
+| `product_risk_review` | commercialization-strategist / business-intelligence-analyst + **adversarial-reality-critic** |
+| `legal_compliance_review` | legal-safety-compliance-reviewer + **adversarial-reality-critic** |
 
-- **개수:** 최소 2(필수쌍) ~ 최대 4. 모호 시 영역 1종 추가. 위 표로 결정론 라우팅.
-- **호출 병렬**(독립). 종합은 메인 에이전트가 → `PROJECT_STATUS`(달성/risk) + `docs/_RISK` 반영.
-- **디바운스(S-4):** 같은 턴 동일 트리거 재발동 시 `turn_state.json` 의 `audited_this_turn` 플래그로 1회만.
+- **개수:** flag별 호출의 합집합, 중복 제거. 같은 에이전트가 여러 flag에 걸리면 1회 호출(병렬). adversarial-reality-critic 은 어떤 flag든 1개라도 서면 포함.
+- **강제:** `audit_required.json`/`machine_status.audit_types` 에 flag가 있는데 closeout이 호출 없이 stamp를 쓰면 **모순(stamp.subagents_required ≠ completed)** → Stop hook이 다음 턴 mismatch로 재알림. 즉 "flag 있는데 감사 누락"이 stamp에 남아 자동 적발된다.
+- **호출 병렬**(독립). 종합 → `PROJECT_STATUS`(요약) + `docs/_RISK`(REAL 이슈) + `closeout_stamp`(호출/완료 기록).
+- **디바운스:** 같은 턴 동일 flag 재발동 시 stamp의 `subagents_completed` 로 1회만.
 
 ---
 
