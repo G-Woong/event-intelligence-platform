@@ -1,38 +1,38 @@
-source_id,record_type,body_expected,queue_records,body_present,body_snippet_only,body_missing,extracted_text_artifacts,body_success_total,primary_failure_mode,classification,notes
-aladin,official_record,True,3,0,3,0,0,0,snippet_only_no_fulltext,SNIPPET_ONLY,present=0 snippet=3 missing=0 extracted_artifacts=0
-aljazeera,article_candidate,True,50,0,50,0,2,2,-,BODY_OK,present=0 snippet=50 missing=0 extracted_artifacts=2
-alpha_vantage,structured_signal,False,1,0,0,0,0,0,n/a_structured,STRUCTURED_NO_BODY_EXPECTED,structured schema collected
-ap_news,article_candidate,True,284,0,284,0,10,10,-,BODY_OK,present=0 snippet=284 missing=0 extracted_artifacts=10
-bbc,article_candidate,True,100,0,100,0,6,6,-,BODY_OK,present=0 snippet=100 missing=0 extracted_artifacts=6
-binance_market,structured_signal,False,1,0,0,0,0,0,n/a_structured,STRUCTURED_NO_BODY_EXPECTED,structured schema collected
-cnbc,article_candidate,True,30,0,30,0,2,2,-,BODY_OK,present=0 snippet=30 missing=0 extracted_artifacts=2
-coinbase_market,structured_signal,False,1,0,0,0,0,0,n/a_structured,STRUCTURED_NO_BODY_EXPECTED,structured schema collected
-culture_info,official_record,True,10,0,8,2,0,0,body_missing,BODY_MISSING,present=0 snippet=8 missing=2 extracted_artifacts=0
-exa,search_result,False,3,0,0,3,0,0,url_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
-federal_register,official_record,True,3,0,1,2,5,5,-,BODY_OK,present=0 snippet=1 missing=2 extracted_artifacts=5
-finnhub,structured_signal,False,1,0,0,0,0,0,n/a_structured,STRUCTURED_NO_BODY_EXPECTED,structured schema collected
-gnews,search_result,False,3,0,3,0,1,1,snippet_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
-google_trending_now,structured_signal,False,1,0,0,0,0,0,n/a_structured,STRUCTURED_NO_BODY_EXPECTED,structured schema collected
-hankyung,article_candidate,True,100,0,0,100,2,2,-,BODY_OK,present=0 snippet=0 missing=100 extracted_artifacts=2
-igdb,official_record,True,3,0,0,3,0,0,body_missing,BODY_MISSING,present=0 snippet=0 missing=3 extracted_artifacts=0
-kofic,official_record,True,10,0,10,0,0,0,snippet_only_no_fulltext,SNIPPET_ONLY,present=0 snippet=10 missing=0 extracted_artifacts=0
-kopis,official_record,True,3,0,3,0,0,0,snippet_only_no_fulltext,SNIPPET_ONLY,present=0 snippet=3 missing=0 extracted_artifacts=0
-loword,structured_signal,False,1,0,0,0,0,0,n/a_structured,STRUCTURED_NO_BODY_EXPECTED,structured schema collected
-maekyung,article_candidate,True,100,0,97,3,2,2,-,BODY_OK,present=0 snippet=97 missing=3 extracted_artifacts=2
-naver_blog_search,search_result,False,3,0,3,0,0,0,snippet_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
-naver_news_search,search_result,False,3,0,3,0,0,0,snippet_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
-newsapi,search_result,False,2,0,2,0,10,10,snippet_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
-nyt,article_candidate,True,10,0,10,0,0,0,snippet_only_no_fulltext,SNIPPET_ONLY,present=0 snippet=10 missing=0 extracted_artifacts=0
-opendart,official_record,True,3,0,0,3,0,0,body_missing,BODY_MISSING,present=0 snippet=0 missing=3 extracted_artifacts=0
-product_hunt,community_signal,True,6,0,6,0,0,0,snippet_only_no_fulltext,SNIPPET_ONLY,present=0 snippet=6 missing=0 extracted_artifacts=0
-sec_edgar,official_record,True,93,0,0,93,2,2,-,BODY_OK,present=0 snippet=0 missing=93 extracted_artifacts=2
-serper,search_result,False,3,0,3,0,1,1,snippet_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
-signal_bz,structured_signal,False,1,0,0,0,0,0,n/a_structured,STRUCTURED_NO_BODY_EXPECTED,structured schema collected
-tavily,search_result,False,3,0,3,0,0,0,snippet_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
-techcrunch,article_candidate,True,60,0,60,0,2,2,-,BODY_OK,present=0 snippet=60 missing=0 extracted_artifacts=2
-the_verge,article_candidate,True,30,4,26,0,2,6,-,BODY_OK,present=4 snippet=26 missing=0 extracted_artifacts=2
-tmdb,official_record,True,20,0,20,0,0,0,snippet_only_no_fulltext,SNIPPET_ONLY,present=0 snippet=20 missing=0 extracted_artifacts=0
-tour,official_record,True,3,0,3,0,0,0,snippet_only_no_fulltext,SNIPPET_ONLY,present=0 snippet=3 missing=0 extracted_artifacts=0
-twelve_data,structured_signal,False,1,0,0,0,0,0,n/a_structured,STRUCTURED_NO_BODY_EXPECTED,structured schema collected
-yna,article_candidate,True,240,0,240,0,2,2,-,BODY_OK,present=0 snippet=240 missing=0 extracted_artifacts=2
-youtube,community_signal,True,3,0,3,0,0,0,snippet_only_no_fulltext,SNIPPET_ONLY,present=0 snippet=3 missing=0 extracted_artifacts=0
+source_id,record_type,content_type,body_expected,queue_records,body_present,body_snippet_only,body_missing,extracted_text_artifacts,body_success_total,primary_failure_mode,classification,notes
+aladin,official_record,catalog_metadata,False,3,0,3,0,0,3,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+aljazeera,article_candidate,article,True,50,0,50,0,2,2,-,BODY_OK,present=0 snippet=50 missing=0 extracted_artifacts=2
+alpha_vantage,structured_signal,structured,False,1,0,0,0,0,1,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+ap_news,article_candidate,article,True,284,0,284,0,10,10,-,BODY_OK,present=0 snippet=284 missing=0 extracted_artifacts=10
+bbc,article_candidate,article,True,100,0,100,0,6,6,-,BODY_OK,present=0 snippet=100 missing=0 extracted_artifacts=6
+binance_market,structured_signal,structured,False,1,0,0,0,0,1,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+cnbc,article_candidate,article,True,30,0,30,0,2,2,-,BODY_OK,present=0 snippet=30 missing=0 extracted_artifacts=2
+coinbase_market,structured_signal,structured,False,1,0,0,0,0,1,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+culture_info,official_record,detail,True,10,0,8,2,0,0,body_missing,BODY_MISSING,present=0 snippet=8 missing=2 extracted_artifacts=0
+exa,search_result,search,False,3,0,0,3,0,0,url_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
+federal_register,official_record,document,True,3,0,1,2,5,5,-,BODY_OK,present=0 snippet=1 missing=2 extracted_artifacts=5
+finnhub,structured_signal,structured,False,1,0,0,0,0,1,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+gnews,search_result,search,False,3,0,3,0,1,1,snippet_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
+google_trending_now,structured_signal,structured,False,1,0,0,0,0,1,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+hankyung,article_candidate,article,True,100,0,0,100,2,2,-,BODY_OK,present=0 snippet=0 missing=100 extracted_artifacts=2
+igdb,official_record,catalog_metadata,False,3,0,0,3,0,0,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+kofic,official_record,catalog_metadata,False,10,0,10,0,0,10,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+kopis,official_record,catalog_metadata,False,3,0,3,0,0,3,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+loword,structured_signal,structured,False,1,0,0,0,0,1,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+maekyung,article_candidate,article,True,100,0,97,3,2,2,-,BODY_OK,present=0 snippet=97 missing=3 extracted_artifacts=2
+naver_blog_search,search_result,search,False,3,0,3,0,0,0,snippet_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
+naver_news_search,search_result,search,False,3,0,3,0,0,0,snippet_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
+newsapi,search_result,search,False,2,0,2,0,10,10,snippet_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
+nyt,article_candidate,article,True,10,0,10,0,0,0,snippet_only_no_fulltext,SNIPPET_ONLY,present=0 snippet=10 missing=0 extracted_artifacts=0
+opendart,official_record,document,True,3,0,0,3,0,0,body_missing,BODY_MISSING,present=0 snippet=0 missing=3 extracted_artifacts=0
+product_hunt,community_signal,community,False,6,0,6,0,0,6,community_preview_signal,COMMUNITY_SIGNAL_OK,present=0 snippet=6 missing=0 extracted_artifacts=0
+sec_edgar,official_record,document,True,93,0,0,93,2,2,-,BODY_OK,present=0 snippet=0 missing=93 extracted_artifacts=2
+serper,search_result,search,False,3,0,3,0,1,1,snippet_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
+signal_bz,structured_signal,structured,False,1,0,0,0,0,1,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+tavily,search_result,search,False,3,0,3,0,0,0,snippet_only,URL_CANDIDATE_DOWNSTREAM_SEPARATE,url candidate; body fetched downstream
+techcrunch,article_candidate,article,True,60,0,60,0,2,2,-,BODY_OK,present=0 snippet=60 missing=0 extracted_artifacts=2
+the_verge,article_candidate,article,True,30,4,26,0,2,6,-,BODY_OK,present=4 snippet=26 missing=0 extracted_artifacts=2
+tmdb,official_record,catalog_metadata,False,20,0,20,0,0,20,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+tour,official_record,catalog_metadata,False,3,0,3,0,0,3,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+twelve_data,structured_signal,structured,False,1,0,0,0,0,1,n/a_metadata_complete,STRUCTURED_METADATA_COMPLETE,"catalog/structured metadata collected (summary=metadata_summary, not body)"
+yna,article_candidate,article,True,240,0,240,0,2,2,-,BODY_OK,present=0 snippet=240 missing=0 extracted_artifacts=2
+youtube,community_signal,community,False,3,0,3,0,0,3,community_preview_signal,COMMUNITY_SIGNAL_OK,present=0 snippet=3 missing=0 extracted_artifacts=0

@@ -77,6 +77,7 @@
 - Area: robots / ToS / legal
 - Description: robots는 allow이나 ToS 자동수집 적법성 UNVERIFIED.
 - Current mitigation: **수집/큐는 닫고 publish는 CommunityCorroborationGate로 봉인**(금융 익명 갤러리 internal_queue_only, 펌핑 제목 publish_blocked). PII 닉네임 미수집. "ToS verified" 사칭 없음.
+- DONE(2026-06-22 라이브 재검증): 공개 상세 **소량 산문 본문 추출 역량** 확인(`LIMITED_PUBLIC_BODY`, 보수적 필터 후 의미본문 1건). **역량≠적법** — 정책을 `docs/5_REFERENCE/DATA_POLICY.md §커뮤니티 공개 본문 수집`에 문서화(대량 수집/publish는 봉인 유지, 단일 갤러리 범위). 증거: `reports/dcinside_live_body_probe.md`.
 - Remaining gap: legal-safety-compliance-reviewer 검토.
 - Closure: 법무 검토 통과 → publish 게이트 해제 검토(04 T-IngD 전제).
 

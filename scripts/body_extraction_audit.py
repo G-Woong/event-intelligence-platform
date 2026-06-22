@@ -18,7 +18,15 @@ import json
 import collections
 from pathlib import Path
 
+from ingestion.orchestration.source_content_type import (
+    classify as content_classify,
+    content_type,
+    is_metadata_complete,
+)
+from ingestion.orchestration.source_profile import load_source_profiles
+
 _QUEUE = Path("ingestion/outputs/jsonl/production_event_queue.jsonl")
+_PROFILES = "ingestion/configs/source_profiles.yaml"
 _EXTRACTED = Path("ingestion/outputs/extracted_text")
 _OUT_CSV = Path("outputs/body_extraction_matrix.csv")
 _OUT_MD = Path("reports/orchestration_body_extraction_audit.md")
@@ -29,7 +37,7 @@ _URL_CANDIDATE_TYPES = {"search_result"}           # URL 후보형 — downstrea
 _BODY_TYPES = {"article_candidate", "official_record", "community_signal"}
 
 _COLUMNS = [
-    "source_id", "record_type", "body_expected", "queue_records",
+    "source_id", "record_type", "content_type", "body_expected", "queue_records",
     "body_present", "body_snippet_only", "body_missing", "extracted_text_artifacts",
     "body_success_total", "primary_failure_mode", "classification", "notes",
 ]
@@ -50,13 +58,23 @@ def _load_jsonl(path):
     return out
 
 
-def _classify(rtype, present, snippet, missing, extracted) -> tuple:
+def _classify(sid, source_group, rtype, present, snippet, missing, extracted) -> tuple:
+    """소스 콘텐츠 타입을 1차 기준으로 판정(사용자 기준). 카탈로그/구조화는 메타 수집 성공으로 본다."""
     body_success = present + extracted
+    # 1) 카탈로그형 메타데이터 API — snippet/overview=metadata_summary, 본문 미추출이 실패 아님.
+    if is_metadata_complete(sid, source_group):
+        # 메타/스키마 수집 자체가 성공. snippet/present를 metadata_summary로 집계.
+        collected = present + snippet + extracted + (1 if rtype == "structured_signal" else 0)
+        return "STRUCTURED_METADATA_COMPLETE", "n/a_metadata_complete", collected
+    # record_type 기반 보조(콘텐츠 타입이 매핑 안 된 경우)
     if rtype in _STRUCTURED_TYPES:
-        return "STRUCTURED_NO_BODY_EXPECTED", "n/a_structured", body_success
-    if rtype in _URL_CANDIDATE_TYPES:
+        return "STRUCTURED_METADATA_COMPLETE", "n/a_structured", body_success
+    if content_type(sid, source_group) == "search" or rtype in _URL_CANDIDATE_TYPES:
         return "URL_CANDIDATE_DOWNSTREAM_SEPARATE", ("snippet_only" if snippet else "url_only"), body_success
-    # body 기대형
+    # community/list — preview/snippet 자체가 community signal(conditional). 본문 실패로 치지 않음.
+    if content_type(sid, source_group) == "community" or rtype == "community_signal":
+        return "COMMUNITY_SIGNAL_OK", "community_preview_signal", (present + snippet + extracted)
+    # 2) 실제 산문 본문 기대형(article/document/detail)
     if body_success > 0:
         return "BODY_OK", "-", body_success
     if snippet > 0 and missing == 0:
@@ -68,6 +86,11 @@ def _classify(rtype, present, snippet, missing, extracted) -> tuple:
 
 def build() -> dict:
     queue = _load_jsonl(_QUEUE)
+    # source_id → source_group(콘텐츠 타입 판정 입력)
+    try:
+        group_by_src = {p.source_id: p.source_group for p in load_source_profiles(_PROFILES)}
+    except Exception:
+        group_by_src = {}
     # (source_id, record_type) → body_state Counter
     grid = collections.defaultdict(collections.Counter)
     for r in queue:
@@ -80,6 +103,8 @@ def build() -> dict:
 
     rows = []
     for (sid, rtype), bs in sorted(grid.items()):
+        grp = group_by_src.get(sid)
+        ctype = content_type(sid, grp)
         present = bs.get("present", 0)
         snippet = bs.get("snippet_only", 0)
         missing = bs.get("missing", 0)
@@ -87,17 +112,20 @@ def build() -> dict:
                                                            "community_signal", "economic_indicator",
                                                            "energy_price", "weather_observation"))
         ex = extracted.get(sid, 0)
-        body_expected = rtype in _BODY_TYPES
-        classification, fail, body_success = _classify(rtype, present, snippet, missing, ex)
+        from ingestion.orchestration.source_content_type import body_expected as _be
+        be = _be(sid, grp)
+        classification, fail, body_success = _classify(sid, grp, rtype, present, snippet, missing, ex)
         total = present + snippet + missing + structured
         rows.append({
-            "source_id": sid, "record_type": rtype, "body_expected": body_expected,
+            "source_id": sid, "record_type": rtype, "content_type": ctype, "body_expected": be,
             "queue_records": total, "body_present": present, "body_snippet_only": snippet,
             "body_missing": missing, "extracted_text_artifacts": ex,
             "body_success_total": body_success, "primary_failure_mode": fail,
             "classification": classification,
-            "notes": ("structured schema collected" if classification == "STRUCTURED_NO_BODY_EXPECTED"
-                      else ("url candidate; body fetched downstream" if classification == "URL_CANDIDATE_DOWNSTREAM_SEPARATE"
+            "notes": ("catalog/structured metadata collected (summary=metadata_summary, not body)"
+                      if classification == "STRUCTURED_METADATA_COMPLETE"
+                      else ("url candidate; body fetched downstream"
+                            if classification == "URL_CANDIDATE_DOWNSTREAM_SEPARATE"
                             else f"present={present} snippet={snippet} missing={missing} extracted_artifacts={ex}")),
         })
     # extracted_text만 있고 queue엔 없는 소스(본문 추출 레이어 전용 실적)도 보고
@@ -117,17 +145,20 @@ def _md(data: dict) -> str:
         f"- (source, record_type) rows: {len(rows)} · classification: {data['class_counts']}",
         f"- extracted_text artifacts total: {data['extracted_total']}",
         "",
-        "## 판정 규칙",
-        "- article_candidate/official_record/community_signal → 본문 기대(present/extracted=성공, snippet_only/missing=미달)",
-        "- search_result → URL 후보형(downstream body fetch 별도, snippet_only는 설계상 정상)",
-        "- structured_signal(numeric/trend) → 본문 비대상(schema/record 수집 성공으로 판정)",
+        "## 판정 규칙 (콘텐츠 타입 기준 — source_content_type)",
+        "- article/document/detail(예: bbc·nyt·opendart·culture_info) → body_expected=true(산문 본문 추출 대상)",
+        "- catalog/metadata API(aladin·tmdb·kofic·kopis·tour·igdb) → **metadata_complete**: summary/overview=metadata_summary, "
+        "본문 미추출이 실패 아님(STRUCTURED_METADATA_COMPLETE)",
+        "- search API → URL 후보형(downstream body fetch 별도)",
+        "- community/list → conditional(corroboration 후 판단)",
+        "- structured/numeric → schema 수집 자체가 성공",
         "",
-        "| source | record_type | body_exp | queue | present | snippet | missing | extracted | success | class |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "| source | record_type | content_type | body_exp | queue | present | snippet | missing | extracted | success | class |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for r in sorted(rows, key=lambda x: (-x["queue_records"], x["source_id"])):
         lines.append(
-            f"| {r['source_id']} | {r['record_type']} | {r['body_expected']} | {r['queue_records']} "
+            f"| {r['source_id']} | {r['record_type']} | {r['content_type']} | {r['body_expected']} | {r['queue_records']} "
             f"| {r['body_present']} | {r['body_snippet_only']} | {r['body_missing']} "
             f"| {r['extracted_text_artifacts']} | {r['body_success_total']} | {r['classification']} |")
     if data["extracted_only"]:
@@ -138,10 +169,11 @@ def _md(data: dict) -> str:
     lines += [
         "",
         "## 핵심 결론(소스별 분리, 뭉뚱그리지 않음)",
-        "- 대부분 article_candidate는 **snippet_only**(RSS/검색 메타) — EventQueue 레이어는 URL+요약을 싣고, "
-        "전문은 **extracted_text/ 본문 추출 레이어**가 별도 적재(둔갑 아님). 두 레이어를 분리 집계.",
-        "- structured_signal은 본문 비대상 — numeric/trend schema 수집 자체가 성공(missing을 실패로 치지 않음).",
-        "- search_result는 URL 후보 확보가 1차 성공, 본문은 downstream 기사 fetch에서 별도 판정.",
+        "- **카탈로그형(aladin·tmdb·kofic·kopis·tour·igdb)은 본문 미추출이 아니라 구조화 메타데이터 수집 성공**"
+        "(STRUCTURED_METADATA_COMPLETE) — 별도 산문 본문이 없으므로 BODY_MISSING/SNIPPET_ONLY 실패로 치지 않음.",
+        "- article(bbc/ap_news 등)은 EventQueue에 URL+요약(snippet)을 싣고 전문은 extracted_text/ 별도 레이어 적재.",
+        "- **body ladder 연결 대상은 산문형(nyt·opendart·culture_info)만** — body_ladder_probe로 별도 검증.",
+        "- search는 URL 후보 확보가 1차 성공, 본문은 downstream 별도. structured/numeric은 schema 수집이 성공.",
         "",
         "## Security",
         "본문 전문은 보고서에 미포함(아티팩트 카운트/상태만). API 키/토큰 값 없음.",
