@@ -157,11 +157,11 @@ Analyzer: standard (기본). 한국어 nori는 STEP 010+ TODO.
 
 ---
 
-# Part 2 — Event 타임라인 모델 (🔲 설계/ROADMAP, 미구현)
+# Part 2 — Event 타임라인 모델 (🟡 S1 토대 구현됨 / S2~ 설계)
 
-> ⚠️ **상태 배너:** 아래 §Event ~ §Config 는 **미구현 설계 스키마**다(events/event_updates/entities 테이블·alembic 0004~0007 부재). 위 Part 1(RawEvent/NormalizedEvent/FinalEventCard/raw_events/Comment)만 현재 DB 사실이다. 권위: 결정=`_DECISIONS/2026-06.md` ADR#16, 구현스펙=`2_ROADMAP/19`, 위험=`_RISK`(R-EventModelMigration/R-FalseMerge). 모든 신규 컬럼 nullable, 마이그레이션 additive(downgrade 제공). **1517 green + 정합성 불변식**이 무조건 acceptance. **S1 스코프(alembic 0004, 2026-06-22 확정) = events / event_updates / event_cards.event_id FK 만**(최소 토대); cluster_event_map/event_links는 S2, entities 등은 S4~ 별도 migration으로 이월(경계 = `19 §2.2`).
+> ⚠️ **상태 배너:** **§Event / §EventUpdate / §event_cards 의미 전환은 ✅ S1 구현됨**(events/event_updates 테이블 + event_cards.event_id nullable FK + alembic 0004, 2026-06-22 turn8 · `backend/app/models/event_timeline.py` + 회귀 17). 아래 §Entity ~ §Config(entities/cluster_event_map/event_links/EvidenceNode 등) + alembic 0005~0007 은 **S2~ 미구현 설계**다. Part 1(RawEvent/NormalizedEvent/FinalEventCard/raw_events/Comment)도 현재 DB 사실이다. 권위: 결정=`_DECISIONS/2026-06.md` ADR#16, 구현스펙=`2_ROADMAP/19`, 위험=`_RISK`(R-EventModelMigration/R-FalseMerge). 모든 신규 컬럼 nullable, 마이그레이션 additive(downgrade 제공). **1517 green + 정합성 불변식**이 무조건 acceptance. **S1 스코프(alembic 0004, 2026-06-22 확정) = events / event_updates / event_cards.event_id FK 만**(최소 토대); cluster_event_map/event_links는 S2, entities 등은 S4~ 별도 migration으로 이월(경계 = `19 §2.2`).
 
-## Event (events 테이블 — 안정 주제, ADR#16 / SPEC §1.1)
+## Event (events 테이블 — ✅ 구현됨 S1, 안정 주제, ADR#16 / SPEC §1.1)
 
 | 컬럼 | 타입 | NULL | 기본 | 설명 |
 |---|---|---|---|---|
@@ -179,7 +179,7 @@ Analyzer: standard (기본). 한국어 nori는 STEP 010+ TODO.
 
 인덱스: `heat DESC`, `status`, `last_update_at DESC`, `domains` GIN, `first_seen_at`.
 
-## EventUpdate (event_updates 테이블 — **append-only** 변화분, SPEC §1.2)
+## EventUpdate (event_updates 테이블 — ✅ 구현됨 S1, **append-only** 변화분, SPEC §1.2)
 
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|

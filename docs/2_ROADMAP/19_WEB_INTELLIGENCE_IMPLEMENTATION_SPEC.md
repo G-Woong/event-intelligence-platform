@@ -1,10 +1,10 @@
 # 19 — WEB INTELLIGENCE IMPLEMENTATION SPEC (5대 신규자산 구현 청사진)
 
 > ┌─ 진행상황 식별 (STATUS STAMP) ──────────────────────────
-> │ **상태:** 🔲 NOT_DONE (NET-NEW) — 설계 청사진(≠ 최종코드). event_resolver/expansion_router/agent_debate/alembic 0004~0007 전부 부재.
+> │ **상태:** 🟡 PARTIAL — **S1 토대 구현됨**(events/event_updates + event_cards.event_id FK + alembic 0004 + ORM/Pydantic + 회귀 17, 2026-06-22 turn8). event_resolver/expansion_router/agent_debate/alembic 0005~0007 부재(S2~).
 > │ **구현순위:** #17 (00_ROADMAP_INDEX) · **그룹:** D (신규 NET-NEW)
 > │ **검증 근거:** GroundTruth — 해당 모듈 ls 실패·grep 0건. comment.py debate컬럼 0.
-> │ **잔여(미구현):** S1~S11 전부. 권장순서 S1→S5→S2/S3→S4→S7→S8→S9→S10→S11.
+> │ **잔여(미구현):** S2~S11(**S1 토대 완료** 2026-06-22). 권장순서 (S1✓)→S5/S1.5→S2/S3→S4→S7→S8→S9→S10→S11.
 > │ **완료정의(DoD):** S1~S11 각 DoD(SPEC §20) + 6대 무조건게이트(1517green/secret scan/git diff clean/우회0/투자조언0/전문저장0).
 > │ **권위:** 구현 사실은 `_CANONICAL/*`. 본 문서는 ROADMAP(미래계획).
 > └────────────────────────────────────────────────────────
@@ -847,7 +847,7 @@ def gate_ok(utterance):
   downgrade: drop 5 columns
 ```
 - **원칙:** 모든 신규 컬럼 nullable 또는 server_default → 기존 행 무영향. 모든 마이그레이션 downgrade 제공.
-- **GroundTruth:** 현재 alembic 0004~0007 **부재**(미구현). 위는 작성 스케치다.
+- **GroundTruth:** alembic **0004 구현됨**(S1: events/event_updates/event_cards.event_id, 2026-06-22). 0005~0007 **부재**(S2~). 위는 0005~ 작성 스케치다.
 
 ## §23. 설정 키 (`.env.example`에 추가 제안, 빈값=DEFAULT 계약)
 

@@ -71,6 +71,12 @@
 - 잔여 취약성(감사 N-1/N-4): ① 신규 카탈로그 소스는 `_CATALOG`(`source_content_type.py`)에 등록 필수 — 누락 시 source_group="domain"→article 기본으로 거짓 음성(body ladder 헛돌이). ② 게이트가 활성화되면 STRUCTURED_SIGNAL_REDUCE가 `still_not_ready`로 집계돼 "metadata_complete인데 not_ready" 표기 모순 — monitoring에 `metadata_complete_holdover` 별도 카테고리 분리 권고.
 - Closure: 카탈로그가 실제 BODY_FETCH 경로를 받는 시나리오에서 게이트 라이브 트리거 1건 관찰(거짓 음성 0) + 표기 분리 시 종결. 트리거 경로 영구 부재로 확인되면 "가드레일"로 정직 문서화 후 partial-closed.
 
+### R-EventTimelineS2Hardening · S1 Event 토대의 S2 이전 확정 필요 항목  — Severity: LOW (신규 2026-06-22, S1 적대 감사 N5/N6 + legal 조건부)
+- Area: data-model / Event 타임라인
+- Description: S1(events/event_updates/event_cards.event_id nullable FK)은 비파괴·정합(architecture SOUND·게이트 1451 green·회귀 0)이나, S2(Event Resolution + CRUD 서비스) 착수 전에 확정할 정책 항목이 적대/법무 감사에서 식별됨.
+- 잔여(S2 전 확정): ① `event_updates.event_id` ON DELETE CASCADE vs "append-only 감사 로그" 의도 긴장 — Event 삭제 시 변화분 통째 삭제(감사 목적이면 RESTRICT/soft-delete 검토, N5). ② Event/EventUpdate Pydantic↔ORM 경계의 tz-naive datetime·str↔UUID 방어 부재(카드 변환엔 있으나 Event엔 미구현 — S2 CRUD 변환 시 동반, N6). ③ `is_snapshot_bidirectional`은 app-level 헬퍼(DB 트리거/CHECK 아님)이며 현재 호출처 0(테스트뿐) — S2 이중쓰기 경로에서 실제 호출·강제 필요. ④ `evidence`/`source_refs`(자유 JSONB)를 채우는 ingestion/요약 단계에서 "전문 미저장·URL/요약만 + PII 가드"(legal 조건부 메모).
+- Closure: S2 Event Resolution/CRUD 서비스에서 ①~④ 정책 확정 + 이중쓰기 경로가 is_snapshot_bidirectional 강제 + tz/UUID 변환 방어 추가 시 종결.
+
 ### R-Gdelt429 · gdelt provider 429  — Severity: MEDIUM
 - Area: rate-limit / cooldown / retry
 - Description: provider가 429 반환. 우회 불가(정책상 금지).

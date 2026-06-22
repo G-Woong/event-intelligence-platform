@@ -33,14 +33,15 @@ heartbeat 파일 healthcheck(worker/agent-worker, 60s 임계).
 | themes / sectors | **PARTIAL** | 스켈레톤 자료 |
 | comments / ai_replies | **PARTIAL** | 미완성 |
 
-## 4. 데이터 스키마 (Postgres, alembic 0001~0003)
+## 4. 데이터 스키마 (Postgres, alembic 0001~0004)
 
 - **raw_events**: source_type/name, external_id, url, title(≤1024), raw_text(요약만, 본문 저장 금지),
   published_at(UTC), feed metadata JSONB, status(collected→enqueued→processed|failed),
   content_hash UNIQUE, event_card_id FK, requeue_count. (`backend/app/models/raw_event.py`)
 - **event_cards**: id/title/summary/theme/sectors(JSONB)/entities(JSONB)/impact_path/evidence/
-  confidence_score/status/llm_provider/model_used/created_at. (`backend/app/models/event.py`)
-- **comments**: 스켈레톤. **0004 body_text** 마이그레이션은 미생성(필요 시).
+  confidence_score/status/llm_provider/model_used/created_at + **event_id nullable FK→events**(S1, ADR#16: 카드=Event 스냅샷, NULL=degenerate). (`backend/app/models/event.py`)
+- **events / event_updates** (S1 토대, alembic 0004, 2026-06-22): `events`(canonical_title/status/first_seen/last_update/heat/domains·tags·primary_entity_ids JSONB/snapshot_card_id FK→event_cards) + `event_updates`(append-only: observed_at/delta_summary/evidence·source_refs·added_domains JSONB/heat_delta, event_id FK→events CASCADE). (`backend/app/models/event_timeline.py`) — cluster_event_map/event_links/entities는 S2~ 미생성.
+- **comments**: 스켈레톤. comment body_text 마이그레이션은 미생성(필요 시). (0004 번호는 event_timeline 에 할당됨)
 
 ## 5. 검색·RAG (3엔진 분리)
 

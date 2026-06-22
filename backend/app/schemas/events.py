@@ -39,6 +39,40 @@ class FinalEventCard(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+class Event(BaseModel):
+    """Event 타임라인 토대 — 안정 주제(사건). EVENT_SCHEMA Part 2 §Event / SPEC §1.4.
+
+    카드(FinalEventCard)는 이 Event 의 '현재 스냅샷 뷰'. cluster_event_map/event_links 는 S2.
+    """
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    canonical_title: str
+    status: Literal["active", "dormant", "closed"] = "active"
+    first_seen_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_update_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    heat: float = 0.0
+    domains: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    primary_entity_ids: list[str] = Field(default_factory=list)
+    snapshot_card_id: Optional[str] = None
+
+
+class EventUpdate(BaseModel):
+    """append-only 변화분. EVENT_SCHEMA Part 2 §EventUpdate / SPEC §1.4.
+
+    evidence 는 §8 EvidenceNode 구조화 이전까지 자유 JSONB(list[dict]) 로 둔다(S8 에서 승격).
+    """
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    event_id: str
+    observed_at: datetime
+    delta_summary: str
+    evidence: list[dict] = Field(default_factory=list)
+    added_domains: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+    heat_delta: float = 0.0
+
+
 class EventSearchHit(BaseModel):
     card_id: str
     id: str

@@ -78,7 +78,7 @@
 | 순위 | 파일 | 상태 | 한 줄 |
 |---|---|---|---|
 | 16 | **17_AUTHORITY_DISCOVERY_AND_SLM_BODY_FALLBACK** | 🔲 NOT_DONE (NET-NEW) | Entity Registry·Authority Source Graph·Sitemap·Change Detection·SLM Body Fallback |
-| 17 | **19_WEB_INTELLIGENCE_IMPLEMENTATION_SPEC** | 🔲 NOT_DONE (NET-NEW) | Event Resolution·LLM Expansion Router·Evidence Graph·Agent Debate (스키마·의사코드·단계 S1~S11) |
+| 17 | **19_WEB_INTELLIGENCE_IMPLEMENTATION_SPEC** | 🟡 PARTIAL (S1 토대 구현) | **S1 Event 토대 구현됨**(events/event_updates/event_cards.event_id + alembic 0004, 2026-06-22). Event Resolution·Expansion·Evidence Graph·Agent Debate(S2~S11) 미구현 |
 
 ---
 
@@ -104,7 +104,7 @@
 ```
 S1  Event/Update 타임라인 토대 ───────────────────────[최우선·임계경로 합류점]
     (events/event_updates + event_cards.event_id nullable FK — 최소 토대; cluster_event_map/event_links는 S2 이월)
-    │   파일: 19(스펙)+EVENT_SCHEMA(DDL)+12(개정). alembic 0004. 1517 green 무조건.
+    │   파일: 19(스펙)+EVENT_SCHEMA(DDL)+12(개정). alembic 0004. **토대 ✅ 구현 2026-06-22**(backend ORM/Pydantic+회귀 17, 1451 green); S2=Resolution.
     ├─ S1.5 Change Detection (read-only: ETag/Last-Modified/norm_hash→SKIP verdict)  ◄ 동시 착수 권장
     │       (비용 지렛대를 후속보다 먼저 켜야 S2~S6 폭주 방지 — orchestrator 인사이트 #4)
     ▼

@@ -1,10 +1,10 @@
 # 15 — IMPLEMENTATION ROADMAP (Phase 0~10 + Event 토대 + Agent Debate)
 
 > ┌─ 진행상황 식별 (STATUS STAMP) ──────────────────────────
-> │ **상태:** 🟡 PARTIAL — **Phase 0 DONE / Phase 1–3 PARTIAL DONE / Phase 4–10 NOT_DONE.** 신규 Event 토대(S1)·Agent Debate Phase는 코드 0(설계).
+> │ **상태:** 🟡 PARTIAL — **Phase 0 DONE / Phase 1–3 PARTIAL DONE / Phase 4–10 NOT_DONE.** **Event 토대(S1)는 토대 구현 완료**(alembic 0004 + events/event_updates ORM/Pydantic + 회귀 17, 2026-06-22; resolution=S2 잔여). Agent Debate Phase는 코드 0(설계).
 > │ **구현순위:** #4 (00_ROADMAP_INDEX) · **그룹:** A
 > │ **검증 근거:** Phase1(`ingestion/integration/` BackendApiRawEventsWriter, 라이브 e2e 5타입)·Phase2(`event_queue.py` `_redis_*`, `workers/queue/dlq.py`)·Phase3(`evidence_check`·`publish_or_hold` fail-closed, `agents/nodes/baselines.py`)는 `_CANONICAL/01·04·09`가 권위. Phase4–10·S1·Agent Debate는 grep 0(미배선).
-> │ **잔여(미구현):** S1(events/event_updates + event_cards.event_id nullable FK + alembic 0004 — **최소 토대**; cluster_event_map/event_links는 S2 이월), Phase4(tiered+budget+gate+ChangeDetection), Phase5/7(Event/Update+heat+FSD), Phase6(P/G/F+unsafe gate+audit+유형→role), Phase8(EvidenceNode), Phase9(트래픽KPI+광고4종+커뮤니티), Agent Debate Phase.
+> │ **잔여(미구현):** **S1 토대 ✅ 구현**(events/event_updates + event_cards.event_id FK + alembic 0004, 2026-06-22); S2(cluster_event_map/event_links + Event Resolution/CRUD/heat/FSD), Phase4(tiered+budget+gate+ChangeDetection), Phase5/7(Event/Update+heat+FSD), Phase6(P/G/F+unsafe gate+audit+유형→role), Phase8(EvidenceNode), Phase9(트래픽KPI+광고4종+커뮤니티), Agent Debate Phase.
 > │ **완료정의(DoD):** 각 Phase Acceptance 충족 + 전단계 1517 green 유지 + 우회 0·전문저장 0·투자조언 0.
 > │ **권위:** 구현 사실은 `_CANONICAL/*`(본 문서보다 최신). 결정 = `_DECISIONS/2026-06.md` ADR#14/#15/#16. 본 문서는 ROADMAP(미래계획).
 > └────────────────────────────────────────────────────────
@@ -21,7 +21,7 @@
 [PARTIAL] P0  ingestion 57소스 엔진 → 실 raw_events Postgres 배선 (mirror→DB; ap_news 라이브 E2E)
 [PARTIAL] P1  Redis Stream/DLQ/retry/monitoring 실배선 + mock 노드 결정론분 baseline화
 [PARTIAL] P3  published 게이트 fail-closed (evidence_check·publish_or_hold) — dedup/clustering 잔여
-[NOT_DONE] S1  ★Event/Update 타임라인 토대★ (임계경로 최상위, ADR#16 — 아래 Phase 'Event 토대' 참조)
+[PARTIAL ] S1  ★Event/Update 타임라인 토대★ (토대 구현 2026-06-22: alembic 0004+ORM+회귀; resolution=S2 잔여, ADR#16)
 [NOT_DONE] P4  Search API expansion layer (tiered 무료→유료 + per-event/월 budget + ChangeDetection)
 [NOT_DONE] P5  hybrid search + reranker + nori (indexing)
 [NOT_DONE] P6  LLM SourceSupervisor 실 provider 연결 (P/G/F + unsafe gate + audit + 사건유형→role)
@@ -66,8 +66,9 @@
 - **방향 전환(ADR#16):** `cross_source_dedup` 출력을 **카드 dedup이 아니라 Event append로 라우팅**한다(아래 Event 토대 Phase 의존). 2번째 보도 → 새 카드 아님, 기존 Event에 Update append. **R-FalseMerge:** Union-Find transitive 오염이 영속 Event로 전파되지 않도록 **clique 게이트** 필수(약신호 edge가 끌어온 멤버 자동승격 금지).
 - Acceptance: end-to-end 카드 1건 **실데이터 콘텐츠** 생성(현재는 배관+노출게이트만, 알맹이 mock), cluster purity≥0.8, leakage<10%, **transitive-only 클러스터 자동승격 0**. Complexity: 상.
 
-## Phase Event 토대 (S1) — **Event/Update 타임라인 토대 [임계경로 최우선·NOT_DONE]** (ADR#16)
+## Phase Event 토대 (S1) — **Event/Update 타임라인 토대 [임계경로 최우선·토대 PARTIAL DONE 2026-06-22]** (ADR#16)
 - Goal: 사건을 1회성 카드 → **진화하는 Event 타임라인 객체**로. 카드 = Event의 최신 스냅샷 뷰로 재정의(비파괴).
+- **구현 현황(2026-06-22 turn8):** 토대 ✅ — alembic 0004(additive+downgrade) + EventORM/EventUpdateORM + Event/EventUpdate Pydantic + is_snapshot_bidirectional 불변식 + 회귀 17(형상/DDL/정합성). 측정 게이트 backend+ingestion **1451 green**. **잔여(S2): Event append E2E · 3엔진 card_id 정합성 라이브 · CRUD 서비스 · 실 Postgres migration up/down.**
 - **S1 스코프(최소 토대, 2026-06-22 확정):** `events`(canonical_title/status/first_seen/last_update/heat/domains/tags/primary_entity_ids/snapshot_card_id) +
   `event_updates`(append-only: observed_at/delta_summary/evidence/added_domains/source_refs/heat_delta) +
   `event_cards.event_id` nullable FK. domains = 닫힌 8섹터 → **열린 2층(통제어휘 ~20 + free-form tags)**. heat = 시계열 활성도(half-life 감쇠).
