@@ -6,6 +6,7 @@ from ingestion.orchestration.rescue_router import (
     DISABLE_LOW_VALUE,
     POLICY_BLOCK_NO_BYPASS,
     SOURCE_ADAPTER_FIX,
+    STRUCTURED_SIGNAL_REDUCE,
     VENDOR_ROUTE_FIX,
     decide_rescue,
     route_all,
@@ -71,6 +72,20 @@ def test_source_value_not_overridden_by_vendor_route():
     # 만약 vendor route가 있어도 SOURCE_VALUE/POLICY는 disable/policy 우선(억지로 살리지 않음)
     d = decide_rescue(_gap("its", SOURCE_VALUE))
     assert d.rescue_strategy != VENDOR_ROUTE_FIX
+
+
+def test_catalog_body_fetch_reduces_to_structured_signal():
+    # source_content_type 라이브 배선: 카탈로그 메타데이터 소스(tmdb)가 BODY_FETCH로 분류돼도
+    # 산문 본문이 없으므로 body ladder가 아니라 structured_signal_reduce로(메타 완성, 본문 실패 아님).
+    d = decide_rescue(_gap("tmdb", BODY_FETCH))
+    assert d.rescue_strategy == STRUCTURED_SIGNAL_REDUCE
+    assert d.reason == "metadata_complete_no_prose_body"
+
+
+def test_article_body_fetch_still_uses_body_ladder():
+    # 산문형(cnbc=article)은 그대로 body ladder(게이트가 진짜 기사 본문 추출을 막지 않음).
+    d = decide_rescue(_gap("cnbc", BODY_FETCH))
+    assert d.rescue_strategy == BODY_LADDER_FETCH
 
 
 def test_route_all_batch():

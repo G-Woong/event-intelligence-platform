@@ -24,6 +24,7 @@ from ingestion.orchestration.source_readiness_closure import (
     SOURCE_VALUE,
     TIME_ANCHOR,
 )
+from ingestion.orchestration.source_content_type import body_ladder_eligible
 
 # rescue strategy 식별자
 VENDOR_ROUTE_FIX = "vendor_route_fix"
@@ -70,6 +71,12 @@ def decide_rescue(gap) -> RescueDecision:
     sid = gap.source_id
     strategy = _LAYER_TO_STRATEGY.get(gap.blocking_layer, MANUAL_REVIEW)
 
+    # 콘텐츠 타입 게이트(source_content_type 라이브 배선): BODY_FETCH로 분류됐어도 산문 본문이
+    # 없는 소스(카탈로그 메타데이터/구조화/검색)는 body ladder가 헛돈다 — 메타가 곧 완성 record다.
+    # body_ladder_eligible=False면 structured_signal_reduce로(본문 추출 실패가 아니라 본문 비대상).
+    if strategy == BODY_LADDER_FETCH and not body_ladder_eligible(sid, gap.source_group):
+        strategy = STRUCTURED_SIGNAL_REDUCE
+
     # vendor route가 있는 source는 우회 없이 공식 route로 해결(API_ROUTE/PARAMS/RATE_LIMIT 포함).
     # 단 정책 차단/서비스 가치 없음(disable)은 vendor route보다 우선(억지로 살리지 않음).
     from ingestion.orchestration.vendor_api_routes import has_vendor_route
@@ -85,6 +92,8 @@ def decide_rescue(gap) -> RescueDecision:
     elif strategy == MANUAL_REVIEW:
         allowed = False
         reason = "no_automatic_rescue_path"
+    elif strategy == STRUCTURED_SIGNAL_REDUCE:
+        reason = "metadata_complete_no_prose_body"
 
     return RescueDecision(
         source_id=sid, previous_status=gap.previous_status,

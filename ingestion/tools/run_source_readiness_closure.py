@@ -38,6 +38,7 @@ from ingestion.orchestration.rescue_router import (
     POLICY_BLOCK_NO_BYPASS,
     RATE_LIMIT_COOLDOWN_PROBE,
     SOURCE_ADAPTER_FIX,
+    STRUCTURED_SIGNAL_REDUCE,
     VENDOR_ROUTE_FIX,
     route_all,
 )
@@ -150,6 +151,11 @@ def _execute_rescue(gap, decision, *, vendor_fetch, body_rescue, gdelt_probe, no
         patch = vd.profile_patch if vd else {"enabled": False, "profile_status": "disabled"}
         return RescueOutcome(sid, strat, True, profile_patch=patch,
                              note=(vd.rationale if vd else "disabled"))
+
+    if strat == STRUCTURED_SIGNAL_REDUCE:
+        # 카탈로그/구조화 소스: 산문 본문 없음 → body ladder 미적용(source_content_type 게이트).
+        # 메타데이터가 곧 완성 record지만 이번 run live 검증이 없으므로 promote는 안 함(둔갑 금지).
+        return RescueOutcome(sid, strat, False, note="metadata_complete_body_not_applicable")
 
     return RescueOutcome(sid, strat, False, note="no_rescue_path")
 

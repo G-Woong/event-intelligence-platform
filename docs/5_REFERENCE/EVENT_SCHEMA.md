@@ -159,7 +159,7 @@ Analyzer: standard (기본). 한국어 nori는 STEP 010+ TODO.
 
 # Part 2 — Event 타임라인 모델 (🔲 설계/ROADMAP, 미구현)
 
-> ⚠️ **상태 배너:** 아래 §Event ~ §Config 는 **미구현 설계 스키마**다(events/event_updates/entities 테이블·alembic 0004~0007 부재). 위 Part 1(RawEvent/NormalizedEvent/FinalEventCard/raw_events/Comment)만 현재 DB 사실이다. 권위: 결정=`_DECISIONS/2026-06.md` ADR#16, 구현스펙=`2_ROADMAP/19`, 위험=`_RISK`(R-EventModelMigration/R-FalseMerge). 모든 신규 컬럼 nullable, 마이그레이션 additive(downgrade 제공). **1517 green + 정합성 불변식**이 무조건 acceptance.
+> ⚠️ **상태 배너:** 아래 §Event ~ §Config 는 **미구현 설계 스키마**다(events/event_updates/entities 테이블·alembic 0004~0007 부재). 위 Part 1(RawEvent/NormalizedEvent/FinalEventCard/raw_events/Comment)만 현재 DB 사실이다. 권위: 결정=`_DECISIONS/2026-06.md` ADR#16, 구현스펙=`2_ROADMAP/19`, 위험=`_RISK`(R-EventModelMigration/R-FalseMerge). 모든 신규 컬럼 nullable, 마이그레이션 additive(downgrade 제공). **1517 green + 정합성 불변식**이 무조건 acceptance. **S1 스코프(alembic 0004, 2026-06-22 확정) = events / event_updates / event_cards.event_id FK 만**(최소 토대); cluster_event_map/event_links는 S2, entities 등은 S4~ 별도 migration으로 이월(경계 = `19 §2.2`).
 
 ## Event (events 테이블 — 안정 주제, ADR#16 / SPEC §1.1)
 
@@ -199,7 +199,9 @@ Analyzer: standard (기본). 한국어 nori는 STEP 010+ TODO.
 - 기존 컬럼 전부 유지. **추가만**: `event_id UUID NULL` (FK → events.id).
 - 의미: 카드 = "특정 Event의 한 스냅샷". `event_id` NULL인 기존 카드 = Event 1개짜리 degenerate case(정상 동작).
 
-## cluster_event_map / event_links (SPEC §2.2)
+## cluster_event_map / event_links (SPEC §2.2 — **S2 이월: alembic 0004/S1 아님**)
+
+> ⚠️ 아래 두 테이블은 **S1(0004) 범위가 아니다.** Event Resolution(S2)에서 cluster→event 라우팅·약신호 링크 요구가 확정될 때 별도 migration으로 생성한다(2026-06-22 스코프 확정). S1은 events/event_updates/event_cards.event_id FK만.
 
 | cluster_event_map | 타입 | 설명 |
 |---|---|---|

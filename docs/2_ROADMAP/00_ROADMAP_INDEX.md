@@ -103,7 +103,7 @@
 
 ```
 S1  Event/Update 타임라인 토대 ───────────────────────[최우선·임계경로 합류점]
-    (events/event_updates/cluster_event_map/event_links + event_cards.event_id nullable FK)
+    (events/event_updates + event_cards.event_id nullable FK — 최소 토대; cluster_event_map/event_links는 S2 이월)
     │   파일: 19(스펙)+EVENT_SCHEMA(DDL)+12(개정). alembic 0004. 1517 green 무조건.
     ├─ S1.5 Change Detection (read-only: ETag/Last-Modified/norm_hash→SKIP verdict)  ◄ 동시 착수 권장
     │       (비용 지렛대를 후속보다 먼저 켜야 S2~S6 폭주 방지 — orchestrator 인사이트 #4)

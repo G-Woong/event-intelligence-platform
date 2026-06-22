@@ -4,7 +4,7 @@
 > │ **상태:** 🟡 PARTIAL — **Phase 0 DONE / Phase 1–3 PARTIAL DONE / Phase 4–10 NOT_DONE.** 신규 Event 토대(S1)·Agent Debate Phase는 코드 0(설계).
 > │ **구현순위:** #4 (00_ROADMAP_INDEX) · **그룹:** A
 > │ **검증 근거:** Phase1(`ingestion/integration/` BackendApiRawEventsWriter, 라이브 e2e 5타입)·Phase2(`event_queue.py` `_redis_*`, `workers/queue/dlq.py`)·Phase3(`evidence_check`·`publish_or_hold` fail-closed, `agents/nodes/baselines.py`)는 `_CANONICAL/01·04·09`가 권위. Phase4–10·S1·Agent Debate는 grep 0(미배선).
-> │ **잔여(미구현):** S1(events/event_updates/cluster_event_map/event_links + alembic 0004), Phase4(tiered+budget+gate+ChangeDetection), Phase5/7(Event/Update+heat+FSD), Phase6(P/G/F+unsafe gate+audit+유형→role), Phase8(EvidenceNode), Phase9(트래픽KPI+광고4종+커뮤니티), Agent Debate Phase.
+> │ **잔여(미구현):** S1(events/event_updates + event_cards.event_id nullable FK + alembic 0004 — **최소 토대**; cluster_event_map/event_links는 S2 이월), Phase4(tiered+budget+gate+ChangeDetection), Phase5/7(Event/Update+heat+FSD), Phase6(P/G/F+unsafe gate+audit+유형→role), Phase8(EvidenceNode), Phase9(트래픽KPI+광고4종+커뮤니티), Agent Debate Phase.
 > │ **완료정의(DoD):** 각 Phase Acceptance 충족 + 전단계 1517 green 유지 + 우회 0·전문저장 0·투자조언 0.
 > │ **권위:** 구현 사실은 `_CANONICAL/*`(본 문서보다 최신). 결정 = `_DECISIONS/2026-06.md` ADR#14/#15/#16. 본 문서는 ROADMAP(미래계획).
 > └────────────────────────────────────────────────────────
@@ -68,10 +68,10 @@
 
 ## Phase Event 토대 (S1) — **Event/Update 타임라인 토대 [임계경로 최우선·NOT_DONE]** (ADR#16)
 - Goal: 사건을 1회성 카드 → **진화하는 Event 타임라인 객체**로. 카드 = Event의 최신 스냅샷 뷰로 재정의(비파괴).
-- Net-new: `events`(canonical_title/status/first_seen/last_update/heat/domains/tags/primary_entity_ids/snapshot_card_id) +
+- **S1 스코프(최소 토대, 2026-06-22 확정):** `events`(canonical_title/status/first_seen/last_update/heat/domains/tags/primary_entity_ids/snapshot_card_id) +
   `event_updates`(append-only: observed_at/delta_summary/evidence/added_domains/source_refs/heat_delta) +
-  `cluster_event_map`(cluster_id→event_id 라우팅, **단일 진실원천**) + `event_links`(possible/confirmed/rejected) +
   `event_cards.event_id` nullable FK. domains = 닫힌 8섹터 → **열린 2층(통제어휘 ~20 + free-form tags)**. heat = 시계열 활성도(half-life 감쇠).
+- **S2로 이월:** `cluster_event_map`(cluster_id→event_id 라우팅, 단일 진실원천) + `event_links`(possible/confirmed/rejected)는 **라우팅/병합 요구가 확정되는 S2(Event Resolution §2.2)에서 별도 migration**으로 추가한다. 지금 만들면 S2 설계 전 빈 테이블로 DB 스키마를 과고정하므로 0004에 넣지 않는다. 경계 권위 = `19 §2.2`.
 - Why first(임계경로): 카드 알맹이 AI 품질을 올리기 전에 토대 형태를 고정 안 하면 곧 폐기될 1회성 스키마 위에 쌓인다(코딩 전 판단 원칙).
 - Acceptance: alembic 0004(**additive**, nullable/신규 테이블, downgrade 제공), "2번째 보도 → 기존 Event Update append" E2E,
   **3엔진(PG/Milvus/OpenSearch) 동일 card_id 정합성 불변식 테스트 + 미전파 카드 메트릭(outbox SLO)**, 1517 green 무조건.

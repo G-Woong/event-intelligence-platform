@@ -65,6 +65,12 @@
   (`LLM_PROVIDER=openai`) 미배포, evidence 도달성 라이브(openai/network) 미배포. → 04 T-AgtA.
 - Closure: LLM급 entity/sector 완료 시 LOW(evidence 도달성은 구조검증→HTTP까지 진행됨).
 
+### R-ContentTypeGateDormant · source_content_type 라이브 게이트 현재 트리거 0건  — Severity: LOW (신규 2026-06-22, 턴1 적대 감사 B-1)
+- Area: source 수집 / body 판정 정직성
+- Description: `rescue_router.decide_rescue`에 source_content_type body 게이트 배선(BODY_LADDER_FETCH인데 `body_ladder_eligible=False`면 STRUCTURED_SIGNAL_REDUCE). 코드는 정합(회귀 0, test-validation PASS·orchestrator SOUND)이나 **현 상태 분포에서 라이브 트리거 0건** — 카탈로그 6종(aladin/tmdb/kofic/kopis/tour/igdb)은 PRODUCTION_READY라 gap matrix 제외, BODY_FETCH layer는 `EXTERNAL_API_ERROR`+EXCERPT/NO_FULL_BODY에서만 부여되는데 해당 상태 소스 0. 즉 현재는 **미래 회귀/오분류 방어용 가드레일**이며 라이브 즉효 아님(보고에서 "배선 완료"를 효과 즉발로 과대표현 금지).
+- 잔여 취약성(감사 N-1/N-4): ① 신규 카탈로그 소스는 `_CATALOG`(`source_content_type.py`)에 등록 필수 — 누락 시 source_group="domain"→article 기본으로 거짓 음성(body ladder 헛돌이). ② 게이트가 활성화되면 STRUCTURED_SIGNAL_REDUCE가 `still_not_ready`로 집계돼 "metadata_complete인데 not_ready" 표기 모순 — monitoring에 `metadata_complete_holdover` 별도 카테고리 분리 권고.
+- Closure: 카탈로그가 실제 BODY_FETCH 경로를 받는 시나리오에서 게이트 라이브 트리거 1건 관찰(거짓 음성 0) + 표기 분리 시 종결. 트리거 경로 영구 부재로 확인되면 "가드레일"로 정직 문서화 후 partial-closed.
+
 ### R-Gdelt429 · gdelt provider 429  — Severity: MEDIUM
 - Area: rate-limit / cooldown / retry
 - Description: provider가 429 반환. 우회 불가(정책상 금지).
