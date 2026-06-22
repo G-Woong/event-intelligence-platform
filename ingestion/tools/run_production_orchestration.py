@@ -506,7 +506,10 @@ def _real_probe_fn():
     return _probe
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None, *, event_resolution_sink: Optional[Callable] = None) -> int:
+    """CLI 진입점. event_resolution_sink 는 **상위 composition root(backend)** 가 주입하는 선택적
+    Callable(C live wiring). 기본 None=기존 동작. ingestion 은 이 sink 를 만들지 않는다(backend 가
+    make_orchestration_event_sink 로 생성·주입) — ingestion→backend import 0(decoupling 보존)."""
     args = _build_parser().parse_args(argv)
     config = ProductionRunConfig(
         mode=args.mode,
@@ -570,6 +573,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     result = run_production_orchestration(
         config, profiles=profiles, memory=memory, probe_fn=probe_fn,
         db_writer=db_writer,
+        event_resolution_sink=event_resolution_sink,
         api_ready_map=api_ready, now=now, env_path=env_path,
     )
     s = result["summary"]
@@ -588,6 +592,16 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"- source_without_state: {result['source_without_state']}")
     print(f"- unknown_root_cause: {result['unknown_root_cause']}")
     print(f"- raw_events_bridge_contract_pass: {result['raw_events_bridge_contract_pass']}")
+    er = result.get("event_resolution")
+    if er:  # C live wiring 결선 시에만(sink 주입). 운영 관찰성: 후보 단위 결과/실패 가시화.
+        if er.get("error"):  # sink 격리 예외(wired=True/error=<type>) — 장애를 all-None success 로 가리지 않음.
+            print(f"- event_resolution: WIRED_BUT_FAILED error={er.get('error')}")
+        else:
+            print(
+                f"- event_resolution: enabled={er.get('enabled')} created={er.get('created')} "
+                f"appended={er.get('appended')} held={er.get('held')} failed={er.get('failed')} "
+                f"singletons_dropped={er.get('singletons_dropped')}"
+            )
 
     # critical infra 실패에만 nonzero exit
     return 1 if result["critical_alerts"] > 0 else 0

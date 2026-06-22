@@ -264,10 +264,11 @@ def make_orchestration_event_sink(
     반환: EventIngestSummary.to_dict(). (clusters 인자는 orchestration 호환용; 내부에서 records 로
     재클러스터 — 결정적 동일 결과.)
 
-    **배선 상태(정직):** 이 어댑터는 orchestration 의 주입 seam 을 채우는 검증된 경로다(ON 경로 단위
-    테스트 + ingest live-PG). 단 **CLI `run_production_orchestration.main()` 은 아직 이 sink 를 주입
-    하지 않는다** — 운영 실행에서 session/engine 생명주기·flag 결선은 배포 단계(D/operational)로
-    이월. 따라서 production 자동 실행 경로는 현재 Event 영속 0(seam 만 열려 있음).
+    **배선 상태(D-1 결선됨, ADR#23):** 이 어댑터는 `backend/app/tools/run_event_orchestration.py`
+    (backend-side composition root)가 전용 NullPool 엔진 + session_factory 로 주입한다 — 운영 runner 를
+    `--event-resolution`(또는 `EVENT_RESOLUTION_ENABLED=true`)로 실행하면 수집 후보가 Event 로 영속
+    (live-PG 입증). **잔여:** 주기 auto-trigger(Celery beat/cron) 미배선 → 자동 주기 가동은 아직(Phase 2
+    이월). 즉 결선 *능력* 은 확보, 주기 *자동 가동* 은 미배선.
 
     **제약(async 호출처):** asyncio.run 은 실행 중 event loop 안에서 호출되면 RuntimeError 다. 현
     orchestration 은 sync 라 안전하나, async 컨텍스트(FastAPI/Celery async)에서 부르려면 async-native

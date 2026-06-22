@@ -402,3 +402,48 @@ async def test_live_failed_cluster_isolated_other_persists(session):
     assert summary.failed == 1 and summary.created == 1     # 하나 실패 격리, 하나 영속
     assert await _count(session, "events") == 1            # 실패 클러스터 영속 0(rollback)
     assert await _count(session, "cluster_event_map") == 1  # 성공 클러스터만 매핑됨
+
+
+# ── D-1 운영 결선: orchestration sink → Event 영속(실 DB) ───────────────────────────
+def test_live_d1_orchestration_sink_persists_event():
+    # D-1 결선의 핵심 sink(make_orchestration_event_sink)를 **실 DB factory**로 구동해, 운영 자동
+    # 경로가 실제로 Event 를 쌓는지 입증한다. sink 는 sync 경계(asyncio.run 내부) — 운영 호출 형태
+    # 그대로. NullPool 로 호출(loop)당 커넥션 격리. 주의: settings.DATABASE_URL(dev DB)이 아니라
+    # disposable 테스트 DB(_LIVE_PG_URL)에 바인딩(운영/개발 DB 미오염).
+    from sqlalchemy.pool import NullPool
+
+    from backend.app.services.event_ingest_pipeline import make_orchestration_event_sink
+
+    async def _truncate():
+        eng = create_async_engine(_LIVE_PG_URL, poolclass=NullPool)
+        async with eng.begin() as c:
+            await c.execute(text(f"TRUNCATE {_EVENT_TABLES} RESTART IDENTITY CASCADE"))
+        await eng.dispose()
+
+    async def _counts():
+        eng = create_async_engine(_LIVE_PG_URL, poolclass=NullPool)
+        async with eng.connect() as c:
+            ev = (await c.execute(text("SELECT count(*) FROM events"))).scalar_one()
+            up = (await c.execute(text("SELECT count(*) FROM event_updates"))).scalar_one()
+        await eng.dispose()
+        return ev, up
+
+    asyncio.run(_truncate())
+    recs = [
+        _rec(source_id="ap", canonical_url="https://wire/x",
+             title_or_label="Hormuz tanker seized", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="bbc", canonical_url="https://wire/x",
+             title_or_label="Hormuz tanker seized", published_at_or_observed_at="2025-06-02"),
+    ]
+    engine = create_async_engine(_LIVE_PG_URL, poolclass=NullPool)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    sink = make_orchestration_event_sink(factory, enabled=True)
+
+    s1 = sink(recs)                        # sync sink → asyncio.run 내부(운영 호출 형태)
+    assert s1["enabled"] is True and s1["created"] == 1 and s1["appended"] == 0
+    s2 = sink(recs)                        # 같은 사건 2번째 배치 → APPEND(새 Event 0)
+    assert s2["created"] == 0 and s2["appended"] == 1
+    asyncio.run(engine.dispose())
+
+    ev, up = asyncio.run(_counts())
+    assert ev == 1 and up == 1             # 운영 결선 경로로 Event 1 누적 + append 1

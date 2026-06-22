@@ -77,8 +77,16 @@
 - DONE(S2d — `event_timeline_service`): **②③ 종결.** ② `_ensure_aware`(tz-naive→UTC)+`_coerce_uuid`(UUID/str 경계)를 CRUD 입력 전 적용(live-PG `test_live_tz_naive_defended`·`test_live_uuid_str_boundary` 입증). ③ `set_snapshot` 이 카드 탈취 거부 + 세팅 후 실제 영속값 재조회로 is_snapshot_bidirectional 검증(live-PG `test_live_set_snapshot_bidirectional_and_reject_steal` 입증).
 - DONE(S2e live-PG — ADR#20, **① DB 레벨 입증(test-DB)**): app-layer hard-delete 미제공(삭제 메서드 0) **+ FK CASCADE→RESTRICT(alembic 0006)** 로 app+DB 양층 감사 보호. **disposable test DB(event_intel_test)** 에서 0001~0006 up/down + **confdeltype='r' 4 FK 직접 단언**(`test_live_all_event_fks_are_restrict` — 회귀 고정) + `DELETE FROM events`(감사 이력 보유)가 IntegrityError 로 차단됨(`test_live_fk_restrict_blocks_event_delete_with_history`). 적대 B-2(감사 보호 app 한정·DB 미보호) **해소**. (단 **운영 DB(event_intel) 0006 배포는 배포 단계 잔여** — test-DB 입증 ≠ 운영 적용.)
 - DONE(C live wiring, 2026-06-22 — `candidate_from_cluster`): ④ 상류 candidate_for 매퍼 **배선 + 본 경로 가드 완료**. 기본 매퍼는 canonical_title(record title 상한 512 절단)·delta_summary(provenance enum 라벨 `{confidence}:{reason}`)·evidence(allowlist scalar)·source_refs(짧은 식별자)만 후보화 → 본문/PII 미합성 + service `_sanitize_*` 2차 차단(legal evidence_review APPROVED, live-PG 실 JSONB 입증).
-- 잔여(open): **④ 임의 주입 passthrough + 운영 배포** — `event_timeline_service.create_event`/`append_update` 의 `canonical_title`/`delta_summary` 는 sanitize 미적용(길이 상한 없음). 기본 매퍼는 안전하나 **외부가 `candidate_for`/raw `ResolvedCandidate` 를 직접 주입**하면 무검열 영속 가능 — 영속층 title/delta 상한 가드는 차기 하드닝(legal residual ①②). + 운영 DB 0006 배포(배포 단계).
-- Closure: ④ 영속층 title/delta passthrough 가드(또는 주입 호출자 검증 계약) + 운영 DB 0006 배포 시 **완전 종결**. (①②③ test-DB 입증·④ 기본 매퍼 경로 가드 완료 — severity LOW.)
+- DONE(D-1 운영 결선, 2026-06-22 — ADR#23): **운영 결선 composition root 구현** — `backend/app/tools/run_event_orchestration.py`(backend-side, 전용 NullPool 엔진 생명주기 소유, sink 주입, decoupling 보존). 운영 runner 가 `--event-resolution`/`EVENT_RESOLUTION_ENABLED` 로 Event 영속 *능력* 확보(live-PG 로 실 sink CREATE→APPEND 입증). 단 **주기 auto-trigger·실 production-validation·운영 DB 0006 배포는 여전히 잔여**(능력 ≠ 운영 가동).
+- 잔여(open): **④ 임의 주입 passthrough + 운영 배포** — `event_timeline_service.create_event`/`append_update` 의 `canonical_title`/`delta_summary` 는 sanitize 미적용(길이 상한 없음). 기본 매퍼는 안전하나 **외부가 `candidate_for`/raw `ResolvedCandidate` 를 직접 주입**하면 무검열 영속 가능 — 영속층 title/delta 상한 가드는 차기 하드닝(legal residual ①②). + 운영 DB 0006 배포 + 주기 auto-trigger(Celery beat)/실 production-validation Event 누적(D-1 능력은 확보, 운영 가동 미입증).
+- Closure: ④ 영속층 title/delta passthrough 가드(또는 주입 호출자 검증 계약) + 운영 DB 0006 배포 + 주기 트리거로 실 수집 Event 누적 입증 시 **완전 종결**. (①②③ test-DB 입증·④ 기본 매퍼 경로 가드 + D-1 composition root 완료 — severity LOW.)
+
+### R-EventSinkDbTarget · 운영 결선 sink 가 의도치 않은 DB(dev/prod)에 Event 영속  — Severity: LOW-MEDIUM (신규 2026-06-23 · D-1 adversarial)
+- Area: operational / Event 영속 / 데이터 격리
+- Description: `backend/app/tools/run_event_orchestration.py` 의 sink 는 `settings.DATABASE_URL` 로 전용 엔진을 만든다(`config.py` 기본값=dev DB `event_intel`; `.env` 빈 값이면 기본값 폴백). 운영자가 `--event-resolution`(특히 `--mode production-validation` 동반)을 잘못된 DATABASE_URL 환경에서 켜면 의도치 않은 DB 에 Event 가 쓰일 수 있다. live-PG 테스트는 `_LIVE_PG_URL`(event_intel_test)로 명시 격리하나 운영 CLI 경로엔 환경 가드가 없었다.
+- 완화(D-1, 2026-06-23): `--event-resolution` ON 시 **대상 DB host:port/dbname 를 stdout 에 명시 출력**(자격증명 제외, `_target_db_label`) → 운영자가 어느 DB 에 쓰는지 보임. **off-by-default**(`EVENT_RESOLUTION_ENABLED=false`)라 명시 opt-in 없이는 미발생.
+- 잔여(open): 구조적 가드 미배선 — APP_ENV/명시 `--event-db-url` 분리 또는 production-validation+event-resolution 동시 사용 시 확인 게이트. 대상 DB 출력은 "보임"이지 "차단"이 아님.
+- Closure: 운영 배포 전 환경 가드(APP_ENV 기반 DB 선택 또는 명시 확인) 추가 시 종결. severity LOW-MEDIUM(off-by-default + 출력 가시화로 완화, 구조적 차단 잔여).
 
 ### R-Gdelt429 · gdelt provider 429  — Severity: MEDIUM
 - Area: rate-limit / cooldown / retry
