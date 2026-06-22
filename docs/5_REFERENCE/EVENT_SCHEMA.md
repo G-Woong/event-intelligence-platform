@@ -159,7 +159,7 @@ Analyzer: standard (기본). 한국어 nori는 STEP 010+ TODO.
 
 # Part 2 — Event 타임라인 모델 (🟡 S1 토대 구현됨 / S2~ 설계)
 
-> ⚠️ **상태 배너:** **§Event / §EventUpdate / §event_cards 의미 전환은 ✅ S1 구현됨**(events/event_updates 테이블 + event_cards.event_id nullable FK + alembic 0004, 2026-06-22 turn8 · `backend/app/models/event_timeline.py` + 회귀 17). 아래 §Entity ~ §Config(entities/cluster_event_map/event_links/EvidenceNode 등) + alembic 0005~0007 은 **S2~ 미구현 설계**다. Part 1(RawEvent/NormalizedEvent/FinalEventCard/raw_events/Comment)도 현재 DB 사실이다. 권위: 결정=`_DECISIONS/2026-06.md` ADR#16, 구현스펙=`2_ROADMAP/19`, 위험=`_RISK`(R-EventModelMigration/R-FalseMerge). 모든 신규 컬럼 nullable, 마이그레이션 additive(downgrade 제공). **1517 green + 정합성 불변식**이 무조건 acceptance. **S1 스코프(alembic 0004, 2026-06-22 확정) = events / event_updates / event_cards.event_id FK 만**(최소 토대); cluster_event_map/event_links는 S2, entities 등은 S4~ 별도 migration으로 이월(경계 = `19 §2.2`).
+> ⚠️ **상태 배너:** **§Event / §EventUpdate / §event_cards 의미 전환은 ✅ S1 구현됨**(events/event_updates 테이블 + event_cards.event_id nullable FK + alembic 0004, 2026-06-22 turn8 · `backend/app/models/event_timeline.py` + 회귀 17). **§cluster_event_map / §event_links 도 ✅ S2a 구현됨**(alembic 0005 + `backend/app/models/event_resolution.py` + ORM/Pydantic, 2026-06-22). **CRUD 영속층(event_timeline_service)은 ✅ S2d 구현됨**(create/append-only/get/set_snapshot 쌍방향강제/cluster_event_map 조회·기록/event_links possible 적재/apply_routing — `backend/app/services/event_timeline_service.py`, ADR#19). 아래 §Entity ~ §Config(entities/EvidenceNode/Comment 확장 등) + alembic 0006~0007 은 **S4~/S8/S9 미구현 설계**다. Part 1(RawEvent/NormalizedEvent/FinalEventCard/raw_events/Comment)도 현재 DB 사실이다. 권위: 결정=`_DECISIONS/2026-06.md` ADR#16/#18/#19, 구현스펙=`2_ROADMAP/19`, 위험=`_RISK`(R-EventModelMigration/R-FalseMerge/R-EventTimelineS2Hardening). 모든 신규 컬럼 nullable, 마이그레이션 additive(downgrade 제공). **합산 green + 정합성 불변식**이 무조건 acceptance. **잔여:** 실 cross_source_dedup→resolver→apply_routing 통합 E2E(S2e) · heat 4신호(S2.5) · merge_score entity/domain 축(S4/거버넌스 ADR).
 
 ## Event (events 테이블 — ✅ 구현됨 S1, 안정 주제, ADR#16 / SPEC §1.1)
 
@@ -199,9 +199,9 @@ Analyzer: standard (기본). 한국어 nori는 STEP 010+ TODO.
 - 기존 컬럼 전부 유지. **추가만**: `event_id UUID NULL` (FK → events.id).
 - 의미: 카드 = "특정 Event의 한 스냅샷". `event_id` NULL인 기존 카드 = Event 1개짜리 degenerate case(정상 동작).
 
-## cluster_event_map / event_links (SPEC §2.2 — **S2 이월: alembic 0004/S1 아님**)
+## cluster_event_map / event_links (SPEC §2.2 — ✅ **S2a 구현됨: alembic 0005**)
 
-> ⚠️ 아래 두 테이블은 **S1(0004) 범위가 아니다.** Event Resolution(S2)에서 cluster→event 라우팅·약신호 링크 요구가 확정될 때 별도 migration으로 생성한다(2026-06-22 스코프 확정). S1은 events/event_updates/event_cards.event_id FK만.
+> ✅ 아래 두 테이블은 **alembic 0005(S2a, 2026-06-22)에서 생성됨**(`backend/app/models/event_resolution.py` ClusterEventMapORM/EventLinkORM + Pydantic ClusterEventMap/EventLink). S2c `event_resolver` 가 라우팅 결정을, **S2d `event_timeline_service.apply_routing` 이 영속 적용**(map_cluster=단일출처 on_conflict_do_nothing, hold_link=event_links possible)을 수행한다. event_links 는 약신호/clique 미달 멤버를 자동병합 금지로 보류(possible→사람/추가신호로 confirmed/rejected/merged, 가역 — ADR#19).
 
 | cluster_event_map | 타입 | 설명 |
 |---|---|---|

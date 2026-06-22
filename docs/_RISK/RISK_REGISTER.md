@@ -71,11 +71,12 @@
 - 잔여 취약성(감사 N-1/N-4): ① 신규 카탈로그 소스는 `_CATALOG`(`source_content_type.py`)에 등록 필수 — 누락 시 source_group="domain"→article 기본으로 거짓 음성(body ladder 헛돌이). ② 게이트가 활성화되면 STRUCTURED_SIGNAL_REDUCE가 `still_not_ready`로 집계돼 "metadata_complete인데 not_ready" 표기 모순 — monitoring에 `metadata_complete_holdover` 별도 카테고리 분리 권고.
 - Closure: 카탈로그가 실제 BODY_FETCH 경로를 받는 시나리오에서 게이트 라이브 트리거 1건 관찰(거짓 음성 0) + 표기 분리 시 종결. 트리거 경로 영구 부재로 확인되면 "가드레일"로 정직 문서화 후 partial-closed.
 
-### R-EventTimelineS2Hardening · S1 Event 토대의 S2 이전 확정 필요 항목  — Severity: LOW (신규 2026-06-22, S1 적대 감사 N5/N6 + legal 조건부)
+### R-EventTimelineS2Hardening · S1 Event 토대의 S2 이전 확정 필요 항목  — Severity: LOW (신규 2026-06-22, S1 적대 감사 N5/N6 + legal 조건부 · S2d 에서 ②③④ 처리)
 - Area: data-model / Event 타임라인
 - Description: S1(events/event_updates/event_cards.event_id nullable FK)은 비파괴·정합(architecture SOUND·게이트 1451 green·회귀 0)이나, S2(Event Resolution + CRUD 서비스) 착수 전에 확정할 정책 항목이 적대/법무 감사에서 식별됨.
-- 잔여(S2 전 확정): ① `event_updates.event_id` ON DELETE CASCADE vs "append-only 감사 로그" 의도 긴장 — Event 삭제 시 변화분 통째 삭제(감사 목적이면 RESTRICT/soft-delete 검토, N5). ② Event/EventUpdate Pydantic↔ORM 경계의 tz-naive datetime·str↔UUID 방어 부재(카드 변환엔 있으나 Event엔 미구현 — S2 CRUD 변환 시 동반, N6). ③ `is_snapshot_bidirectional`은 app-level 헬퍼(DB 트리거/CHECK 아님)이며 현재 호출처 0(테스트뿐) — S2 이중쓰기 경로에서 실제 호출·강제 필요. ④ `evidence`/`source_refs`(자유 JSONB)를 채우는 ingestion/요약 단계에서 "전문 미저장·URL/요약만 + PII 가드"(legal 조건부 메모).
-- Closure: **S2d(CRUD 서비스)** 에서 ①~④ 정책 확정 + 이중쓰기 경로가 is_snapshot_bidirectional 강제 + tz/UUID 변환 방어 추가 시 종결. (S2-core a~c=decision layer는 2026-06-22 완료했으나 CRUD 영속층 미터치 → ①~④ 그대로 S2d 잔여.)
+- DONE(S2d, 2026-06-22 — `event_timeline_service`): **②③④ 처리.** ② `_ensure_aware`(tz-naive→UTC)+`_coerce_uuid`(UUID/str 경계)를 CRUD 입력 전 적용. ③ `set_snapshot` 이 카드 탈취 거부 + **세팅 후 실제 영속값(card.event_id·event.snapshot_card_id)을 재조회**해 is_snapshot_bidirectional 검증(의도값끼리 비교하는 형식 단언이 아님 — 존재하지 않는 event 에 스냅샷 세팅도 차단). ④ `_sanitize_evidence`(allowlist 키 + **scalar 값만** — 중첩 dict/list 은닉 차단)+`_sanitize_source_refs`(짧은 식별자만) 로 **전문 본문·임의 PII 필드 영속 차단**(append_update 경로). 적대 감사 blocking 3종(③ 단언 trivially-true·④ 非scalar 누수·apply_routing orphan)을 즉시 교정. 회귀: test_event_timeline_service 27.
+- 잔여(open): ① `event_updates.event_id`(+cluster_event_map/event_links) ON DELETE CASCADE vs "append-only 감사 로그" 의도 긴장 — Event 삭제 시 변화분·라우팅 메타 통째 삭제(감사 목적이면 RESTRICT/soft-delete 검토, N5) **미결정**(ADR#19 후속과제). ④ 의 sanitize 는 **서비스 영속 경계**에서 강제되나, `delta_summary` 및 evidence/source_refs 를 채우는 상류 ingestion/요약 단계의 전문·PII 최소수집 책임은 S8(Evidence Graph)/요약 단계에서 재검토(legal 잔여).
+- Closure: ① CASCADE vs RESTRICT 정책 결정(ADR) + ④ 상류 단계(delta_summary 포함) 전문/PII 가드 시 종결. (②③ 는 S2d 에서 실배선·실검증 완료.)
 
 ### R-Gdelt429 · gdelt provider 429  — Severity: MEDIUM
 - Area: rate-limit / cooldown / retry
@@ -203,8 +204,9 @@
 - Area: clustering / Event Resolution / 차별(교차검증 신뢰)
 - Description: `cross_source_dedup.py`가 title Jaccard≥0.8이면 union → Union-Find transitive 폐쇄(A–B 0.8, B–C 0.8이면 A–C 유사도 0이어도 같은 cluster). 과거 `has_strong=any(...)`라 강신호 edge 1개만 있어도 약신호로 끌려온 무관 레코드까지 전체 CONF_DUPLICATE→자동 APPEND. Event append 라우팅(ADR#16) 도입 시 영속 Event 누적·전파 위험.
 - DONE(S2-core, 2026-06-22 decision layer): ① **clique 게이트 구현** — `clique_ok`=강신호 edge만으로 **단일 연결성분이 전체 멤버를 덮는가**(`cross_source_dedup.py` 강신호-only Union-Find). 미달 멤버는 `weak_only_members`로 분리. ② **B1 적대 교정** — "강신호 끝점인가"만 보면 두 강성분이 약신호로만 브릿지된 경우(A-B강, C-D강, B-C약)를 놓침 → 강신호 연결성분 기준으로 수정 + 회귀 `test_two_strong_components_bridged_by_weak_is_not_clique`. ③ **edge provenance**(strong_in/weak_in/weak_only) + **signal_strength**(Jaccard 연속값 보존, 1비트 양자화 폐기). ④ `event_resolver.resolve_routing`이 clique 미달 멤버를 HOLD(자동 APPEND 금지). 회귀: transitive 1멤버 차단 + 두-강성분 브릿지 차단 + resolver core-append/weak-hold.
-- Remaining gap: **결정층만 구현** — `held_members`→`event_links(possible)` 영속 적용층(S2d) + resolver가 **실 dedup 출력을 받는 통합 E2E** 미배선(현재 양쪽 단위 테스트만, 입력 직접 주입). signal_strength를 게이팅/heat에 쓰면 단일 클러스터 대표값(멤버 해상도 손실)·`max` 낙관 편향 재평가 필요.
-- Closure: S2d에서 held_members→event_links 영속 + 실 cluster_records→resolver 통합 E2E(transitive-only 자동승격 0 입증) + event_links edge-level provenance(split 가역).
+- DONE(S2d, 2026-06-22 영속 적용층 — `event_timeline_service.apply_routing`): `held_members`→**degenerate held event + `event_links(status='possible')`** 영속(ADR#19). HOLD 결정은 append 0(자동병합 금지), held member 는 possible 링크로 보류(가역, status→rejected/merged). APPEND-core/HOLD-weak 도 core 만 append·약신호 멤버 hold. **apply_routing 단일 원자 트랜잭션**(내부 CRUD commit=False+1회 commit → 부분 실패 시 orphan held event/link 0) + CREATE 전 cluster_event_map 조회로 *재실행* orphan event 회피(적대 A-4/A-4b 교정). 회귀: test_event_timeline_service 27(apply_routing CREATE/degrade/APPEND/HOLD + held 보류 + 원자 커밋).
+- Remaining gap: **통합 E2E 미배선(S2e)** — resolver 가 **실 cross_source_dedup 출력을 받는** end-to-end("2번째 보도→기존 Event append", transitive-only 자동승격 0 입증)는 단위(mock) 검증만(원자성·단조성의 실 DB 동작 미커버). **교차-트랜잭션 동시 CREATE race**(둘 다 미매핑 조회 후 각자 create→on_conflict 로 한쪽만 매핑)는 DB unique 제약/advisory lock 필요 — get-first 가드는 순차 재실행 orphan 만 제거(S2e 잔여). degenerate held event 는 record key 만 보유 → S2e 에서 rich payload·held 중복 정책 재평가. signal_strength 를 게이팅/heat 에 쓰면 단일 클러스터 대표값·`max` 낙관 편향 재평가 필요.
+- Closure: 실 cluster_records→resolver→apply_routing 통합 E2E(transitive-only 자동승격 0 입증) + 교차-tx 동시 CREATE 멱등성 DB 제약 + event_links edge-level provenance(split 가역) + held event 중복/승격 정책 확정(S2e).
 
 ### R-DiscoveryCostStarvation · 발견 triage가 확장 LLM 예산 잠식  — Severity: MEDIUM (미래, 2026-06-20 신규 — adversarial)
 - Area: Authority Discovery / budget / 발견 폭주

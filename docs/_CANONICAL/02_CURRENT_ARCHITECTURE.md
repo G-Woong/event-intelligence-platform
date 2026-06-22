@@ -33,15 +33,17 @@ heartbeat 파일 healthcheck(worker/agent-worker, 60s 임계).
 | themes / sectors | **PARTIAL** | 스켈레톤 자료 |
 | comments / ai_replies | **PARTIAL** | 미완성 |
 
-## 4. 데이터 스키마 (Postgres, alembic 0001~0004)
+## 4. 데이터 스키마 (Postgres, alembic 0001~0005)
 
 - **raw_events**: source_type/name, external_id, url, title(≤1024), raw_text(요약만, 본문 저장 금지),
   published_at(UTC), feed metadata JSONB, status(collected→enqueued→processed|failed),
   content_hash UNIQUE, event_card_id FK, requeue_count. (`backend/app/models/raw_event.py`)
 - **event_cards**: id/title/summary/theme/sectors(JSONB)/entities(JSONB)/impact_path/evidence/
   confidence_score/status/llm_provider/model_used/created_at + **event_id nullable FK→events**(S1, ADR#16: 카드=Event 스냅샷, NULL=degenerate). (`backend/app/models/event.py`)
-- **events / event_updates** (S1 토대, alembic 0004, 2026-06-22): `events`(canonical_title/status/first_seen/last_update/heat/domains·tags·primary_entity_ids JSONB/snapshot_card_id FK→event_cards) + `event_updates`(append-only: observed_at/delta_summary/evidence·source_refs·added_domains JSONB/heat_delta, event_id FK→events CASCADE). (`backend/app/models/event_timeline.py`) — cluster_event_map/event_links/entities는 S2~ 미생성.
-- **comments**: 스켈레톤. comment body_text 마이그레이션은 미생성(필요 시). (0004 번호는 event_timeline 에 할당됨)
+- **events / event_updates** (S1 토대, alembic 0004, 2026-06-22): `events`(canonical_title/status/first_seen/last_update/heat/domains·tags·primary_entity_ids JSONB/snapshot_card_id FK→event_cards) + `event_updates`(append-only: observed_at/delta_summary/evidence·source_refs·added_domains JSONB/heat_delta, event_id FK→events CASCADE). (`backend/app/models/event_timeline.py`)
+- **cluster_event_map / event_links** (S2a, alembic 0005, 2026-06-22): `cluster_event_map`(cluster_id PK→event_id 라우팅 단일 진실원천) + `event_links`(event↔event, status possible/confirmed/rejected/merged CheckConstraint, 약신호 자동병합 금지). (`backend/app/models/event_resolution.py`) — **entities 는 S4~ 미생성.**
+- **Event Resolution 서비스 계층** (S2c/S2d, 2026-06-22): `event_resolver.resolve_routing`(순수 라우팅 APPEND/HOLD/CREATE + clique 게이트, ingestion 비의존) + `event_timeline_service`(CRUD 영속: create_event/append_update append-only/get_event/set_snapshot 쌍방향강제/map_cluster·get_cluster_event/hold_link possible/apply_routing — ADR#19). 실 dedup→resolver→영속 통합 E2E(S2e)·heat 4신호(S2.5)·merge_score entity/domain 축(S4)은 미배선.
+- **comments**: 스켈레톤. comment body_text/debate 확장 마이그레이션은 미생성(S9). (0004=event_timeline, 0005=event_resolution 에 할당됨)
 
 ## 5. 검색·RAG (3엔진 분리)
 
