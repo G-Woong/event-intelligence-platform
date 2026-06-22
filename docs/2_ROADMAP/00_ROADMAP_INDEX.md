@@ -110,7 +110,7 @@ S1  Event/Update 타임라인 토대 ──────────────�
     ▼
 S5  LLM Expansion Router (게이트 존재라 가장 저렴, S1 직후)  ── 파일 06+11+19
     ▼
-S2  Event Resolution Engine [✓ S2-core a~c + S2d CRUD + S2e 통합 + ✅ live-PG 검증(0001~0006·2-세션 동시성·FK RESTRICT) + ✅ C live wiring 경로/seam(event_ingest_pipeline + orchestration sink, ADR#22) + ✅ D-1 운영 결선 composition root(backend-side sink 주입, NullPool 엔진 생명주기, ADR#23) 2026-06-22; **주기 auto-trigger(Celery beat)·실 production-validation·event_cards 자동연결 이월**] + S3 domains/tags 2층  ── 파일 12+19
+S2  Event Resolution Engine [✓ S2-core a~c + S2d CRUD + S2e 통합 + ✅ live-PG 검증(0001~0006·2-세션 동시성·FK RESTRICT) + ✅ C live wiring 경로/seam(event_ingest_pipeline + orchestration sink, ADR#22) + ✅ D-1 운영 결선 composition root(backend-side sink 주입, NullPool 엔진 생명주기, ADR#23) 2026-06-22 + ✅ D-2a Event 타임라인 read API(`/api/events/timeline`, flag, held degenerate 제외, ADR#24) 2026-06-23; **frontend 렌더(D-2b)·Docker 데모(D-2c)·주기 auto-trigger·event_cards 자동연결 이월**] + S3 domains/tags 2층  ── 파일 12+19
     ▼
 S4  Entity Registry (NER 재사용+앵커 매칭+candidate 자동승격/병합 분리)  ── 파일 17+EVENT_SCHEMA
     ▼

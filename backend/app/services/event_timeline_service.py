@@ -264,6 +264,54 @@ async def get_event(
     return _orm_to_event(row), [_orm_to_update(u) for u in updates]
 
 
+async def get_public_event(
+    session: AsyncSession, event_id: Any
+) -> Optional[tuple[Event, list[EventUpdate]]]:
+    """공개 단건 조회 — **매핑된 실 주제만**(held degenerate 단건 우회 차단).
+
+    `get_event` 와 달리 cluster_event_map 매핑 게이트를 강제한다: 미매핑(held degenerate,
+    canonical_title=raw member key)은 id 를 알아도 None(→404). 목록 필터(list_events)·event_cards
+    단건(published 강제)과 대칭(R-MockCard — 목록 필터를 단건으로 우회하는 노출 차단).
+    """
+    eid = _coerce_uuid_or_none(event_id)
+    if eid is None:
+        return None
+    mapped = (
+        await session.execute(
+            select(ClusterEventMapORM.event_id)
+            .where(ClusterEventMapORM.event_id == eid)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if mapped is None:
+        return None
+    return await get_event(session, eid)
+
+
+async def list_events(
+    session: AsyncSession, *, limit: int = 20, offset: int = 0
+) -> list[Event]:
+    """매핑된 Event(실 주제)만 (last_update_at, id) desc 로 조회(공개 목록, read-only).
+
+    **held degenerate event 제외**: HOLD 보류로 만들어진 degenerate event(canonical_title=raw
+    member key)는 cluster_event_map 에 매핑되지 않는다 — `id IN (cluster_event_map.event_id)` 로
+    매핑된 실 주제만 노출(공개 목록 품질·안전).
+
+    정렬 = (last_update_at desc, **id desc**): last_update_at 동률(같은 배치의 다수 클러스터가 동일
+    observed_at 으로 CREATE → first_seen==last_update 동일)에도 **결정적 순서** 보장 →
+    offset 페이지네이션의 중복/누락 차단.
+    """
+    stmt = (
+        select(EventORM)
+        .where(EventORM.id.in_(select(ClusterEventMapORM.event_id)))
+        .order_by(EventORM.last_update_at.desc(), EventORM.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    return [_orm_to_event(r) for r in rows]
+
+
 async def set_snapshot(
     session: AsyncSession, *, event_id: Any, card_id: Any, commit: bool = True
 ) -> None:

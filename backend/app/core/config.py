@@ -59,6 +59,11 @@ class Settings(BaseSettings):
     # 영속 0(DB 미접근), 기존 경로만 동작. LLM 미사용(전 경로 결정론).
     EVENT_RESOLUTION_ENABLED: bool = False
 
+    # Event 타임라인 read API(D-2a): /api/events/timeline* 공개 조회 노출 토글. 기본 off —
+    # off 면 endpoint 404(미노출). write(EVENT_RESOLUTION_ENABLED)와 분리(읽기 노출 ≠ 쓰기 결선).
+    # read-only·결정론(LLM/network 0). 기존 /api/events(event_cards) 경로는 무관(항상 동작).
+    EVENT_TIMELINE_API_ENABLED: bool = False
+
     EMBEDDING_PROVIDER: Literal["mock", "openai"] = "mock"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIM: int = 1536

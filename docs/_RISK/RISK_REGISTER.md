@@ -88,6 +88,13 @@
 - 잔여(open): 구조적 가드 미배선 — APP_ENV/명시 `--event-db-url` 분리 또는 production-validation+event-resolution 동시 사용 시 확인 게이트. 대상 DB 출력은 "보임"이지 "차단"이 아님.
 - Closure: 운영 배포 전 환경 가드(APP_ENV 기반 DB 선택 또는 명시 확인) 추가 시 종결. severity LOW-MEDIUM(off-by-default + 출력 가시화로 완화, 구조적 차단 잔여).
 
+### R-EventTimelineApiScale · Event 타임라인 read API 의 대규모 응답/페이지네이션 비용  — Severity: LOW (신규 2026-06-23 · D-2a architecture/code)
+- Area: api / web / 성능
+- Description: D-2a `/api/events/timeline*`(ADR#24)의 규모 잔여 — ① 단건 `get_public_event`/`get_event` 가 event_updates 를 **무제한 로드**(장수명 event 가 수백~수천 update 누적 시 응답 비대), ② `list_events` 의 `id IN (cluster_event_map)` 서브쿼리 plan 이 cluster_event_map 대규모 시 비효율 가능(EXPLAIN 미측정), ③ offset 페이지네이션의 deep-offset 비용.
+- 완화(D-2a): list 정렬에 (last_update_at desc, **id desc**) 결정적 tie-breaker → 페이지네이션 중복/누락 차단. list limit 상한 le=100. flag off-by-default 라 미노출 기본. read-only(쓰기/삭제 0).
+- 잔여(open): 단건 updates 페이지네이션(또는 `/timeline/{id}/updates` 분리)·IN-서브쿼리 live-PG EXPLAIN(JOIN/EXISTS 대안 비교)·deep-offset → keyset 전환(트래픽 발생 후).
+- Closure: 단건 updates 페이지네이션 + IN-서브쿼리 plan 실측 통과 시 종결. severity LOW(flag off·limit 상한·tie-breaker 로 완화, 트래픽 전까지 비활성).
+
 ### R-Gdelt429 · gdelt provider 429  — Severity: MEDIUM
 - Area: rate-limit / cooldown / retry
 - Description: provider가 429 반환. 우회 불가(정책상 금지).

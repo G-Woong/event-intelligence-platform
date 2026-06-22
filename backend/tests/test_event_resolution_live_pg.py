@@ -447,3 +447,48 @@ def test_live_d1_orchestration_sink_persists_event():
 
     ev, up = asyncio.run(_counts())
     assert ev == 1 and up == 1             # 운영 결선 경로로 Event 1 누적 + append 1
+
+
+# ── D-2a Event 타임라인 read API (실 DB list/get) ──────────────────────────────────
+async def test_live_list_events_returns_mapped_event(session):
+    # 강신호 CREATE → list_events 가 매핑된 실 주제를 노출(canonical_title=후보 title).
+    from backend.app.services import event_timeline_service as tl
+
+    c = _strong_cluster()
+    await pipe.resolve_and_apply_cluster(session, c, candidate=_cand(observed=_T2))
+    listed = await tl.list_events(session)
+    assert len(listed) == 1 and listed[0].canonical_title == "호르무즈 해협 긴장"
+    # 단건 조회도 동작(event + updates).
+    res = await tl.get_event(session, listed[0].id)
+    assert res is not None and res[0].id == listed[0].id
+
+
+async def test_live_list_events_excludes_held_degenerate(session):
+    # transitive 약신호 → core(mapped) + held degenerate(unmapped, title=raw member key).
+    # list_events 는 cluster_event_map 매핑분만 → held degenerate 제외(공개 목록 품질/안전).
+    from backend.app.services import event_timeline_service as tl
+
+    recs = [
+        _rec(source_id="ap", canonical_url="https://wire/x",
+             title_or_label="Hormuz tanker seized by navy", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="reuters", canonical_url="https://wire/x",
+             title_or_label="Hormuz tanker seized by navy", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="blog", canonical_url="https://blog/z",
+             title_or_label="Hormuz tanker seized by navy", published_at_or_observed_at="2025-06-02"),
+    ]
+    c = cluster_records(recs)[0]
+    assert c.clique_ok is False and len(c.weak_only_members) == 1
+    await pipe.resolve_and_apply_cluster(session, c, candidate=_cand())
+    assert await _count(session, "events") == 2          # core(mapped) + held degenerate(unmapped)
+    listed = await tl.list_events(session)
+    assert len(listed) == 1                              # held degenerate 제외(매핑분만)
+    assert listed[0].canonical_title == "호르무즈 해협 긴장"  # raw member key 아님
+
+    # 단건 공개 조회(get_public_event)도 매핑 게이트 강제: core 는 노출, held degenerate id 는 None.
+    core_id = listed[0].id
+    assert await tl.get_public_event(session, core_id) is not None
+    held_id = (await session.execute(text(
+        "SELECT id::text FROM events WHERE id::text <> :c"
+    ).bindparams(c=core_id))).scalar_one()
+    assert await tl.get_public_event(session, held_id) is None   # held degenerate 단건 우회 차단
+    assert await tl.get_event(session, held_id) is not None      # 내부 get_event 는 그대로(게이트 없음)

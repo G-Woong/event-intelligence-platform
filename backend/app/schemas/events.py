@@ -90,6 +90,13 @@ class EventLink(BaseModel):
     reason: Optional[str] = None
 
 
+class EventTimelineResponse(BaseModel):
+    """단건 Event 타임라인 = Event(주제) + append-only EventUpdate 목록(observed_at ASC). D-2a read API."""
+
+    event: Event
+    updates: list[EventUpdate] = Field(default_factory=list)
+
+
 class EventSearchHit(BaseModel):
     card_id: str
     id: str
