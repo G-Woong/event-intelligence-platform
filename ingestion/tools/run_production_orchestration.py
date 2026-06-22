@@ -239,6 +239,7 @@ def run_production_orchestration(
     prior_states=None,
     probe_fn: Optional[Callable] = None,
     db_writer=None,
+    event_resolution_sink: Optional[Callable] = None,
     api_ready_map: Optional[dict] = None,
     governor: Optional[RateLimitGovernor] = None,
     now: Optional[datetime] = None,
@@ -250,6 +251,11 @@ def run_production_orchestration(
 
     probe_fn(source_id, *, max_items, force) -> probe_result(.status, .artifact_paths, .error_category).
     dry-run 모드 또는 probe_fn=None이면 네트워크 없이 state/plan/monitoring/bridge 계약만 검증.
+
+    event_resolution_sink(written_records, clusters) -> dict|None: 주입형 Event 영속 sink(C live
+    wiring). 기본 None=기존 동작. 제공 시 cross-source dedup 직후 호출돼 같은 사건을 Event 타임라인
+    으로 누적한다(event_cards 경로 무변경). sink 실패는 격리(수집을 멈추지 않음). 결과는 result
+    ["event_resolution"] 에 담긴다.
     """
     now = now or datetime.now(timezone.utc)
     run_id = run_id or _iso_now(now).replace(":", "").replace("-", "")
@@ -354,6 +360,17 @@ def run_production_orchestration(
     clusters = cluster_records(written_records)
     cluster_summary = summarize_clusters(clusters)
 
+    # 5b) Event resolution live wiring(C) — 주입형 sink(db_writer 와 동일 패턴, 기본 None=기존 동작).
+    # sink(written_records, clusters) → Event 영속 summary. backend 가
+    # event_ingest_pipeline.make_orchestration_event_sink 로 주입한다(EVENT_RESOLUTION_ENABLED 게이트).
+    # sink 실패는 격리(수집 파이프라인을 멈추지 않음 — event_cards 경로 무영향).
+    event_resolution_summary = None
+    if event_resolution_sink is not None:
+        try:
+            event_resolution_summary = event_resolution_sink(written_records, clusters)
+        except Exception as exc:  # sink 격리 — Event 영속 실패가 수집/raw_events bridge 를 막지 않음
+            event_resolution_summary = {"wired": True, "error": type(exc).__name__}
+
     # 6) EventQueue write (gitignored jsonl)
     if write_outputs and written_records:
         try:
@@ -452,6 +469,7 @@ def run_production_orchestration(
         "monitoring_written": bool(monitoring_paths),
         "states": final_states,
         "bridge_result": bridge_result,
+        "event_resolution": event_resolution_summary,
     }
 
 

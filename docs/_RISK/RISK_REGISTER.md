@@ -76,8 +76,9 @@
 - Description: S1(events/event_updates/event_cards.event_id nullable FK)은 비파괴·정합이나, S2 착수 전에 확정할 정책 항목 ①~④ 가 적대/법무 감사에서 식별됨.
 - DONE(S2d — `event_timeline_service`): **②③ 종결.** ② `_ensure_aware`(tz-naive→UTC)+`_coerce_uuid`(UUID/str 경계)를 CRUD 입력 전 적용(live-PG `test_live_tz_naive_defended`·`test_live_uuid_str_boundary` 입증). ③ `set_snapshot` 이 카드 탈취 거부 + 세팅 후 실제 영속값 재조회로 is_snapshot_bidirectional 검증(live-PG `test_live_set_snapshot_bidirectional_and_reject_steal` 입증).
 - DONE(S2e live-PG — ADR#20, **① DB 레벨 입증(test-DB)**): app-layer hard-delete 미제공(삭제 메서드 0) **+ FK CASCADE→RESTRICT(alembic 0006)** 로 app+DB 양층 감사 보호. **disposable test DB(event_intel_test)** 에서 0001~0006 up/down + **confdeltype='r' 4 FK 직접 단언**(`test_live_all_event_fks_are_restrict` — 회귀 고정) + `DELETE FROM events`(감사 이력 보유)가 IntegrityError 로 차단됨(`test_live_fk_restrict_blocks_event_delete_with_history`). 적대 B-2(감사 보호 app 한정·DB 미보호) **해소**. (단 **운영 DB(event_intel) 0006 배포는 배포 단계 잔여** — test-DB 입증 ≠ 운영 적용.)
-- 잔여(open): **④ + 운영 배포** — ④ `delta_summary`/`canonical_title` passthrough(상류 candidate_for 매퍼 미배선)의 전문·PII 가드(legal, S8/요약 단계). + 운영 DB 0006 배포(배포 단계). (①②③ 는 test-DB live-PG 실검증.)
-- Closure: ④ 상류 전문/PII 가드 + 운영 DB 0006 배포 시 **완전 종결**. (①②③ test-DB 입증 완료 — severity LOW.)
+- DONE(C live wiring, 2026-06-22 — `candidate_from_cluster`): ④ 상류 candidate_for 매퍼 **배선 + 본 경로 가드 완료**. 기본 매퍼는 canonical_title(record title 상한 512 절단)·delta_summary(provenance enum 라벨 `{confidence}:{reason}`)·evidence(allowlist scalar)·source_refs(짧은 식별자)만 후보화 → 본문/PII 미합성 + service `_sanitize_*` 2차 차단(legal evidence_review APPROVED, live-PG 실 JSONB 입증).
+- 잔여(open): **④ 임의 주입 passthrough + 운영 배포** — `event_timeline_service.create_event`/`append_update` 의 `canonical_title`/`delta_summary` 는 sanitize 미적용(길이 상한 없음). 기본 매퍼는 안전하나 **외부가 `candidate_for`/raw `ResolvedCandidate` 를 직접 주입**하면 무검열 영속 가능 — 영속층 title/delta 상한 가드는 차기 하드닝(legal residual ①②). + 운영 DB 0006 배포(배포 단계).
+- Closure: ④ 영속층 title/delta passthrough 가드(또는 주입 호출자 검증 계약) + 운영 DB 0006 배포 시 **완전 종결**. (①②③ test-DB 입증·④ 기본 매퍼 경로 가드 완료 — severity LOW.)
 
 ### R-Gdelt429 · gdelt provider 429  — Severity: MEDIUM
 - Area: rate-limit / cooldown / retry
@@ -199,7 +200,8 @@
 - Description: 1회성 카드 → Event/Update 모델 전환 시 기존 카드·테스트·UI 호환성 + 신규 이중쓰기(events↔event_cards 스냅샷) 정합성 위험. event_cards 스냅샷이 자주 재생성되면 3엔진(PG/Milvus/OpenSearch) 색인 드리프트 빈도 증가.
 - Current mitigation: (설계) additive 마이그레이션(신규 컬럼 nullable/신규 테이블) + 카드=스냅샷 뷰 비파괴 유지(alembic downgrade 제공).
 - DONE(S2e live-PG, 2026-06-22 — 부분): **alembic 0001~0006 실 Postgres up/down 실증**(event_intel_test, ADR#21) — additive 마이그레이션·downgrade 가역이 mock 텍스트가 아니라 실 DB 에서 동작 확인. Event append E2E 도 live-PG(`test_event_resolution_live_pg`). **단 PG 단일 엔진** — 3엔진(Milvus/OpenSearch) 정합은 미터치.
-- Remaining gap(정직): **3엔진(PG/Milvus/OpenSearch) 동일 card_id 정합성 미검증** — live-PG 는 PG 만 입증. 색인 swallow(MASTER L5)와 결합 시 검색-목록 불일치(신뢰 훼손)는 그대로. Event 스냅샷 재색인 드리프트는 미배선(카드 렌더/색인 경로가 Event 와 미결선).
+- DONE(C live wiring, 2026-06-22 — 부분): Event 영속 경로(`event_ingest_pipeline`)가 events/event_updates 에 write 하되 **event_cards 는 무변경(병행)** — additive 비파괴 입증(`s.cards == {}`). 카드↔Event 가 깨지지 않음(Event 가 카드를 덮어쓰지 않음).
+- Remaining gap(정직): ① **3엔진(PG/Milvus/OpenSearch) 동일 card_id 정합성 미검증** — live-PG 는 PG 만 입증. 색인 swallow(MASTER L5)와 결합 시 검색-목록 불일치(신뢰 훼손)는 그대로. Event 스냅샷 재색인 드리프트는 미배선(카드 렌더/색인 경로가 Event 와 미결선). ② **event_cards.event_id 자동 연결 이월(C, ADR#22)** — live wiring 은 events 만 만들고 카드↔Event 를 자동 연결하지 않는다(set_snapshot 명시 연결만). Event 와 card 가 분리 운영되어 "이 카드가 어느 Event 인가" 역참조가 비어 있음 — 카드↔Event 매칭 정책(ADR) 필요.
 - Closure: **3엔진 동일 card_id 정합성 불변식 테스트 + 미전파 카드 메트릭(outbox SLO)**(live wiring + 색인 경로). ADR로 `cluster_event_map` 단일 진실원천 vs `event_cards.event_id` derived 결정 기록(ADR#16/#19 부분 반영, 색인 정합 잔여).
 
 ### R-FalseMerge · Union-Find transitive 오염이 영속 Event로 전파  — Severity: MEDIUM→LOW-MEDIUM→LOW (S2e live-PG 동시성·통합 실증 2026-06-22; 미종결 — held 승격 정책만 잔여)
@@ -209,8 +211,9 @@
 - DONE(S2d, 2026-06-22 영속 적용층 — `event_timeline_service.apply_routing`): `held_members`→**degenerate held event + `event_links(status='possible')`** 영속(ADR#19). HOLD 결정은 append 0(자동병합 금지), held member 는 possible 링크로 보류(가역, status→rejected/merged). APPEND-core/HOLD-weak 도 core 만 append·약신호 멤버 hold. **apply_routing 단일 원자 트랜잭션**(내부 CRUD commit=False+1회 commit → 부분 실패 시 orphan held event/link 0) + CREATE 전 cluster_event_map 조회로 *재실행* orphan event 회피(적대 A-4/A-4b 교정). 회귀: test_event_timeline_service 27(apply_routing CREATE/degrade/APPEND/HOLD + held 보류 + 원자 커밋).
 - DONE(S2e, 2026-06-22 통합 로직 E2E — `event_resolution_pipeline` + `test_event_resolution_pipeline`): **실 `cross_source_dedup.cluster_records` → `event_resolver.resolve_routing` → `apply_routing` 배선**(ingestion 비의존 duck-typed). in-memory fake session(실 상태 전이)으로 입증: ① "2번째 보도 → 새 Event 아닌 기존 Event append"(새 카드 0) ② **transitive 약신호 멤버 자동병합 0**(ap+reuters 강신호 + blog 약신호 → blog 는 event_links possible 보류, core update 흡수 0) ③ 두-강성분 약신호 브릿지 둘 다 보류 ④ 동일 cluster 재실행 멱등(Event 1개) ⑤ FSD first_seen 과거로만·last_update 미래로만 ⑥ sanitize 파이프라인 통과 후 유지. **동시 CREATE 패배 rollback**(orphan 0) 로직 구현 + mock 단위 입증.
 - DONE(S2e live-PG — `test_event_resolution_live_pg`, ADR#21): **실 Postgres 입증.** ① "2번째 보도→기존 Event APPEND(새 카드 0)"·transitive 약신호 멤버 event_links possible 보류·재실행 멱등·FSD 실 LEAST/GREATEST 단조·sanitize 실 JSONB 가 실 DB 에서 동작. ② **2-세션 동시 CREATE — 결과 불변식 실증**(`test_live_concurrent_create_no_orphan`): asyncio.gather 2 세션이 동일 cluster CREATE → 실 Postgres unique(cluster_event_map PK) 가 동시 INSERT 중 하나를 거부 → **어느 인터리빙에서도 최종 Event 1·cluster_event_map 1·orphan 0·event_updates 중복/누락 0**. fake/mock 으로 불가했던 *결과 불변식*(동시 환경 orphan 0)을 실 DB 로 입증. **단 rollback 경로 vs append-degrade 경로 중 무엇이 탔는지는 비결정**(rollback 로직 자체는 unit 커버) — "동시성 결과 안전"은 입증, "rollback 경로 실행"은 미고정.
-- Remaining gap(정직): **held event 중복/승격 정책만 잔여** — held member 가 나중에 강신호로 자기 resolution 시 중복 Event 가능(S2e+ 재평가). apply_routing rollback 은 *결과 불변식*(orphan 0)을 live-PG 로 입증했으나 rollback **경로 트리거**는 비결정(로직은 unit 커버); 배치 단일 tx 화 시 `begin_nested()` SAVEPOINT 격리는 미래 하드닝(현재 클러스터별 자체 commit 이라 무영향, A-1 계약 docstring 명시). signal_strength 를 게이팅/heat 에 쓰면 대표값·`max` 편향 재평가.
-- Closure: live-PG 2-세션 동시 CREATE 멱등(orphan 0) + FK 동작 **실증 완료** → **held event 중복/승격 정책 확정 + event_links edge-level provenance(split 가역)** 만 남음(S2e+/S3 거버넌스). 핵심 false-merge 방어(clique+HOLD+동시성)는 live-PG 로 입증 — LOW 유지·held 정책만 open.
+- DONE(C live wiring, 2026-06-22 — `event_ingest_pipeline`): 실 수집 후보 records→cross_source_dedup→resolver→영속 경로에서도 clique+HOLD 가 동작(`test_transitive_weak_member_held_not_merged` fake + live-PG `test_live_candidate_records_create_then_append`). 강신호(canonical_url) cluster_id 가 **입력 순서 불변**임을 회귀 고정(`test_strong_cluster_id_stable_across_input_order`) → 배치 간 APPEND 누적 안정(merge 방어가 wiring 레벨에서도 유효).
+- Remaining gap(정직): ① **held event 중복/승격 정책** — held member 가 나중에 강신호로 자기 resolution 시 중복 Event 가능(S2e+ 재평가). ② **약신호 cluster_id split(신규, adversarial)** — 약신호(meta:/search: 키) 클러스터의 cluster_id 는 `members[0]` 최소인덱스 키에 고정되어, written_records 입력 순서가 배치 간 바뀌면 cluster_id 변동 → **같은 사건 재-CREATE(split)** 가능. 현재 강신호만 테스트/활성(EVENT_RESOLUTION_ENABLED off 기본)이라 무영향이나, **약신호 Event 활성화 전 cluster_id 입력순서-불변 회귀 필수**. ③ apply_routing rollback *경로 트리거*는 비결정(결과 불변식 orphan 0 은 live-PG 입증; 로직 unit 커버); 배치 단일 tx 화 시 `begin_nested()` SAVEPOINT 격리는 미래 하드닝. signal_strength 게이팅/heat 사용 시 대표값·`max` 편향 재평가.
+- Closure: live-PG 2-세션 동시 CREATE 멱등(orphan 0) + FK + wiring CREATE→APPEND **실증 완료** → **held event 중복/승격 정책 + 약신호 cluster_id 안정 키(split 방지) + event_links edge-level provenance** 만 남음(S2e+/S3). 핵심 false-merge(merge 방향) 방어는 live-PG 입증 — LOW 유지·split(약신호)·held 정책 open.
 
 ### R-DiscoveryCostStarvation · 발견 triage가 확장 LLM 예산 잠식  — Severity: MEDIUM (미래, 2026-06-20 신규 — adversarial)
 - Area: Authority Discovery / budget / 발견 폭주
@@ -230,8 +233,9 @@
 - Area: ingestion/expansion / 운영 안정성
 - Description: `query_generator.py:37` `generate_batch()`가 `generate()`를 무방비 루프 호출 → 배치 중 한 후보 LLM 실패(타임아웃/레이트리밋/파싱오류)가 전체 배치를 예외로 종료(부분 graceful 없음). LLM 단계에서 같은 구조면 외부 LLM 일시 오류 1건이 그 배치 모든 사건 확장을 산발적 정지.
 - Current mitigation: (설계) `generate()` 내부 결정론 폴백(off 분기)은 명시되나 batch fail-all 구조는 미해소.
-- Remaining gap: 후보 단위 try/except 격리 + 후보 단위 결정론 폴백 degrade 부재.
-- Closure: batch 내 1후보 실패가 나머지 확장을 막지 않는 격리 테스트 + 폴백 발생을 audit trace `degraded_to_deterministic` 카운트.
+- 참고(C live wiring, 2026-06-22): **별개 모듈**에 격리 패턴 선례 생김 — `event_ingest_pipeline.ingest_records_to_events` 가 후보(클러스터) 단위 try/except + rollback + 계속 + `failed`/`failures` 집계를 구현(fake + live-PG 입증). **단 `query_generator.generate_batch`(LLM 확장)는 미수정** — 본 RISK 는 그 모듈 대상이므로 **종결/하향 아님**(동형 패턴 참조용).
+- Remaining gap: `query_generator` 후보 단위 try/except 격리 + 후보 단위 결정론 폴백 degrade 부재(여전).
+- Closure: `query_generator` batch 내 1후보 실패가 나머지 확장을 막지 않는 격리 테스트 + 폴백 발생을 audit trace `degraded_to_deterministic` 카운트.
 
 > **기존 RISK 재평가 (2026-06-20, 새 방향 반영):**
 > - **R-MockCard** — baseline→LLM 전환을 **Event/domains 모델 위에서** 수행해야 폐기 작업 없음(ADR#16 결합). 닫는 조건에 "domains 동적 부여" 추가.

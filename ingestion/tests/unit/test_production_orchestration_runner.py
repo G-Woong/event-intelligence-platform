@@ -203,3 +203,48 @@ def test_probe_exception_isolated(tmp_path):
     # 예외가 전체를 무너뜨리지 않음 — 실행 완료 + critical 없음
     assert result["critical_alerts"] == 0
     assert "bbc" in result["summary"]["error_by_source"]
+
+
+# ── C live wiring: event_resolution_sink 결선(주입형, db_writer 와 동일 패턴) ──────────
+def test_event_resolution_sink_invoked_with_records_and_clusters(tmp_path):
+    # cross-source dedup 직후 sink(written_records, clusters)가 호출되고 결과가 result에 담긴다.
+    captured = {}
+
+    def _sink(records, clusters):
+        captured["records"] = records
+        captured["clusters"] = clusters
+        return {"enabled": True, "created": 0, "wired_ok": True}
+
+    profiles = [_profile("bbc"), _profile("ap_news")]
+    result = run_production_orchestration(
+        _config(tmp_path, "production-validation"), profiles=profiles, memory={},
+        api_ready_map={}, probe_fn=_fake_probe_factory(tmp_path),
+        event_resolution_sink=_sink, write_outputs=True)
+    assert result["event_resolution"] == {"enabled": True, "created": 0, "wired_ok": True}
+    assert "records" in captured                        # written_records 전달됨
+    assert isinstance(captured["clusters"], list)       # clusters 전달됨
+
+
+def test_event_resolution_sink_default_none_preserves_behavior(tmp_path):
+    # 미주입(기본) → Event 영속 0(기존 동작 보존). event_cards 경로 무영향.
+    profiles = [_profile("bbc")]
+    result = run_production_orchestration(
+        _config(tmp_path, "production-validation"), profiles=profiles, memory={},
+        api_ready_map={}, probe_fn=_fake_probe_factory(tmp_path), write_outputs=True)
+    assert result["event_resolution"] is None
+    assert result["critical_alerts"] == 0
+
+
+def test_event_resolution_sink_failure_isolated(tmp_path):
+    # sink 실패가 수집/raw_events bridge 를 무너뜨리지 않는다(격리).
+    def _boom_sink(records, clusters):
+        raise RuntimeError("sink boom")
+
+    profiles = [_profile("bbc")]
+    result = run_production_orchestration(
+        _config(tmp_path, "production-validation"), profiles=profiles, memory={},
+        api_ready_map={}, probe_fn=_fake_probe_factory(tmp_path),
+        event_resolution_sink=_boom_sink, write_outputs=True)
+    assert result["event_resolution"] == {"wired": True, "error": "RuntimeError"}
+    assert result["critical_alerts"] == 0
+    assert result["raw_events_bridge_contract_pass"] is True

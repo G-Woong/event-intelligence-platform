@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     EVIDENCE_REACHABILITY_TIMEOUT_SEC: float = 5.0
     EVIDENCE_REACHABILITY_MAX_REDIRECTS: int = 3
 
+    # Event resolution live wiring(C, ADR#22): 수집 후보(클러스터)를 cross_source_dedup →
+    # event_resolver → event_timeline_service 로 영속해 events/event_updates 타임라인을 누적한다.
+    # 기본 off — on 이어도 기존 event_cards 직접 생성 경로는 그대로 병행(비파괴). off 면 Event
+    # 영속 0(DB 미접근), 기존 경로만 동작. LLM 미사용(전 경로 결정론).
+    EVENT_RESOLUTION_ENABLED: bool = False
+
     EMBEDDING_PROVIDER: Literal["mock", "openai"] = "mock"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIM: int = 1536

@@ -322,3 +322,83 @@ async def test_live_concurrent_create_no_orphan(engine):
         assert r1.event_id == r2.event_id
         # event_updates: 패자가 승자로 degrade append(1) — 중복/누락 없음.
         assert await _count(s, "event_updates") == 1
+
+
+# ── C live wiring: 수집 후보 records → Event 영속(실 DB) ────────────────────────────
+async def test_live_candidate_records_create_then_append(session):
+    # 상용 핵심을 실 DB 로: 수집 후보(records) → cross_source_dedup → resolver → events.
+    # 같은 사건 2번째 배치가 새 Event 가 아니라 기존 Event 에 append.
+    from backend.app.services.event_ingest_pipeline import ingest_records_to_events
+
+    recs = [
+        _rec(source_id="ap", canonical_url="https://wire/x",
+             title_or_label="Hormuz tanker seized", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="bbc", canonical_url="https://wire/x",
+             title_or_label="Hormuz tanker seized", published_at_or_observed_at="2025-06-02"),
+    ]
+    s1 = await ingest_records_to_events(session, recs, enabled=True)
+    assert s1.enabled is True and s1.created == 1 and s1.appended == 0
+    assert await _count(session, "events") == 1
+    assert await _count(session, "cluster_event_map") == 1
+    assert await _count(session, "event_updates") == 0      # CREATE 는 update 0
+
+    s2 = await ingest_records_to_events(session, recs, enabled=True)
+    assert s2.created == 0 and s2.appended == 1
+    assert await _count(session, "events") == 1             # Event 남발 0
+    assert await _count(session, "event_updates") == 1      # 2번째 배치 append
+    # evidence 가 실 JSONB 로 sanitize 되어 영속됐는지(allowlist scalar 만).
+    ev = (await session.execute(text(
+        "SELECT evidence FROM event_updates LIMIT 1"))).scalar_one()
+    for item in ev:
+        assert set(item).issubset({"url", "source_type", "role", "confidence", "relation", "observed_at"})
+
+
+async def test_live_flag_off_no_persistence(session):
+    # flag off → DB 미접근(영속 0). 기존 event_cards 경로만 동작하는 계약을 실 DB 로 확인.
+    from backend.app.services.event_ingest_pipeline import ingest_records_to_events
+
+    recs = [
+        _rec(source_id="ap", canonical_url="https://wire/x",
+             title_or_label="Hormuz tanker seized", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="bbc", canonical_url="https://wire/x",
+             title_or_label="Hormuz tanker seized", published_at_or_observed_at="2025-06-02"),
+    ]
+    summary = await ingest_records_to_events(session, recs, enabled=False)
+    assert summary.enabled is False
+    assert await _count(session, "events") == 0
+    assert await _count(session, "event_updates") == 0
+
+
+async def test_live_failed_cluster_isolated_other_persists(session):
+    # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
+    # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).
+    from backend.app.services.event_ingest_pipeline import (
+        build_record_index,
+        candidate_from_cluster,
+        ingest_records_to_events,
+    )
+
+    recs = [
+        _rec(source_id="ap", canonical_url="https://wire/x",
+             title_or_label="A story", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="bbc", canonical_url="https://wire/x",
+             title_or_label="A story", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="afp", canonical_url="https://other/y",
+             title_or_label="B story", published_at_or_observed_at="2025-06-03"),
+        _rec(source_id="dpa", canonical_url="https://other/y",
+             title_or_label="B story", published_at_or_observed_at="2025-06-03"),
+    ]
+    clusters = cluster_records(recs)
+    assert len(clusters) == 2
+    fail_id = clusters[0].cluster_id
+    index = build_record_index(recs)
+
+    def _cf(c):
+        if c.cluster_id == fail_id:
+            raise ValueError("injected cluster failure")
+        return candidate_from_cluster(c, index)
+
+    summary = await ingest_records_to_events(session, recs, enabled=True, candidate_for=_cf)
+    assert summary.failed == 1 and summary.created == 1     # 하나 실패 격리, 하나 영속
+    assert await _count(session, "events") == 1            # 실패 클러스터 영속 0(rollback)
+    assert await _count(session, "cluster_event_map") == 1  # 성공 클러스터만 매핑됨
