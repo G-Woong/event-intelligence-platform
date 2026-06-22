@@ -4,9 +4,9 @@
 > 사실 원본(자동): `.harness/machine_status.json` · 완료 증거: `.harness/closeout_stamp.json` · 서술: 이 파일(에이전트).
 
 ## 🟢 한눈에 (비개발자용 3줄)
-- **지금 무엇을 했나:** gdelt 호스트 호출 간격을 **단일 출처(host gate)** 로 통합해 split-brain RISK를 닫고, GDELT·dcinside를 **실제로 라이브 호출**해 수집/본문 추출 가능 범위를 소스별로 검증했습니다.
-- **이번 턴에 실제로 끝낸 것:** `R-GdeltGovernorSplitBrain` **종결**(신규 `HostRateGate` + 3경로를 **실제 HTTP 직전** 동일 gate로 배선) · GDELT/dcinside 라이브 probe + 조건부 소스/본문추출 감사 **8개 산출물** · 회귀 8 · ingestion **1316 green**.
-- **지금 막힌 것:** GDELT는 외부 제공자가 우리 IP/윈도를 **429로 throttle 중**(코드 문제 아님) — fresh 1건은 비-throttle 윈도 필요(`R-Gdelt429` 유지). dcinside는 공개 본문 **소량(180자) 추출 확인**되나 ToS 미검증으로 승격 보류.
+- **지금 무엇을 했나:** gdelt 호스트 호출 간격을 **단일 출처(host gate)** 로 통합해 split-brain RISK를 닫고, GDELT·dcinside 라이브 검증 + 소스 콘텐츠 타입 분류(카탈로그=메타완성, 산문형만 body ladder)까지 정리해 **2회 브랜치 커밋으로 안정화**했습니다.
+- **이번 턴에 실제로 끝낸 것:** `R-GdeltGovernorSplitBrain` **종결**(`HostRateGate`, 실제 HTTP 직전 배선) · 라이브 probe + 감사 **10개 산출물** · 소스 콘텐츠 타입 분류(카탈로그 6→metadata-complete, body ladder 대상 nyt/opendart/culture_info 수렴) · dcinside 정책 문서화 · 회귀 13 · ingestion **1321 green** · 커밋 `a03f46b`+`cd76dfe`.
+- **지금 막힌 것:** GDELT는 외부 제공자가 **429로 throttle 중**(코드 문제 아님) — fresh는 비-throttle 윈도 필요(`R-Gdelt429` 유지). dcinside 공개 산문 본문 소량 추출 확인되나 ToS 미검증으로 승격 봉인(`R-DcToS`).
 
 ## 📋 자동 수집 사실 (machine_status.json)
 - session 2945… turn 8 · 변경 다수(code: host_rate_gate 신규 + api_probe/collection_probe/gdelt_strategy/3 tool + 테스트, scripts 4, outputs/reports 8).
@@ -20,7 +20,13 @@
   - **dcinside:** robots 허용 갤러리 list **30건**(title/url/time) · detail 6건 접근(200) · 보수적 필터 통과 공개 산문 본문 **1건(341 meaningful chars, url/img 노이즈 0)** → `LIMITED_PUBLIC_BODY`. PII/댓글/이미지 미수집, Cloudflare/captcha 시 중단.
   - **조건부 소스 매트릭스:** 57 프로필 중 **조건부(테스트 대상) 48 / POLICY·BLOCKED 제외 9**. queue 실적·body 상태·env 키·route를 소스별 기록.
   - **본문 추출 감사:** BODY_OK 11 · SNIPPET_ONLY 8 · STRUCTURED(본문 비대상) 8 · BODY_MISSING 3 · URL_CANDIDATE(검색=downstream 분리) 7. article은 대부분 snippet_only(EventQueue) + 전문은 `extracted_text/` 별도 레이어(22소스).
-- **검증:** ingestion **1316 passed**(회귀 0) · docs_lifecycle 19 · secret scan PASS(41 files) · `.env` 무변경 · 4-감사단(test-validation PASS·legal-safety APPROVED·orchestrator SOUND·adversarial 2 blocking→**둘 다 수정·재검증**).
+- **후속 5요청 처리(사용자 지시):**
+  - ① GDELT: 지금 재호출 안 함(비-throttle 윈도 재probe로 이월).
+  - ② BODY_MISSING 3 원인별: `opendart`=ROBOTS_BLOCKED(존중), `culture_info`=ARTICLE_PARTIAL_ALIVE(53자 추출), `nyt`=HTTP_ERROR(paywall/stale) — `body_ladder_probe`로 실측 분리.
+  - ③ SNIPPET_ONLY body ladder: 신규 `source_content_type`로 산문형(nyt/opendart/culture_info)만 ladder 연결, **카탈로그형 6(aladin/tmdb/kofic/kopis/tour/igdb)은 metadata-complete 재분류**(본문 실패 아님). 감사 매트릭스 STRUCTURED_METADATA_COMPLETE 14.
+  - ④ dcinside: `R-DcToS` 유지한 채 `LIMITED_PUBLIC_BODY` 정책을 `DATA_POLICY.md §커뮤니티 공개 본문`에 문서화(역량≠적법, 대량수집/publish 봉인).
+  - ⑤ 미커밋 안정화: 브랜치 `turn8-host-gate-source-audit` 2커밋(core / items2-4), `.env`·`CLAUDE.md`·`ingestion/outputs` 제외, secret PASS.
+- **검증:** ingestion **1321 passed**(회귀 0) · docs_lifecycle 19 · secret scan PASS · `.env` 무변경 · 4-감사단(test-validation PASS·legal-safety APPROVED·orchestrator SOUND·adversarial 2 blocking→**둘 다 수정·재검증 RESOLVED**).
 
 ## ❌ 달성하지 못한 것 & 왜
 - **GDELT fresh 수집 0** — 외부 제공자가 우리 IP/윈도를 throttle(단발에도 429). 우회 금지라 비-throttle 윈도가 필요(다음 기회 재probe). 메커니즘(host gate·cooldown 자동재개·429 분류)은 검증 완료.
@@ -35,8 +41,9 @@
 
 ## 👉 다음 할 일
 1. (이월) `R-Gdelt429`: 비-throttle 윈도에서 `python -m scripts.gdelt_live_body_probe` 재실행 → fresh 1건 + 본문 추출 시 종결.
-2. (이월) 조건부 48소스 분할 라이브 재probe(action_required=needs_live_probe 우선).
-3. (이월) ROADMAP 착수 = Event 토대(S1), `00_ROADMAP_INDEX §4`.
+2. (이월) nyt 본문: 신선 article URL 확보 후 ladder 재시도(paywall 한계 명시). opendart는 robots 차단이라 메타-문서(공시명+구조필드)로 확정.
+3. (이월) 조건부 48소스 분할 라이브 재probe + ROADMAP Event 토대(S1).
+4. (선택) `source_content_type`을 live orchestration body 판정에 배선(현재는 감사/probe에만 적용).
 
 ## 📁 근거 (이번 턴 핵심)
 - 신규: `ingestion/orchestration/host_rate_gate.py`, `scripts/{gdelt_live_body_probe,dcinside_live_body_probe,source_condition_reaudit,body_extraction_audit}.py`, `ingestion/tests/unit/test_host_rate_gate.py`
@@ -46,4 +53,4 @@
 - 감사: test/code(test-validation) PASS · evidence(legal-safety) APPROVED · pipeline(orchestrator) SOUND · risk_closure(adversarial) 2 blocking→수정·재검증
 
 ---
-_as_of: 2026-06-22 · R-GdeltGovernorSplitBrain 종결(host gate 단일 출처) + GDELT/dcinside 라이브 probe + 조건부/본문 감사 8산출물 · ingestion 1316 green · GDELT throttle(R-Gdelt429 유지) · app 정상_
+_as_of: 2026-06-22 · R-GdeltGovernorSplitBrain 종결 + 라이브 probe/감사 10산출물 + 소스 콘텐츠 타입 분류(카탈로그=metadata-complete) + dcinside 정책 문서화 · ingestion 1321 green · 브랜치 2커밋 안정화 · GDELT throttle(R-Gdelt429 유지) · app 정상_
