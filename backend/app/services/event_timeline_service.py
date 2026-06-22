@@ -386,32 +386,47 @@ async def apply_routing(
 ) -> ApplyResult:
     """resolver 결정(APPEND/HOLD/CREATE)을 DB 영속으로 적용(ADR#19).
 
-    **단일 트랜잭션 원자 적용:** 내부 CRUD 를 모두 commit=False 로 호출하고 **마지막에 1회 commit**한다
-    → 중간 실패 시 부분 영속(orphan held event/link, 매핑 없는 event) 없음(all-or-nothing, adversarial A-4b).
+    **트랜잭션 소유 계약(중요):** apply_routing 은 **자신의 트랜잭션을 소유**한다 — 내부 CRUD 를 commit=False
+    로 호출하고 정상 경로는 마지막 1회 commit(부분 영속 orphan 0). 단 **동시 CREATE 패배 경로는 전체
+    `session.rollback()`** 을 친다(SAVEPOINT 아님). 따라서 호출자는 **보존해야 할 미커밋 작업을 가진 외부
+    트랜잭션 안에서 apply_routing 을 호출하면 안 된다**(그 작업이 rollback 으로 함께 폐기됨). 배치
+    처리(`event_resolution_pipeline.resolve_and_apply_clusters`)는 클러스터마다 apply_routing 이 자체 commit
+    하므로 각 클러스터가 독립 tx → 앞 클러스터는 이미 commit 되어 안전. (배치를 단일 tx 로 묶으려면
+    rollback 을 `begin_nested()` SAVEPOINT 로 격리해야 하며 — live-PG 하드닝 이월, adversarial A-1.)
 
     - CREATE: 먼저 cluster_event_map 조회 → 이미 매핑됐으면(재실행/동시) **orphan event 생성 회피**,
       기존 event 로 append degrade. 미매핑이면 events INSERT + cluster_event_map 기록(A-4).
     - APPEND: 매핑된 event 에 event_updates append(자동병합은 강신호 clique 만 — resolver가 이미 판정).
     - HOLD:   append 0(오병합 금지). 매핑 event 유지.
     - held_members(공통): degenerate held event(title=member key) + event_links(possible→primary) 보류.
+      동시 CREATE 패배 후에도 held 는 승자(mapped) 에 링크된다(rollback 이후 신규 tx 에서 생성).
       (rich held payload 는 S2e 통합에서 — 여기선 record key 만 보존, 가역.)
 
-    잔여(S2e): 교차-트랜잭션 동시 CREATE race(둘 다 미매핑 조회 후 각자 create)는 DB unique/lock
-    이 필요 — get-first 가드는 순차 재실행 orphan 만 제거. 통합 E2E 에서 확정.
+    동시성(S2e): cluster_event_map.cluster_id PK(unique) 가 매핑 멱등을 DB 레벨에서 보장한다. CREATE 는
+    ① get-first 로 순차 재실행 orphan 회피, ② create→map 후 map 이 **다른** event 를 돌려주면(교차-tx
+    동시 CREATE 패배) rollback 으로 우리 orphan event 폐기 + 승자 event 로 append degrade → orphan 0.
+    (실 동시 세션·SAVEPOINT 격리 입증은 live Postgres 필요 — 본 로직은 단위로 race 를 시뮬레이션해 검증.)
     """
     result = ApplyResult(action=decision.action, event_id=decision.event_id)
 
     if decision.action == ACTION_CREATE:
         existing = await get_cluster_event(session, decision.cluster_id)
         if existing is not None:
-            # 이미 매핑됨(재실행/동시) → orphan event 생성 회피, 기존 event 로 append degrade.
+            # 이미 매핑됨(순차 재실행) → orphan event 생성 회피, 기존 event 로 append degrade.
             await append_update(session, event_id=existing, candidate=candidate, commit=False)
             result.event_id = existing
         else:
             new_id = await create_event(session, candidate=candidate, commit=False)
-            result.event_id = await map_cluster(
+            mapped = await map_cluster(
                 session, cluster_id=decision.cluster_id, event_id=new_id, commit=False
             )
+            if mapped != new_id:
+                # 교차-tx 동시 CREATE 패배: 우리 event 는 매핑 못 받은 orphan → 전체 rollback 으로 폐기
+                # (미커밋 orphan 만 — 호출 계약상 외부 보존 작업 없음) 후 승자(mapped) 로 append degrade.
+                # rollback 이후 append/held 는 신규 tx 에서 진행, 함수 끝 1회 commit.
+                await session.rollback()
+                await append_update(session, event_id=mapped, candidate=candidate, commit=False)
+            result.event_id = mapped
     elif decision.action == ACTION_APPEND:
         if decision.event_id is None:
             raise ValueError("APPEND decision missing event_id")

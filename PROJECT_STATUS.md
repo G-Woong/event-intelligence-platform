@@ -4,44 +4,45 @@
 > 사실 원본(자동): `.harness/machine_status.json` · 완료 증거: `.harness/closeout_stamp.json` · 서술: 이 파일(에이전트).
 
 ## 🟢 한눈에 (비개발자용 3줄)
-- **지금 무엇을 했나:** 같은 사건의 여러 보도를 하나의 진화하는 Event로 라우팅하는 **결정(S2-core)을 실제 DB에 저장하는 영속층(S2d)**을 깔았습니다 — 새 카드 대신 기존 Event에 변화분 append, 약한 연결은 자동 병합 않고 보류(possible 링크), 카드↔Event 양방향 정합을 강제합니다.
-- **이번 턴에 실제로 끝낸 것:** `event_timeline_service`(create/append-only/get/set_snapshot/cluster_event_map/event_links/apply_routing) + 방어(tz·UUID·전문/PII 차단). **측정 게이트 backend+ingestion 1504 green**(회귀 0). 적대 감사가 잡은 **실제 결함 3종(쌍방향 단언이 형식뿐·apply_routing 비원자성 orphan·sanitize 누수)을 즉시 교정**했습니다.
-- **지금 막힌 것:** 없음(BLOCKED 0). 단 영속층까지만 — 실 dedup→resolver→영속을 잇는 통합 E2E와 교차-트랜잭션 동시성 멱등성은 **S2e 이월**(의도된 단계 분리). backend pre-existing 환경 실패 1건(embedding, S2d 무관) 유지.
+- **지금 무엇을 했나:** 여러 소스가 같은 사건을 보도할 때, **실제 중복판정(dedup)→사건 라우팅(resolver)→DB 영속(apply_routing)을 하나로 잇는 통합 파이프라인(S2e)**을 깔았습니다. 같은 사건의 2번째 보도는 새 카드가 아니라 **기존 Event에 업데이트로 붙고**, 약하게만 닮은 후보는 자동 병합하지 않고 보류합니다 — 상용 웹앱이 제공할 "사건 타임라인"의 토대.
+- **이번 턴에 실제로 끝낸 것:** `event_resolution_pipeline`(실 dedup→resolver→apply 배선, ingestion 비의존) + 통합 로직 E2E 11(2번째 보도→append·transitive 약신호 보류·재실행 멱등·FSD 단조·sanitize 유지·동시 CREATE 패배+held 결합) + apply_routing **동시 CREATE rollback**(orphan 0) + **삭제정책 ADR#20**. 적대 감사가 잡은 **2 blocking(rollback 트랜잭션 소유 계약·ADR#20 감사보호 과대주장) 즉시 교정**. **측정 게이트 backend 187 + ingestion 1328 = 1515 green**(회귀 0).
+- **지금 막힌 것:** 없음(BLOCKED 0). 통합은 **in-memory fake session**으로 로직을 입증했고 **실 Postgres E2E(migration/FK/2-세션 동시성)는 이월**(DB fixture 부재 — 정직 표기). LLM은 본경로에 넣지 않고 보조 레이어 경계만 열어둠. backend pre-existing 환경 실패 1(embedding, S2e 무관) 유지.
 
 ## 📋 자동 수집 사실 (machine_status.json)
-- session 4e61… turn 21 · HEAD `1487a2a`(S2-core) 위 미커밋 변경 = **code 2 + docs 7 + PROJECT_STATUS**.
-- code_files: `services/event_timeline_service.py`(신규), `tests/test_event_timeline_service.py`(신규 27 회귀).
-- audit_types(권위): **architecture·code·evidence·risk_closure·test_review** → 전부 라우팅·완료. 열린 RISK **26 유지**(신규/종결 0; R-EventTimelineS2Hardening·R-FalseMerge severity 서술만 갱신).
+- session 4e61… · HEAD `0b7c1d8`(S2d) 위 미커밋 변경 = **code 3 + docs 8**.
+- code: `event_resolution_pipeline.py`(신규), `event_timeline_service.py`(apply_routing 동시성 하드닝), `test_event_resolution_pipeline.py`(신규 통합 10).
+- audit_types(권위): 변경 기준 라우팅. 열린 RISK — R-FalseMerge **LOW-MEDIUM→LOW 하향(미종결)**, R-EventTimelineS2Hardening ① 정책 결정(ADR#20). 신규/종결 카운트는 closeout 에서 확정.
 
 ## ✅ 이번 턴에 달성한 것
-- **S2d — `event_timeline_service` CRUD 영속층(ADR#19):** `create_event`(FSD) · `append_update`(**append-only** INSERT만 + last_update GREATEST/first_seen LEAST) · `get_event`(Event+updates) · `set_snapshot`(카드 탈취 거부 + **실제 영속값 재조회**로 is_snapshot_bidirectional 검증) · `get_cluster_event`/`map_cluster`(on_conflict_do_nothing=단일 진실원천) · `hold_link`(event_links possible) · `apply_routing`.
-- **resolver 결정 → 영속 연결:** CREATE→events INSERT+cluster_event_map / APPEND→event_updates append(새 카드 0) / HOLD→append 0(오병합 금지). `held_members`→degenerate held event + `event_links(possible→primary)` 보류(가역).
-- **ADR#19 — held_members 영속 설계:** event↔event 스키마(양단 NOT NULL FK→events) vs held_members(record key) 충돌을 degenerate held event materialize로 해소(대안 self-link/별도테이블/생략 대비 정당).
-- **방어(R-EventTimelineS2Hardening ②③④ 처리):** tz-naive→UTC · UUID/str 경계 · evidence/source_refs는 **allowlist 키 + scalar 값만** 영속(전문 본문·중첩 dict/list 은닉·임의 PII 차단).
-- **적대 감사 blocking 3종 즉시 교정:** ① set_snapshot 단언이 trivially-true(자기 의도값 비교)였던 것 → **실제 영속값 재조회 검증**으로. ② apply_routing이 sub-op마다 개별 commit→부분 실패 orphan → **단일 원자 트랜잭션**(commit=False+1회 commit)+CREATE get-first 가드. ③ `_sanitize_evidence`가 str 길이만 검사→非scalar 누수 → **scalar-only**.
-- **5-감사단:** architecture(orchestrator) **SOUND** · evidence(legal) **APPROVED**(전문/PII/투자조언/우회 표면 0) · code+risk_closure(adversarial) **CONCERNS→3 blocking 교정·잠금** · test **PASS**(1504 green).
-- **검증:** backend **176**(149 기존+S2d 27, 격리 모듈 import 0 확인) + ingestion **1328** = **1504 passed**(회귀 0) · 1 pre-existing 환경 실패(embedding, S2d 무관) · alembic 0001→0005 체인 무결성 테스트.
+- **S2e — 통합 파이프라인(`event_resolution_pipeline`):** 실 `cross_source_dedup.cluster_records` → `event_resolver.resolve_routing` → `event_timeline_service.apply_routing` 배선. **ingestion 비의존**(클러스터 duck-typed `.cluster_id/.confidence/.clique_ok/.duplicate_group/.weak_only_members`, candidate_for 콜백). LLM 경계만 개방(현재 전 경로 결정론 — raw truth 덮어쓰기 금지).
+- **통합 로직 E2E(in-memory fake session, 실 상태 전이):** ① 첫 클러스터→CREATE+cluster_event_map ② **2번째 보도→기존 Event APPEND(새 카드 0)** ③ transitive 약신호 멤버(blog) 자동병합 0→event_links(possible) 보류 ④ 두-강성분 약신호 브릿지 둘 다 보류 ⑤ 동일 cluster 재실행 멱등(Event 1개) ⑥ **FSD: first_seen 과거로만·last_update 미래로만** ⑦ evidence/source_refs sanitize 파이프라인 통과 후 유지.
+- **동시성 하드닝:** apply_routing CREATE 가 cluster_event_map 매핑 패배 시 **rollback 으로 orphan event 폐기 + 승자로 append degrade**(orphan 0). mock 단위 입증(실 2-세션은 live-PG 이월).
+- **ADR#20 — 삭제정책:** "app-layer hard-delete 미제공 + status 라이프사이클". R-EventTimelineS2Hardening ① 정책 결정(FK RESTRICT migration 은 live-PG 이월).
+- **7-감사단:** architecture **SOUND** · pipeline **SOUND**(non-blocking 3, 정직 이월) · evidence **APPROVED** · code+risk_closure(adversarial) **2 blocking 적발→교정**: (A-1) apply_routing rollback 이 전체 tx rollback(SAVEPOINT 아님)이라 외부 공유 tx 미사용 계약 명시 + held+패배 결합 테스트 추가, (B-2) ADR#20 "감사 보호"가 FK CASCADE 그대로라 **app 경로 한정**으로 정정(DB 레벨 미보호 명시) · test **PASS**(1515 green).
+- **검증:** backend **187**(176 + 통합 11) + ingestion **1328** = **1515 green**(회귀 0) · 1 pre-existing 환경 실패(embedding, S2e 무관) · 직접 영향 재검증 Event 계열·dedup 12.
 
 ## ❌ 달성하지 못한 것 & 왜
-- **통합 E2E(S2e) 미배선:** 실 `cross_source_dedup`→`resolver`→`apply_routing` end-to-end("2번째 보도→기존 Event append", transitive-only 자동승격 0)는 단위(mock 세션) 검증만. 원자성·단조성의 **실 DB 동작은 mock으로 미커버** → S2e.
-- **교차-트랜잭션 동시 CREATE race:** apply_routing 단일 tx + get-first 가드는 *순차 재실행* orphan만 제거. *동시* CREATE(둘 다 미매핑 조회 후 각자 create)는 DB unique 제약/advisory lock 필요 → S2e 이월(정직 기록).
-- **heat 4신호(S2.5)·merge_score entity/domain(S4)·실 Postgres migration up/down:** 승인된 스코프 밖, 이월.
+- **live-PG 통합 E2E 미실행:** backend 테스트가 mock 기반·DB fixture 부재라, 통합을 in-memory fake session 으로 입증했다(실 Postgres migration/FK CASCADE/2-세션 동시성은 미실증). "실 DB 검증 완료"라 쓰지 않는다 — live-PG 이월.
+- **FK RESTRICT migration(0006)·held event 중복/승격 정책:** ADR#20 가 정책(app no-delete)은 결정했으나 FK 전환 migration 은 live-PG 검증 시점 이월. held member 가 나중에 강신호로 자기 resolution 시 중복 Event 가능성은 S2e+ 재평가.
+- **heat 4신호(S2.5)·merge_score entity/domain(S4):** 승인 스코프 밖, 이월. merge_score = signal_strength+clique만 실제 구현 유지.
 
 ## 🚧 닫을 수 없는 문제 (BLOCKED/UNKNOWN)
-- BLOCKED 0. UNKNOWN: 실 dedup→resolver 통합 시 라우팅 정확성(S2e E2E), 교차-tx 동시성 멱등성(DB 제약 필요), 실 Postgres 0004/0005 up/down. embedding 실패는 `.env` 소관.
+- BLOCKED 0. UNKNOWN: 실 Postgres 에서 migration up/down·FK 동작·2-세션 동시 CREATE 멱등(현재 cluster_event_map PK + rollback 로직으로 방어, 라이브 미입증). embedding 실패는 `.env` 소관.
 
 ## ⚠️ 이번 턴 종결/갱신 RISK
-- **신규/종결 0, open 26 유지.** 서술 갱신 2건: `R-EventTimelineS2Hardening` ②③④ S2d 처리(③ 실 재조회 검증·④ scalar-only로 교정 반영; 잔여 = ① CASCADE 결정 + delta_summary 상류 가드). `R-FalseMerge` apply_routing 영속+원자성 DONE 추가, 잔여 = 교차-tx 동시성·통합 E2E(S2e). severity 부당 하향 없음(adversarial risk_closure 확인).
+- **하향 1(미종결):** `R-FalseMerge` LOW-MEDIUM→**LOW** — 실 dedup→resolver→apply 통합 로직 E2E 로 transitive-only 자동병합 0 입증. **단 live-PG 2-세션 동시성·held 승격 정책 잔여로 open 유지**(사용자 기준7).
+- **정책 결정 1:** `R-EventTimelineS2Hardening` ① — ADR#20 으로 app no-delete + status 라이프사이클 결정(FK migration 이월). ②③④ 는 S2d 처리.
+- **유지(범위 밖, 무변경):** R-EventModelMigration(3엔진 드리프트), R-Gdelt429·R-DcToS·R-ContentTypeGateDormant 상태 그대로. 신규 0.
 
 ## 👉 다음 할 일
-1. **[S2e — FSD + 통합 E2E]** 실 `cluster_records`→`resolver`→`apply_routing` 통합("2번째 보도→append" 입증) + first_seen 단조 + transitive-only 자동승격 0 입증(R-FalseMerge closure) + 교차-tx 동시 CREATE 멱등성 DB 제약.
-2. **[정책 결정]** `event_updates`/cluster_event_map/event_links ON DELETE CASCADE vs RESTRICT(감사 로그 의도, R-EventTimelineS2Hardening ①) — ADR.
-3. (이월) heat 4신호(S2.5) · merge_score entity/domain(S4/ADR) · 실 Postgres migration E2E.
+1. **[live-PG E2E]** 실 Postgres(또는 테스트 DB fixture)에서 alembic 0004/0005 up/down · FK CASCADE 동작 · **2-세션 동시 CREATE 멱등(orphan 0)** 실증 → R-FalseMerge·R-EventTimelineS2Hardening ① 완전 종결.
+2. **[FK RESTRICT migration 0006]** event_updates FK CASCADE→RESTRICT(감사 보호) + cluster_event_map/event_links per-table 삭제정책(ADR#20 후속).
+3. (이월) heat 4신호(S2.5) · merge_score entity/domain(S4) · LLM 보조 레이어(중요도/확장계획/요약 — 결정론 토대 위에).
 
 ## 📁 근거 (이번 턴 핵심)
-- 코드: `backend/app/services/event_timeline_service.py`(CRUD+apply_routing+방어) + `backend/tests/test_event_timeline_service.py`(27).
-- 문서: `docs/_DECISIONS/2026-06.md`(ADR#19), `docs/_RISK/RISK_REGISTER.md`(R-EventTimelineS2Hardening·R-FalseMerge 갱신), `docs/5_REFERENCE/EVENT_SCHEMA.md`·`docs/_CANONICAL/02`·`docs/2_ROADMAP/{00,15,19}`(S2a/S2d 구현 반영). 권위: `19 §2.2·§21.1`, EVENT_SCHEMA Part 2.
-- 감사: architecture SOUND · evidence APPROVED · code+risk_closure(adversarial) blocking 3종 교정 · test 1504 green.
+- 코드: `backend/app/services/event_resolution_pipeline.py`(통합 배선) · `event_timeline_service.py`(apply_routing 동시성) · `backend/tests/test_event_resolution_pipeline.py`(통합 10).
+- 문서: `docs/_DECISIONS/2026-06.md`(ADR#20) · `docs/_RISK/RISK_REGISTER.md`(R-FalseMerge 하향·R-EventTimelineS2Hardening ① 결정) · EVENT_SCHEMA·_CANONICAL/02·2_ROADMAP/{00,15,19}. 권위: `19 §2.2·§21.1·§16`, EVENT_SCHEMA Part 2.
+- 감사: architecture·pipeline·code·test·evidence·risk_closure·adversarial(closeout).
 
 ---
-_as_of: 2026-06-22 · S2d Event 타임라인 CRUD 영속층 — `event_timeline_service`(create/append-only/get/set_snapshot 실검증/cluster_event_map 단일출처/event_links possible/apply_routing 단일 원자 tx) + ADR#19(held_members materialize) · 측정 게이트 1504 green(회귀 0) · 5-감사단(adversarial blocking 3종 즉시 교정) · R-EventTimelineS2Hardening ②③④·R-FalseMerge 갱신 · S2e(통합 E2E·동시성) 이월 · 미커밋(S1=87807ea·S2-core=1487a2a 위) · pre-existing embedding 실패 1(S2d 무관)_
+_as_of: 2026-06-22 · S2e Event Resolution 통합 파이프라인 — `event_resolution_pipeline`(실 dedup→resolver→apply 배선, ingestion 비의존) + 통합 로직 E2E 11 + apply_routing 동시 CREATE rollback + ADR#20 삭제정책(app 경로 한정) · 측정 게이트 1515 green(회귀 0) · 7-감사단(adversarial 2 blocking: rollback tx 계약·ADR#20 과대주장 교정) · R-FalseMerge LOW 하향(미종결, live-PG 잔여)·R-EventTimelineS2Hardening ① app-layer 정책만 결정(DB CASCADE 미보호) · live-PG E2E/FK migration/heat/merge_score 이월 · 미커밋(S2d=0b7c1d8 위) · pre-existing embedding 실패 1(S2e 무관)_

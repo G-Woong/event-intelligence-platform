@@ -1,10 +1,10 @@
 # 19 — WEB INTELLIGENCE IMPLEMENTATION SPEC (5대 신규자산 구현 청사진)
 
 > ┌─ 진행상황 식별 (STATUS STAMP) ──────────────────────────
-> │ **상태:** 🟡 PARTIAL — **S1 토대 + S2(Event Resolution) 구현됨**: S1(events/event_updates + event_cards.event_id FK + alembic 0004, turn8) · S2a(cluster_event_map/event_links + alembic 0005) · S2b(cross_source_dedup clique 게이트+signal_strength) · S2c(event_resolver 라우팅) · S2d(event_timeline_service CRUD 영속+apply_routing, ADR#19) — 2026-06-22. **잔여:** S2e(실 dedup→resolver→영속 통합 E2E)·heat(S2.5)·merge_score entity/domain(S4). expansion_router/agent_debate/alembic 0006~0007 부재(S5~).
+> │ **상태:** 🟡 PARTIAL — **S1 토대 + S2(Event Resolution) 전 단계 구현됨**: S1(events/event_updates + event_cards.event_id FK + alembic 0004, turn8) · S2a(cluster_event_map/event_links + alembic 0005) · S2b(cross_source_dedup clique 게이트+signal_strength) · S2c(event_resolver 라우팅) · S2d(event_timeline_service CRUD 영속+apply_routing, ADR#19) · **S2e(event_resolution_pipeline 통합 배선 + 통합 로직 E2E + ADR#20 삭제정책)** — 2026-06-22. **잔여:** live-PG 통합 E2E·heat(S2.5)·merge_score entity/domain(S4)·LLM 보조 레이어(경계만). expansion_router/agent_debate/alembic 0006~0007 부재(S5~).
 > │ **구현순위:** #17 (00_ROADMAP_INDEX) · **그룹:** D (신규 NET-NEW)
 > │ **검증 근거:** GroundTruth — 해당 모듈 ls 실패·grep 0건. comment.py debate컬럼 0.
-> │ **잔여(미구현):** S2e·S3~S11(**S1 + S2-core(a~c) + S2d 완료** 2026-06-22). 권장순서 (S1✓·S2-core✓·S2d✓)→S2e(통합 E2E)→S5/S1.5→S3→S4→S7→S8→S9→S10→S11.
+> │ **잔여(미구현):** S3~S11(**S1 + S2-core(a~c) + S2d + S2e(통합 로직 E2E) 완료** 2026-06-22; live-PG E2E 이월). 권장순서 (S1✓·S2✓)→S5/S1.5→S3→S4→S7→S8→S9→S10→S11.
 > │ **완료정의(DoD):** S1~S11 각 DoD(SPEC §20) + 6대 무조건게이트(1517green/secret scan/git diff clean/우회0/투자조언0/전문저장0).
 > │ **권위:** 구현 사실은 `_CANONICAL/*`. 본 문서는 ROADMAP(미래계획).
 > └────────────────────────────────────────────────────────

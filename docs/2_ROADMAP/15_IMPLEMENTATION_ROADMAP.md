@@ -1,10 +1,10 @@
 # 15 — IMPLEMENTATION ROADMAP (Phase 0~10 + Event 토대 + Agent Debate)
 
 > ┌─ 진행상황 식별 (STATUS STAMP) ──────────────────────────
-> │ **상태:** 🟡 PARTIAL — **Phase 0 DONE / Phase 1–3 PARTIAL DONE / Phase 4–10 NOT_DONE.** **Event 토대(S1) + Event Resolution(S2-core a~c + S2d CRUD 영속) 구현 완료**(alembic 0004/0005 + events/event_updates/cluster_event_map/event_links ORM/Pydantic + event_resolver + event_timeline_service, 2026-06-22; S2e 통합 E2E·heat 잔여). Agent Debate Phase는 코드 0(설계).
+> │ **상태:** 🟡 PARTIAL — **Phase 0 DONE / Phase 1–3 PARTIAL DONE / Phase 4–10 NOT_DONE.** **Event 토대(S1) + Event Resolution(S2-core a~c + S2d CRUD 영속 + S2e 통합 파이프라인) 구현 완료**(alembic 0004/0005 + ORM/Pydantic + event_resolver + event_timeline_service + event_resolution_pipeline + 통합 로직 E2E + ADR#19/#20, 2026-06-22; live-PG E2E·heat 잔여). Agent Debate Phase는 코드 0(설계).
 > │ **구현순위:** #4 (00_ROADMAP_INDEX) · **그룹:** A
 > │ **검증 근거:** Phase1(`ingestion/integration/` BackendApiRawEventsWriter, 라이브 e2e 5타입)·Phase2(`event_queue.py` `_redis_*`, `workers/queue/dlq.py`)·Phase3(`evidence_check`·`publish_or_hold` fail-closed, `agents/nodes/baselines.py`)는 `_CANONICAL/01·04·09`가 권위. Phase4–10·S1·Agent Debate는 grep 0(미배선).
-> │ **잔여(미구현):** **S1 토대 + S2-core(a~c) + S2d CRUD 영속 ✅ 구현**(events/event_updates/event_cards.event_id+0004; cluster_event_map/event_links+0005; event_resolver/event_timeline_service, 2026-06-22); **S2 잔여 = S2e(통합 E2E)·heat 4신호(S2.5)·merge_score entity/domain(S4)**, Phase4(tiered+budget+gate+ChangeDetection), Phase6(P/G/F+unsafe gate+audit+유형→role), Phase8(EvidenceNode), Phase9(트래픽KPI+광고4종+커뮤니티), Agent Debate Phase.
+> │ **잔여(미구현):** **S1 토대 + S2-core(a~c) + S2d CRUD 영속 + S2e 통합 파이프라인 ✅ 구현**(events/event_updates/event_cards.event_id+0004; cluster_event_map/event_links+0005; event_resolver/event_timeline_service/event_resolution_pipeline + 통합 로직 E2E, 2026-06-22); **S2 잔여 = live-PG 통합 E2E·heat 4신호(S2.5)·merge_score entity/domain(S4)**, Phase4(tiered+budget+gate+ChangeDetection), Phase6(P/G/F+unsafe gate+audit+유형→role), Phase8(EvidenceNode), Phase9(트래픽KPI+광고4종+커뮤니티), Agent Debate Phase.
 > │ **완료정의(DoD):** 각 Phase Acceptance 충족 + 전단계 1517 green 유지 + 우회 0·전문저장 0·투자조언 0.
 > │ **권위:** 구현 사실은 `_CANONICAL/*`(본 문서보다 최신). 결정 = `_DECISIONS/2026-06.md` ADR#14/#15/#16. 본 문서는 ROADMAP(미래계획).
 > └────────────────────────────────────────────────────────
@@ -21,7 +21,7 @@
 [PARTIAL] P0  ingestion 57소스 엔진 → 실 raw_events Postgres 배선 (mirror→DB; ap_news 라이브 E2E)
 [PARTIAL] P1  Redis Stream/DLQ/retry/monitoring 실배선 + mock 노드 결정론분 baseline화
 [PARTIAL] P3  published 게이트 fail-closed (evidence_check·publish_or_hold) — dedup/clustering 잔여
-[PARTIAL ] S1  ★Event/Update 타임라인 토대★ (구현 2026-06-22: alembic 0004+ORM+회귀; +S2 Resolution a~c·S2d CRUD 영속, S2e E2E 잔여, ADR#16/#18/#19)
+[PARTIAL ] S1  ★Event/Update 타임라인 토대★ (구현 2026-06-22: alembic 0004+ORM+회귀; +S2 Resolution a~c·S2d CRUD·S2e 통합 파이프라인, live-PG E2E 잔여, ADR#16/#18/#19/#20)
 [NOT_DONE] P4  Search API expansion layer (tiered 무료→유료 + per-event/월 budget + ChangeDetection)
 [NOT_DONE] P5  hybrid search + reranker + nori (indexing)
 [NOT_DONE] P6  LLM SourceSupervisor 실 provider 연결 (P/G/F + unsafe gate + audit + 사건유형→role)
@@ -68,7 +68,7 @@
 
 ## Phase Event 토대 (S1) — **Event/Update 타임라인 토대 [임계경로 최우선·토대 PARTIAL DONE 2026-06-22]** (ADR#16)
 - Goal: 사건을 1회성 카드 → **진화하는 Event 타임라인 객체**로. 카드 = Event의 최신 스냅샷 뷰로 재정의(비파괴).
-- **구현 현황(2026-06-22):** S1 토대 ✅ — alembic 0004 + EventORM/EventUpdateORM + Pydantic + is_snapshot_bidirectional + 회귀 17. **S2-core(a~c) ✅** — alembic 0005(cluster_event_map/event_links) + cross_source_dedup clique 게이트 + event_resolver 라우팅. **S2d CRUD 영속 ✅** — `event_timeline_service`(create/append-only/get/set_snapshot 쌍방향강제/cluster_event_map 조회·기록/event_links possible/apply_routing, ADR#19) + 회귀 24. **잔여(S2e): 실 dedup→resolver→영속 통합 E2E("2번째 보도→append", transitive-only 자동승격 0) · heat 4신호(S2.5) · 실 Postgres migration up/down.**
+- **구현 현황(2026-06-22):** S1 토대 ✅ — alembic 0004 + EventORM/EventUpdateORM + Pydantic + is_snapshot_bidirectional + 회귀 17. **S2-core(a~c) ✅** — alembic 0005(cluster_event_map/event_links) + cross_source_dedup clique 게이트 + event_resolver 라우팅. **S2d CRUD 영속 ✅** — `event_timeline_service`(create/append-only/get/set_snapshot 쌍방향강제/cluster_event_map/event_links possible/apply_routing 단일 원자 tx+동시 CREATE rollback, ADR#19) + 회귀 27. **S2e 통합 파이프라인 ✅** — `event_resolution_pipeline`(실 cross_source_dedup→resolver→apply_routing 배선) + 통합 로직 E2E 10(in-memory fake session: 2번째 보도→append·transitive 보류·멱등·FSD·sanitize) + 삭제정책 ADR#20. **잔여: live-PG 통합 E2E(실 migration/FK/2-세션 동시성) · heat 4신호(S2.5).**
 - **S1 스코프(최소 토대, 2026-06-22 확정):** `events`(canonical_title/status/first_seen/last_update/heat/domains/tags/primary_entity_ids/snapshot_card_id) +
   `event_updates`(append-only: observed_at/delta_summary/evidence/added_domains/source_refs/heat_delta) +
   `event_cards.event_id` nullable FK. domains = 닫힌 8섹터 → **열린 2층(통제어휘 ~20 + free-form tags)**. heat = 시계열 활성도(half-life 감쇠).
