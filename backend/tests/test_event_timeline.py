@@ -29,9 +29,10 @@ from backend.app.schemas.events import Event, EventUpdate
 def test_timeline_tables_registered():
     assert "events" in Base.metadata.tables
     assert "event_updates" in Base.metadata.tables
-    # S1 스코프: cluster_event_map / event_links 는 S2 이월 — 아직 없어야 한다.
-    assert "cluster_event_map" not in Base.metadata.tables
-    assert "event_links" not in Base.metadata.tables
+    # S2a(2026-06-22): cluster_event_map / event_links 는 이제 등록됨(S1 이월 해소).
+    # 상세 회귀는 test_event_resolution.py.
+    assert "cluster_event_map" in Base.metadata.tables
+    assert "event_links" in Base.metadata.tables
 
 
 def test_metadata_sorts_without_circular_dependency():

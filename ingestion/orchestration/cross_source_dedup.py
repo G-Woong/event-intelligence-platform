@@ -45,6 +45,10 @@ class CrossSourceDedupResult:
     duplicate_record_keys: tuple[str, ...]
     confidence: str
     reason: str
+    # S2b (event_resolver 입력) — additive. 기존 소비처 비파괴(기본값 보존).
+    signal_strength: float = 0.0          # 클러스터 결합 강도: 강신호=1.0, 아니면 약신호 Jaccard 연속값(orchestrator #2)
+    clique_ok: bool = True                # 강신호 단일 연결성분이 전체 멤버를 덮는가(R-FalseMerge: transitive/bridge 흡수 차단)
+    weak_only_members: tuple[str, ...] = ()  # 약신호로만 끌려온 멤버 키(clique 미달 → HOLD 후보, provenance)
 
 
 def _norm_title(title: Optional[str]) -> str:
@@ -133,6 +137,7 @@ def cluster_records(records) -> list[CrossSourceDedupResult]:
 
     # 약한 신호: 같은 날짜 bucket 내 title 일치 / token Jaccard
     weak_pairs: set[tuple[int, int]] = set()
+    weak_jaccard: dict[tuple[int, int], float] = {}   # pair → Jaccard 연속값(signal_strength 보존, S2b)
     by_bucket: dict[str, list[int]] = {}
     for i, r in enumerate(records):
         b = _date_bucket(r)
@@ -146,10 +151,14 @@ def cluster_records(records) -> list[CrossSourceDedupResult]:
                 if not ti or not tj:
                     continue
                 pair = (min(i, j), max(i, j))
-                if ti == tj or _jaccard(_title_tokens(records[i].get("title_or_label")),
-                                        _title_tokens(records[j].get("title_or_label"))) >= _TITLE_JACCARD_THRESHOLD:
+                jac = 1.0 if ti == tj else _jaccard(
+                    _title_tokens(records[i].get("title_or_label")),
+                    _title_tokens(records[j].get("title_or_label")),
+                )
+                if jac >= _TITLE_JACCARD_THRESHOLD:
                     uf.union(i, j)
                     weak_pairs.add(pair)
+                    weak_jaccard[pair] = max(weak_jaccard.get(pair, 0.0), jac)
 
     # 클러스터 수집
     groups: dict[int, list[int]] = {}
@@ -161,13 +170,31 @@ def cluster_records(records) -> list[CrossSourceDedupResult]:
         if len(members) < 2:
             continue
         members = sorted(members)
-        # 클러스터가 강한 결합을 하나라도 포함하면 duplicate, 아니면 possible
-        has_strong = any(
-            (min(a, b), max(a, b)) in strong_pairs
-            for a in members for b in members if a < b
-        )
+        member_set = set(members)
+        # 클러스터 내 강신호/약신호 edge(provenance).
+        strong_in = [(a, b) for (a, b) in strong_pairs if a in member_set and b in member_set]
+        weak_in = [(a, b) for (a, b) in weak_pairs if a in member_set and b in member_set]
+        has_strong = bool(strong_in)
         confidence = CONF_DUPLICATE if has_strong else CONF_POSSIBLE
         reason = "strong_key_match" if has_strong else "title_date_similarity"
+        # R-FalseMerge clique 게이트(adversarial #1 + B1 교정): 강신호 edge **만으로** 단일 연결성분이
+        # 전체 멤버를 덮어야 clique_ok=True. 강성분이 2개 이상이면(두 강성분이 약신호로만 브릿지된
+        # 경우 포함) primary(members[0]) 강성분에 속하지 않는 멤버를 weak_only로 분리 → 자동 APPEND
+        # 금지(transitive/bridge 흡수 차단). 단순히 "강신호 끝점인가"로 보면 두-강성분 브릿지를 놓친다.
+        pos = {m: k for k, m in enumerate(members)}
+        suf = _UnionFind(len(members))
+        for a, b in strong_in:
+            suf.union(pos[a], pos[b])
+        primary_root = suf.find(pos[members[0]])
+        weak_only = [m for m in members if suf.find(pos[m]) != primary_root]
+        clique_ok = len(weak_only) == 0
+        # signal_strength(orchestrator #2): 1비트 양자화 폐기 — 강신호=1.0, 아니면 약신호 Jaccard 연속값.
+        if strong_in:
+            signal_strength = 1.0
+        elif weak_in:
+            signal_strength = max(weak_jaccard.get(p, 0.0) for p in weak_in)
+        else:
+            signal_strength = 0.0
         member_keys = tuple(keys[m] for m in members)
         out.append(CrossSourceDedupResult(
             cluster_id=f"xcluster:{keys[members[0]]}",
@@ -176,6 +203,9 @@ def cluster_records(records) -> list[CrossSourceDedupResult]:
             duplicate_record_keys=tuple(keys[m] for m in members[1:]),
             confidence=confidence,
             reason=reason,
+            signal_strength=signal_strength,
+            clique_ok=clique_ok,
+            weak_only_members=tuple(keys[m] for m in weak_only),
         ))
     return out
 

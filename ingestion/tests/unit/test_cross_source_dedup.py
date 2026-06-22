@@ -78,6 +78,87 @@ def test_single_record_no_cluster():
     assert cluster_records([_rec(canonical_url="https://a.test/1")]) == []
 
 
+def test_full_strong_clique_ok():
+    # 3소스가 같은 canonical → 전원 강신호 anchor → clique_ok, signal_strength=1.0.
+    recs = [
+        _rec(source_id="ap", canonical_url="https://wire/x", title_or_label="X"),
+        _rec(source_id="bbc", canonical_url="https://wire/x", title_or_label="X"),
+        _rec(source_id="cnn", canonical_url="https://wire/x", title_or_label="X"),
+    ]
+    c = cluster_records(recs)[0]
+    assert c.confidence == "duplicate"
+    assert c.clique_ok is True
+    assert c.weak_only_members == ()
+    assert c.signal_strength == 1.0
+
+
+def test_transitive_false_merge_flagged_by_clique_gate():
+    # R-FalseMerge(adversarial #1): ap-reuters 강신호(canonical), blog는 title만 일치(약신호).
+    # Union-Find는 셋을 한 클러스터로 묶지만, blog는 강신호 anchor가 없으므로 clique_ok=False
+    # → resolver가 자동 APPEND하지 않고 blog를 HOLD해야 한다(transitive 흡수 차단).
+    recs = [
+        _rec(source_id="ap", canonical_url="https://wire/x",
+             title_or_label="Hormuz tanker seized by navy", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="reuters", canonical_url="https://wire/x",
+             title_or_label="Hormuz tanker seized by navy", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="blog", canonical_url="https://blog/z",
+             title_or_label="Hormuz tanker seized by navy", published_at_or_observed_at="2025-06-02"),
+    ]
+    clusters = cluster_records(recs)
+    assert len(clusters) == 1
+    c = clusters[0]
+    assert c.confidence == "duplicate"        # 강신호 존재(ap-reuters)
+    assert c.clique_ok is False               # 그러나 blog는 약신호-only
+    assert len(c.weak_only_members) == 1      # blog 1건이 clique 미달(HOLD 후보)
+
+
+def test_two_strong_components_bridged_by_weak_is_not_clique():
+    # R-FalseMerge B1(adversarial 교정): 두 개의 분리된 강성분(ap-reuters / afp-dpa)이
+    # 동일 제목(약신호)으로만 브릿지된다. "강신호 끝점인가"만 보면 전원 anchor라 오통과하지만,
+    # 강신호 단일 연결성분 기준이면 강성분이 2개 → clique 미달(비-primary 성분 보류).
+    title = "hormuz strait tanker seized by navy"
+    recs = [
+        _rec(source_id="ap", canonical_url="https://wire/x", title_or_label=title, published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="reuters", canonical_url="https://wire/x", title_or_label=title, published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="afp", canonical_url="https://other/y", title_or_label=title, published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="dpa", canonical_url="https://other/y", title_or_label=title, published_at_or_observed_at="2025-06-02"),
+    ]
+    clusters = cluster_records(recs)
+    assert len(clusters) == 1
+    c = clusters[0]
+    assert c.confidence == "duplicate"        # 강신호 존재
+    assert c.clique_ok is False               # 두 강성분이 약신호로만 브릿지 → clique 미달
+    assert len(c.weak_only_members) == 2      # 비-primary 강성분(afp,dpa) 분리 보류
+
+
+def test_weak_cluster_preserves_continuous_signal_strength():
+    # 약신호-only 클러스터: Jaccard 연속값 보존(1비트 양자화 폐기, orchestrator #2).
+    recs = [
+        _rec(source_id="a", canonical_url="https://a/1",
+             title_or_label="mars rover finds water ice deposit today",
+             published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="b", canonical_url="https://b/2",
+             title_or_label="mars rover finds water ice deposit",
+             published_at_or_observed_at="2025-06-02"),
+    ]
+    c = cluster_records(recs)[0]
+    assert c.confidence == "possible_duplicate"
+    assert c.clique_ok is False               # 강신호 0 → 전원 weak-only
+    assert 0.8 <= c.signal_strength < 1.0     # 연속값(≈0.857), 1.0으로 양자화되지 않음
+
+
+def test_legacy_fields_unchanged_additive():
+    # 기존 소비처 비파괴: confidence/duplicate_group 등 기존 필드 동작 불변.
+    recs = [
+        _rec(source_id="a", canonical_url="https://wire.test/a", title_or_label="X"),
+        _rec(source_id="b", canonical_url="https://wire.test/a", title_or_label="X"),
+    ]
+    c = cluster_records(recs)[0]
+    assert c.confidence == "duplicate"
+    assert len(c.duplicate_group) == 2
+    assert c.reason == "strong_key_match"
+
+
 def test_summarize_clusters_counts():
     recs = [
         _rec(source_id="a", canonical_url="https://wire.test/a", title_or_label="X"),

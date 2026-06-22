@@ -75,7 +75,7 @@
 - Area: data-model / Event 타임라인
 - Description: S1(events/event_updates/event_cards.event_id nullable FK)은 비파괴·정합(architecture SOUND·게이트 1451 green·회귀 0)이나, S2(Event Resolution + CRUD 서비스) 착수 전에 확정할 정책 항목이 적대/법무 감사에서 식별됨.
 - 잔여(S2 전 확정): ① `event_updates.event_id` ON DELETE CASCADE vs "append-only 감사 로그" 의도 긴장 — Event 삭제 시 변화분 통째 삭제(감사 목적이면 RESTRICT/soft-delete 검토, N5). ② Event/EventUpdate Pydantic↔ORM 경계의 tz-naive datetime·str↔UUID 방어 부재(카드 변환엔 있으나 Event엔 미구현 — S2 CRUD 변환 시 동반, N6). ③ `is_snapshot_bidirectional`은 app-level 헬퍼(DB 트리거/CHECK 아님)이며 현재 호출처 0(테스트뿐) — S2 이중쓰기 경로에서 실제 호출·강제 필요. ④ `evidence`/`source_refs`(자유 JSONB)를 채우는 ingestion/요약 단계에서 "전문 미저장·URL/요약만 + PII 가드"(legal 조건부 메모).
-- Closure: S2 Event Resolution/CRUD 서비스에서 ①~④ 정책 확정 + 이중쓰기 경로가 is_snapshot_bidirectional 강제 + tz/UUID 변환 방어 추가 시 종결.
+- Closure: **S2d(CRUD 서비스)** 에서 ①~④ 정책 확정 + 이중쓰기 경로가 is_snapshot_bidirectional 강제 + tz/UUID 변환 방어 추가 시 종결. (S2-core a~c=decision layer는 2026-06-22 완료했으나 CRUD 영속층 미터치 → ①~④ 그대로 S2d 잔여.)
 
 ### R-Gdelt429 · gdelt provider 429  — Severity: MEDIUM
 - Area: rate-limit / cooldown / retry
@@ -199,12 +199,12 @@
 - Remaining gap(정직, adversarial): **"1517 green=비파괴"는 신규 경로(신규 테이블·재색인)를 커버하지 않음** — green은 기존 경로 무손상만 증명. 색인 swallow(MASTER L5)와 결합 시 검색-목록 불일치(신뢰 훼손).
 - Closure: 1517 green + Event append E2E + **3엔진 동일 card_id 정합성 불변식 테스트 + 미전파 카드 메트릭(outbox SLO)**. ADR로 `cluster_event_map` 단일 진실원천 vs `event_cards.event_id` derived 결정 기록.
 
-### R-FalseMerge · Union-Find transitive 오염이 영속 Event로 전파  — Severity: MEDIUM (R-Dedup LOW→MEDIUM 승격, 2026-06-20 — adversarial)
+### R-FalseMerge · Union-Find transitive 오염이 영속 Event로 전파  — Severity: MEDIUM→LOW-MEDIUM (S2-core clique 게이트 decision-layer 구현 2026-06-22)
 - Area: clustering / Event Resolution / 차별(교차검증 신뢰)
-- Description: `cross_source_dedup.py:149`가 title Jaccard≥0.8(`_TITLE_JACCARD_THRESHOLD=0.8`)이면 union → Union-Find transitive 폐쇄(A–B 0.8, B–C 0.8이면 A–C 유사도 0이어도 같은 cluster). `:165-169` `has_strong=any(...)`라 클러스터에 강신호 edge 1개만 있어도 약신호로 끌려온 무관 레코드까지 전체가 CONF_DUPLICATE→자동 APPEND. 현재는 카드 1회성이라 오염이 갇히나, **Event append 라우팅(ADR#16) 도입 시 영속 Event에 누적·전파**.
-- Current mitigation: (설계) 강신호 자동/약신호 possible 보류 — 단 cluster-level confidence만 봄(transitive 멤버 미보호).
-- Remaining gap: clique(완전연결) 게이트·edge provenance 부재. 고heat Event가 무관 사건 흡수 시 1건의 명백한 오병합도 차별점(교차검증 신뢰) 붕괴.
-- Closure: **transitive-only 클러스터 자동승격 금지 테스트** + clique 게이트 통과 E2E + 약신호 edge가 추가한 멤버에만 pairwise 검사(분모 축소) + event_links edge-level provenance(split 가역).
+- Description: `cross_source_dedup.py`가 title Jaccard≥0.8이면 union → Union-Find transitive 폐쇄(A–B 0.8, B–C 0.8이면 A–C 유사도 0이어도 같은 cluster). 과거 `has_strong=any(...)`라 강신호 edge 1개만 있어도 약신호로 끌려온 무관 레코드까지 전체 CONF_DUPLICATE→자동 APPEND. Event append 라우팅(ADR#16) 도입 시 영속 Event 누적·전파 위험.
+- DONE(S2-core, 2026-06-22 decision layer): ① **clique 게이트 구현** — `clique_ok`=강신호 edge만으로 **단일 연결성분이 전체 멤버를 덮는가**(`cross_source_dedup.py` 강신호-only Union-Find). 미달 멤버는 `weak_only_members`로 분리. ② **B1 적대 교정** — "강신호 끝점인가"만 보면 두 강성분이 약신호로만 브릿지된 경우(A-B강, C-D강, B-C약)를 놓침 → 강신호 연결성분 기준으로 수정 + 회귀 `test_two_strong_components_bridged_by_weak_is_not_clique`. ③ **edge provenance**(strong_in/weak_in/weak_only) + **signal_strength**(Jaccard 연속값 보존, 1비트 양자화 폐기). ④ `event_resolver.resolve_routing`이 clique 미달 멤버를 HOLD(자동 APPEND 금지). 회귀: transitive 1멤버 차단 + 두-강성분 브릿지 차단 + resolver core-append/weak-hold.
+- Remaining gap: **결정층만 구현** — `held_members`→`event_links(possible)` 영속 적용층(S2d) + resolver가 **실 dedup 출력을 받는 통합 E2E** 미배선(현재 양쪽 단위 테스트만, 입력 직접 주입). signal_strength를 게이팅/heat에 쓰면 단일 클러스터 대표값(멤버 해상도 손실)·`max` 낙관 편향 재평가 필요.
+- Closure: S2d에서 held_members→event_links 영속 + 실 cluster_records→resolver 통합 E2E(transitive-only 자동승격 0 입증) + event_links edge-level provenance(split 가역).
 
 ### R-DiscoveryCostStarvation · 발견 triage가 확장 LLM 예산 잠식  — Severity: MEDIUM (미래, 2026-06-20 신규 — adversarial)
 - Area: Authority Discovery / budget / 발견 폭주

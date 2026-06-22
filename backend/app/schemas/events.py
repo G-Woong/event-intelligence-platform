@@ -73,6 +73,23 @@ class EventUpdate(BaseModel):
     heat_delta: float = 0.0
 
 
+class ClusterEventMap(BaseModel):
+    """cluster_id → event_id 라우팅(단일 진실원천). EVENT_SCHEMA Part 2 §cluster_event_map / S2."""
+
+    cluster_id: str
+    event_id: str
+
+
+class EventLink(BaseModel):
+    """event ↔ event 링크. 약신호 possible 보류(자동병합 금지). EVENT_SCHEMA Part 2 §event_links / S2."""
+
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    event_id: str
+    linked_event_id: str
+    status: Literal["possible", "confirmed", "rejected", "merged"] = "possible"
+    reason: Optional[str] = None
+
+
 class EventSearchHit(BaseModel):
     card_id: str
     id: str
