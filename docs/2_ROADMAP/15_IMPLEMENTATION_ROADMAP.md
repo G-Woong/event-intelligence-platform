@@ -1,7 +1,7 @@
 # 15 — IMPLEMENTATION ROADMAP (Phase 0~10 + Event 토대 + Agent Debate)
 
 > ┌─ 진행상황 식별 (STATUS STAMP) ──────────────────────────
-> │ **상태:** 🟡 PARTIAL — **Phase 0 DONE / Phase 1–3 PARTIAL DONE / Phase 4–10 NOT_DONE.** **Event 토대(S1) + Event Resolution(S2-core a~c + S2d CRUD 영속 + S2e 통합 파이프라인) 구현 완료**(alembic 0004/0005 + ORM/Pydantic + event_resolver + event_timeline_service + event_resolution_pipeline + 통합 로직 E2E + ADR#19/#20, 2026-06-22; live-PG E2E·heat 잔여). Agent Debate Phase는 코드 0(설계).
+> │ **상태:** 🟡 PARTIAL — **Phase 0 DONE / Phase 1–3 PARTIAL DONE / Phase 4–10 NOT_DONE.** **Event 토대(S1) + Event Resolution(S2-core a~c + S2d CRUD 영속 + S2e 통합 파이프라인 + live-PG 검증) 구현 완료**(alembic 0004/0005/**0006** + ORM/Pydantic + event_resolver + event_timeline_service + event_resolution_pipeline + 통합 E2E + **✅ live-PG E2E 14**(0001~0006 실 Postgres·2-세션 동시성·FK RESTRICT) + ADR#19/#20/#21, 2026-06-22; live wiring·heat 잔여). Agent Debate Phase는 코드 0(설계).
 > │ **구현순위:** #4 (00_ROADMAP_INDEX) · **그룹:** A
 > │ **검증 근거:** Phase1(`ingestion/integration/` BackendApiRawEventsWriter, 라이브 e2e 5타입)·Phase2(`event_queue.py` `_redis_*`, `workers/queue/dlq.py`)·Phase3(`evidence_check`·`publish_or_hold` fail-closed, `agents/nodes/baselines.py`)는 `_CANONICAL/01·04·09`가 권위. Phase4–10·S1·Agent Debate는 grep 0(미배선).
 > │ **잔여(미구현):** **S1 토대 + S2-core(a~c) + S2d CRUD 영속 + S2e 통합 파이프라인 ✅ 구현**(events/event_updates/event_cards.event_id+0004; cluster_event_map/event_links+0005; event_resolver/event_timeline_service/event_resolution_pipeline + 통합 로직 E2E, 2026-06-22); **S2 잔여 = live-PG 통합 E2E·heat 4신호(S2.5)·merge_score entity/domain(S4)**, Phase4(tiered+budget+gate+ChangeDetection), Phase6(P/G/F+unsafe gate+audit+유형→role), Phase8(EvidenceNode), Phase9(트래픽KPI+광고4종+커뮤니티), Agent Debate Phase.

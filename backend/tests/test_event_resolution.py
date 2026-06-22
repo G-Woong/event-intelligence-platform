@@ -56,13 +56,13 @@ def test_cluster_event_map_ddl_compiles_for_postgres():
     ddl = str(CreateTable(ClusterEventMapORM.__table__).compile(dialect=postgresql.dialect()))
     assert "CREATE TABLE cluster_event_map" in ddl
     assert "cluster_id VARCHAR(256)" in ddl
-    assert "REFERENCES events" in ddl and "CASCADE" in ddl
+    assert "REFERENCES events" in ddl and "RESTRICT" in ddl   # 0006: 감사 보호
 
 
 def test_event_links_ddl_compiles_for_postgres():
     ddl = str(CreateTable(EventLinkORM.__table__).compile(dialect=postgresql.dialect()))
     assert "CREATE TABLE event_links" in ddl
-    assert "REFERENCES events" in ddl and "CASCADE" in ddl
+    assert "REFERENCES events" in ddl and "RESTRICT" in ddl   # 0006: 감사 보호
     # status 허용값 CHECK 제약(자동병합 금지 상태집합 잠금).
     assert "ck_event_links_status" in ddl
     assert "possible" in ddl and "confirmed" in ddl

@@ -60,7 +60,8 @@ class EventORM(Base):
 class EventUpdateORM(Base):
     """event_updates 테이블 — append-only 변화분. EVENT_SCHEMA Part 2 §EventUpdate.
 
-    불변식: INSERT 만(UPDATE/DELETE 금지) → 가역성·감사. 부모 Event 삭제 시 CASCADE.
+    불변식: INSERT 만(UPDATE/DELETE 금지) → 가역성·감사. event_id FK 는 **RESTRICT**(0006, ADR#20):
+    감사 이력(변화분)이 있는 Event 는 DB 레벨에서 삭제 차단 — append-only 감사 trail 보호.
     """
 
     __tablename__ = "event_updates"
@@ -71,7 +72,7 @@ class EventUpdateORM(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     event_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("events.id", ondelete="CASCADE"),
+        ForeignKey("events.id", ondelete="RESTRICT"),
         nullable=False,
     )
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

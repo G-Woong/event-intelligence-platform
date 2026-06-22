@@ -32,9 +32,10 @@ class ClusterEventMapORM(Base):
     )
 
     cluster_id: Mapped[str] = mapped_column(String(256), primary_key=True)
+    # RESTRICT(0006, ADR#20): 라우팅 매핑이 가리키는 Event 는 DB 레벨에서 삭제 차단(감사 보호).
     event_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("events.id", ondelete="CASCADE"),
+        ForeignKey("events.id", ondelete="RESTRICT"),
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -54,14 +55,15 @@ class EventLinkORM(Base):
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # RESTRICT(0006, ADR#20): 링크가 가리키는 Event 는 DB 레벨에서 삭제 차단(possible/merged 이력 보호).
     event_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("events.id", ondelete="CASCADE"),
+        ForeignKey("events.id", ondelete="RESTRICT"),
         nullable=False,
     )
     linked_event_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("events.id", ondelete="CASCADE"),
+        ForeignKey("events.id", ondelete="RESTRICT"),
         nullable=False,
     )
     status: Mapped[str] = mapped_column(String(12), nullable=False, server_default="possible")

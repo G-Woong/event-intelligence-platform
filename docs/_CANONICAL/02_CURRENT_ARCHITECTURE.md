@@ -33,16 +33,17 @@ heartbeat 파일 healthcheck(worker/agent-worker, 60s 임계).
 | themes / sectors | **PARTIAL** | 스켈레톤 자료 |
 | comments / ai_replies | **PARTIAL** | 미완성 |
 
-## 4. 데이터 스키마 (Postgres, alembic 0001~0005)
+## 4. 데이터 스키마 (Postgres, alembic 0001~0006 · ✅ live-PG up/down 검증 2026-06-22)
 
 - **raw_events**: source_type/name, external_id, url, title(≤1024), raw_text(요약만, 본문 저장 금지),
   published_at(UTC), feed metadata JSONB, status(collected→enqueued→processed|failed),
   content_hash UNIQUE, event_card_id FK, requeue_count. (`backend/app/models/raw_event.py`)
 - **event_cards**: id/title/summary/theme/sectors(JSONB)/entities(JSONB)/impact_path/evidence/
   confidence_score/status/llm_provider/model_used/created_at + **event_id nullable FK→events**(S1, ADR#16: 카드=Event 스냅샷, NULL=degenerate). (`backend/app/models/event.py`)
-- **events / event_updates** (S1 토대, alembic 0004, 2026-06-22): `events`(canonical_title/status/first_seen/last_update/heat/domains·tags·primary_entity_ids JSONB/snapshot_card_id FK→event_cards) + `event_updates`(append-only: observed_at/delta_summary/evidence·source_refs·added_domains JSONB/heat_delta, event_id FK→events CASCADE). (`backend/app/models/event_timeline.py`)
-- **cluster_event_map / event_links** (S2a, alembic 0005, 2026-06-22): `cluster_event_map`(cluster_id PK→event_id 라우팅 단일 진실원천) + `event_links`(event↔event, status possible/confirmed/rejected/merged CheckConstraint, 약신호 자동병합 금지). (`backend/app/models/event_resolution.py`) — **entities 는 S4~ 미생성.**
-- **Event Resolution 서비스 계층** (S2c/S2d/S2e, 2026-06-22): `event_resolver.resolve_routing`(순수 라우팅 APPEND/HOLD/CREATE + clique 게이트, ingestion 비의존) + `event_timeline_service`(CRUD 영속: create_event/append_update append-only/get_event/set_snapshot 쌍방향강제/map_cluster·get_cluster_event/hold_link possible/apply_routing 단일 원자 tx+동시 CREATE rollback — ADR#19) + **`event_resolution_pipeline`(S2e: 실 cross_source_dedup→resolver→apply_routing 배선, ingestion 비의존 duck-typed)**. 통합 로직 E2E 입증(in-memory fake session, `test_event_resolution_pipeline`): 2번째 보도→append·transitive 약신호 보류·멱등·FSD·sanitize. **삭제 정책 ADR#20**(app no-delete + status 라이프사이클). **잔여:** live-PG E2E·heat 4신호(S2.5)·merge_score entity/domain(S4)·LLM 보조 레이어(경계만 개방).
+- **events / event_updates** (S1 토대, alembic 0004, 2026-06-22): `events`(canonical_title/status/first_seen/last_update/heat/domains·tags·primary_entity_ids JSONB/snapshot_card_id FK→event_cards SET NULL) + `event_updates`(append-only: observed_at/delta_summary/evidence·source_refs·added_domains JSONB/heat_delta, event_id FK→events **RESTRICT**(0006, 감사 보호)). (`backend/app/models/event_timeline.py`)
+- **cluster_event_map / event_links** (S2a, alembic 0005, 2026-06-22): `cluster_event_map`(cluster_id PK→event_id 라우팅 단일 진실원천, FK **RESTRICT** 0006) + `event_links`(event↔event, status possible/confirmed/rejected/merged CheckConstraint, FK **RESTRICT** 0006, 약신호 자동병합 금지). (`backend/app/models/event_resolution.py`) — **entities 는 S4~ 미생성.**
+- **alembic 0006 (FK RESTRICT, S2e live-PG, 2026-06-22)**: event_updates/cluster_event_map/event_links FK CASCADE→RESTRICT(ADR#20 DB 레벨 감사 보호 — 의존 행 있는 Event 삭제 차단). 실 Postgres up/down 검증. (`backend/alembic/versions/0006_fk_restrict_audit.py`)
+- **Event Resolution 서비스 계층** (S2c/S2d/S2e, 2026-06-22): `event_resolver.resolve_routing`(순수 라우팅 APPEND/HOLD/CREATE + clique 게이트, ingestion 비의존) + `event_timeline_service`(CRUD 영속: create_event/append_update append-only/get_event/set_snapshot 쌍방향강제/map_cluster·get_cluster_event/hold_link possible/apply_routing 단일 원자 tx+동시 CREATE rollback — ADR#19) + **`event_resolution_pipeline`(S2e: 실 cross_source_dedup→resolver→apply_routing 배선, ingestion 비의존 duck-typed)**. 통합 E2E **✅ live-PG 검증**(`test_event_resolution_live_pg` 14, ADR#21): 실 Postgres 에서 CREATE/APPEND/HOLD·멱등·FSD(실 LEAST/GREATEST)·sanitize(실 JSONB)·**2-세션 동시 CREATE orphan 0**·**FK RESTRICT 삭제 차단**. (in-memory fake E2E 11 은 보조 유지.) **삭제 정책 ADR#20**(app no-delete + status + FK RESTRICT). **잔여:** live wiring(수집→Event 미배선)·3엔진 색인 정합·heat 4신호(S2.5)·merge_score entity/domain(S4)·LLM 보조 레이어(경계만 개방).
 - **comments**: 스켈레톤. comment body_text/debate 확장 마이그레이션은 미생성(S9). (0004=event_timeline, 0005=event_resolution 에 할당됨)
 
 ## 5. 검색·RAG (3엔진 분리)

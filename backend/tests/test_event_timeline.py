@@ -57,7 +57,7 @@ def test_events_columns_and_fk():
 
 def test_event_updates_columns_and_fk():
     cols = EventUpdateORM.__table__.columns
-    # event_id 는 NOT NULL + events.id CASCADE.
+    # event_id 는 NOT NULL + events.id RESTRICT(0006, ADR#20 감사 보호).
     eid = cols["event_id"]
     assert eid.nullable is False
     assert any(fk.target_fullname == "events.id" for fk in eid.foreign_keys)
@@ -90,8 +90,8 @@ def test_events_ddl_compiles_for_postgres():
 def test_event_updates_ddl_compiles_for_postgres():
     ddl = str(CreateTable(EventUpdateORM.__table__).compile(dialect=postgresql.dialect()))
     assert "CREATE TABLE event_updates" in ddl
-    # event_id FK 는 CASCADE.
-    assert "REFERENCES events" in ddl and "CASCADE" in ddl
+    # event_id FK 는 RESTRICT(0006, ADR#20 — 감사 이력 보호).
+    assert "REFERENCES events" in ddl and "RESTRICT" in ddl
 
 
 # ── Pydantic 스키마 ──────────────────────────────────────────────────────────
