@@ -1,25 +1,36 @@
 # 18 — FINAL EXECUTIVE SUMMARY
 
-> 경영자용 요약 + 엔지니어용 next tasks. 기준 커밋 `5491c02`, 2026-06-16.
-> 💵 상업화·수익모델·가격 상세는 단일 출처 `2_ROADMAP/13_COMMERCIALIZATION_AND_PRODUCT_STRATEGY.md` 참조.
+> ┌─ 진행상황 식별 (STATUS STAMP) ──────────────────────────
+> │ **상태:** 📘 REFERENCE — 경영자 요약 + 엔지니어 next tasks. **섹션별 기준일 상이**(A=전략, B=2026-06-18 P0배선 PARTIAL 실사실, 수익화=ADR#15 개정).
+> │ **구현순위:** #5 (00_ROADMAP_INDEX) · **그룹:** A
+> │ **검증 근거:** §B P0 배선 PARTIAL DONE은 실사실(`_CANONICAL/01`·`_RISK` R-Integration, ap_news 100 카드 라이브 E2E). 수익화 단락은 ADR#15로 **전면 재작성**(구독 4티어 = 레거시 허위방향, 교정 완료).
+> │ **잔여(미구현):** Event 토대(S1)·P/G/F 실배선·광고/커뮤니티 표면 전부. 본 문서는 전략 서사이지 구현 사실 아님.
+> │ **완료정의(DoD):** 구현 사실 갱신은 `_CANONICAL/*`에서만(미구현을 구현됨으로 적지 않음). 본 문서는 방향·우선순위 정합 유지.
+> │ **권위:** 구현 사실은 `_CANONICAL/*`. 결정 = `_DECISIONS/2026-06.md` ADR#14/#15/#16. 본 문서는 ROADMAP(미래계획).
+> └────────────────────────────────────────────────────────
 
-> 📌 **경영 요약(ABSORB, 10 Group E E19)**: §B는 self-reconcile됨. 단 "두 자산이 아직 미연결"이라는 프레이밍은 **stale** — 배선·라이브 E2E 완료(canonical `01`·`05 R-Integration`, ap_news 100 카드). 현재 구현 사실은 canonical이 권위. 수익화·가격 등은 **미구현 ROADMAP**.
+> 경영자용 요약 + 엔지니어용 next tasks. 기준 커밋 `main`(현재), 1,517 passed/5 skip. (이전 `5491c02`/2026-06-16 기준은 stale — 갱신.)
+> 💵 상업화·수익모델·가격 상세는 단일 출처 `2_ROADMAP/13_COMMERCIALIZATION_AND_PRODUCT_STRATEGY.md` 참조(ADR#15 트래픽×광고×커뮤니티 개정 반영).
+
+> 📌 **경영 요약(ABSORB, 10 Group E E19)**: §B는 self-reconcile됨. 단 "두 자산이 아직 미연결"이라는 프레이밍은 **stale** — 배선·라이브 E2E 완료(canonical `01`·`05 R-Integration`, ap_news 100 카드). 현재 구현 사실은 canonical이 권위. 수익화·가격은 **미구현 ROADMAP**이며, 레거시 "B2B 구독 4티어" 방향은 **ADR#15로 폐기**(아래 '수익화' 단락 = 트래픽×광고×커뮤니티 개정본).
 
 ---
 
 ## A. 경영자 요약 (Executive Summary)
 
-**우리가 만드는 것.** 구글 같은 범용 검색엔진이 아니라, 고신호 source 수집 + 검색 API 확장 + 자체 index + RAG + LLM judge + event graph를 결합한 **event intelligence platform**이다. 사용자가 묻기 전에 사건을 능동 감지하고, 다중 소스로 교차검증하며, 증거(evidence URL)를 붙여 신뢰할 수 있는 실시간 사건 스트림을 제공한다.
+**우리가 만드는 것.** 구글 같은 범용 검색엔진이 아니라, 고신호 source 수집 + 검색 API 확장 + 자체 index + RAG + LLM judge + event graph를 결합한 **event intelligence platform**이다. 사용자가 묻기 전에 사건을 능동 감지하고, 다중 소스로 교차검증하며, 증거(evidence URL)를 붙여 신뢰할 수 있는 실시간 사건 스트림을 제공한다. **핵심 데이터 모델(ADR#16):** 사건은 1회성 카드가 아니라 **진화하는 Event 타임라인 객체**다 — 호르무즈 봉쇄처럼 하나의 주제가 시계열로 계속 변화하고 다분야로 번진다. Event(안정 주제) + EventUpdate(append-only 변화분)로 분리하고, 카드는 "Event의 최신 단면 스냅샷"으로 격하된다. 2번째 보도가 오면 새 카드가 아니라 **기존 Event에 Update가 append**된다.
 
 **지금 어디에 있나.** 두 개의 자산이 있다 — (A) 57개 소스를 정책 안전하게 수집하는 deterministic 엔진(구현 완료), (B) 사건을 카드로 만들어 검색·표시하는 다운스트림 앱(부분 구현). 문제는 **둘이 연결되어 있지 않다**는 것이다. A의 수집 결과는 JSON 파일에만 쌓이고 실제 DB·화면까지 도달하지 못한다. 즉 "엔진은 완성됐고 고급 기능만 얹으면 된다"는 인식은 사실과 다르다.
 
-**가장 중요한 한 가지(P0).** ingestion 57소스 엔진을 실 raw_events Postgres에 연결하는 배선. 이것이 풀리기 전에는 소스를 100개 더 붙여도, GraphRAG를 얹어도, 영업을 시작해도 공허하다(데모 불가). 첫 목표는 화려한 기능이 아니라 **실데이터 사건 카드 1건을 end-to-end로 만드는 것**이다.
+**가장 중요한 한 가지 — 다음 관문(P0 배선은 PARTIAL DONE).** P0 배선(ingestion→raw_events PG)은 라이브 E2E로 **이미 연결됐다**(ap_news 100 카드, §B). 따라서 다음 관문은 배선이 아니라 **Event 토대(S1) 선행**이다(ADR#16, 00_ROADMAP_INDEX §4 임계경로). 카드 알맹이 AI 품질(NER/분류기/도달성)을 올리기 전에 **Event/Update 타임라인 형태를 먼저 고정**하지 않으면, 그 품질 작업이 곧 폐기될 1회성 카드 스키마 위에 쌓인다(코딩 전 판단 원칙). 첫 목표는 화려한 기능이 아니라 **"2번째 보도 → 새 카드 아닌 기존 Event Update append"를 비파괴(1517 green)로 입증하는 것**이다. 그 위에서만 검색고도화·상용화가 모래성이 아니게 된다.
 
-**어떻게 이기나.** 자본화된 경쟁자(Dataminr/AlphaSense, 수천 고객·수백M 자본)와 범용 실시간 인텔리전스로 정면승부하면 진다. 이길 수 있는 곳은 (1) **좁은 vertical 정밀도**(AI/tech 제품 incident 또는 한국 규제/공시), (2) **교차검증 + evidence 추적성**(클릭 한 번으로 원본까지 = B2B 인용 가능), (3) **사건 중심 능동 감지**다.
+**어떻게 이기나.** 자본화된 경쟁자(Dataminr/AlphaSense, 수천 고객·수백M 자본)와 범용 실시간 인텔리전스로 정면승부하면 진다. 이길 수 있는 곳은 (1) **좁은 vertical 정밀도**(AI/tech 제품 incident 또는 한국 규제/공시), (2) **교차검증 + evidence 추적성**(클릭 한 번으로 원본까지 = 인용 가능), (3) **사건 중심 능동 감지**, (4) **LLM을 수집의 두뇌로 쓰되 우회는 결정론으로 봉인**(P/G/F 경계, ADR#14)다. LLM은 무엇을·어디서를 계획(LAYER P)하고 결정론 엔진이 어떻게(준수하며)를 실행(LAYER G/F)한다 — "LLM-advised, deterministic-controlled." LLM은 crawler가 아니라 planner라, 탐색공간은 넓히되 robots/ToS/rate 위반은 어느 층에서도 못 한다.
 
-**수익화.** 광고가 아니라 **B2B alert/report/API**다. 가격은 시장 추세대로 hybrid(base + usage), 3-4 티어. 전문 재배포를 하지 않는 evidence 중심 모델이 오히려 저작권 안전성으로 엔터프라이즈 조달을 통과시킨다. 6개월 검증 목표: 파일럿 LOI 3 + 유료 30 + MRR 검증.
+**수익화 (ADR#15 — 방향 전환, 레거시 구독 폐기).** 수익은 B2B 구독이 아니라 **트래픽 기반 광고 + 커뮤니티식 운영**이다. 사용자가 새로 못박은 방향: "커뮤니티식 운영으로 트래픽을 늘리고 광고로 간다. 구독형으로 진화 안 함." 성장 루프 = 고품질 사건추적(시계열·다분야 Event) + 에이전트 해설/논쟁 + 유저 상호작용 → 체류↑·재방문↑ → 페이지뷰↑ → 광고 노출↑. **레거시 우려("전문 재배포 금지 → 광고 트래픽 모델 성립 안 함")는 거짓 전제다:** 우리가 노출하는 것은 전문이 아니라 **요약 + 증거링크 + UGC(유저 댓글·에이전트 논쟁) + 시계열 다분야 시각화**이며, 이는 파생 콘텐츠라 광고 면적이 된다(구글뉴스·Techmeme·Liveuamap 동일 구조). 고도화: ① 광고 **수요측** self-serve 도메인 직판(오디언스 정밀도 판매), ② 북극성 = **Monetizable Dwell + 광고주 갱신율**(구 LOI3/유료30 KPI 폐기), ③ evidence graph 직접 판매(구독)는 불변원칙상 닫힌 길 → 검증 위젯/SEO 허브/Live Index로 트래픽 증폭만. **보존:** 원칙1 투자조언 금지 · 전문저장 금지 · vertical 좁히기. 상세 = `2_ROADMAP/13`.
 
-**리스크.** ① 통합 갭(P0)이 모든 가치의 병목, ② 프롬프트 인젝션(LLM 1위 위험, 외부 본문 유입), ③ 검색 API 무료티어 축소(단일 provider 의존 금지), ④ 법무(우회 금지·전문저장 금지·dcinside ToS 미확정), ⑤ 고급 layer(GraphRAG 등) 조기 도입의 비용/순서 역전. 이 문서 세트는 각 리스크에 봉인 조건과 우선순위를 부여했다.
+> ⚠️ **교정 노트(허위방향 제거):** 본 단락의 이전 판("광고가 아니라 B2B alert/report/API 구독 4티어, 파일럿 LOI 3 + 유료 30")은 **ADR#15로 폐기된 레거시 방향**이었다. 사용자 새 방향과 정반대였으므로 전면 재작성했다. 구현 사실이 아니라 **미구현 ROADMAP**이며, 권위는 `13`(상업화 단일출처)·ADR#15다.
+
+**리스크.** ① 통합 갭(P0)이 모든 가치의 병목(P0 배선 PARTIAL DONE, 잔여 LLM급 품질), ② 프롬프트 인젝션(LLM 1위 위험, 외부 본문 유입 — LLM 수집 라우팅·에이전트 논쟁으로 **노출면 확대, 우선순위 상향**, R-PromptInjection), ③ 검색 API 무료티어 축소(단일 provider 의존 금지), ④ 법무(우회 금지·전문저장 금지·dcinside ToS 미확정), ⑤ 고급 layer(GraphRAG 등) 조기 도입의 비용/순서 역전, ⑥ **LLM 수집 경계 위반**(우회·rate·비용폭주 제안 — LAYER G 차단은 실구현이나 audit 미구현, R-LLMCollectBoundary), ⑦ **광고 모델 단일점**(콜드스타트·봇·brand-safety — 구독 폐기로 대체 수익경로 없음, R-AdModelFragility), ⑧ **Event 전환 정합성**(카드↔Event 이중쓰기·3엔진 색인 드리프트, R-EventModelMigration·R-FalseMerge). 이 문서 세트는 각 리스크에 봉인 조건과 우선순위를 부여했다(`_RISK/RISK_REGISTER.md`).
 
 **투자/조언 아님.** 본 플랫폼과 문서는 사건/이벤트 정보 전달이 목적이며 투자 권유·금융 조언이 아니다.
 
@@ -59,9 +70,20 @@
    impact LLM. (mock 상수는 제거·baseline화 완료; 현재는 결정론적 baseline이라 LLM급 정밀도가 다음 관문.)
 ```
 
-위는 source-ingestion-engineer / orchestrator-architect / operations-sre-agent에 위임 가능. P2~P10은 15 로드맵.
+위는 source-ingestion-engineer / orchestrator-architect / operations-sre-agent에 위임 가능. P2~P10·S1은 15 로드맵, 임계경로는 00_ROADMAP_INDEX §4.
+
+### 신규 4작업축 (새 방향 ADR#14/#15/#16 + 발견 → ROADMAP 연결)
+
+```text
+요구1 (Event 모델, ADR#16)   → S1 Event/Update 토대 [임계경로 최우선]  · 15 'Event 토대 Phase' · 12 · 19 §1·§2 · EVENT_SCHEMA
+요구2 (LLM 수집 P/G/F, ADR#14)→ S5 Expansion + S6 Source Routing(audit) · 15 Phase4/6 · 11 P/G/F절 · 06 tiered · 14 §2.1
+요구3 (트래픽×광고, ADR#15)   → P9 수익화 전환 + PD Agent Debate         · 15 Phase9/PD · 13 · 14 §5.1
+발견   (Entity/Authority, 요구6)→ S4/S7/S10/S11 자기증식 발견 엔진          · 17 (NET-NEW) · 05 · 00_ROADMAP_INDEX §4
+```
+
+> 4축은 Event 객체에서 합류한다 — Event 토대(S1)가 안 서면 나머지가 1회성 스키마 위에 쌓인다. RISK: R-EventModelMigration·R-FalseMerge(S1) · R-LLMCollectBoundary·R-PromptInjection(P/G/F) · R-AdModelFragility·R-AgentDebateSafety(광고/논쟁) · R-DiscoveryCostStarvation(발견).
 
 ## C. 한 줄
 
-> 배관은 연결됐고(5타입 e2e), 카드 **알맹이의 mock 상수는 결정론적 baseline으로 제거**됐다(라이브 입증).
-> 이제 baseline을 **LLM급 정밀도**(NER/분류기/도달성)로 끌어올리는 것이 다음 관문이다.
+> 배관은 연결됐고(5타입 e2e, ap_news 100 카드), 카드 **알맹이의 mock 상수는 결정론적 baseline으로 제거**됐다(라이브 입증).
+> 이제 **Event 타임라인 토대(S1)를 먼저 고정**하고, 그 위에서 baseline을 **LLM급 정밀도**(NER/분류기/도달성)로 끌어올리는 것이 다음 관문이다. 수익은 **구독이 아니라 트래픽×광고×커뮤니티**(ADR#15). 모든 단계 우회 0·전문저장 0·투자조언 0.

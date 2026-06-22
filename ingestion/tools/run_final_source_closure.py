@@ -31,6 +31,7 @@ from ingestion.orchestration.dcinside_strategy import (
 )
 from ingestion.orchestration.evidence_gate import gate_records
 from ingestion.orchestration.eventqueue_dedup import DedupIndex
+from ingestion.orchestration.host_rate_gate import GDELT_HOST, HostRateGate
 from ingestion.orchestration.final_source_closure import (
     EXTERNAL_RATE_LIMITED_PENDING_RESUME,
     FinalSourceClosure,
@@ -70,6 +71,8 @@ _QUEUE = Path("ingestion/outputs/jsonl/final_source_closure_event_queue.jsonl")
 _RAW_MIRROR = Path("ingestion/outputs/raw_events/final_source_closure_raw_events_mirror.jsonl")
 _DEDUP = Path("ingestion/outputs/state/eventqueue_dedup_index.json")
 _GDELT_RL = Path("ingestion/outputs/state/gdelt_rate_limit_state.json")
+# R-GdeltGovernorSplitBrain: host 단위 floor의 단일 출처(메인루프/resurrection과 동일 파일).
+_HOST_GATE = Path("ingestion/outputs/state/host_rate_gate.json")
 _STATE = Path("ingestion/outputs/state/production_source_state.json")
 _MONITORING = Path("ingestion/outputs/monitoring")
 _OUTDIR = Path("ingestion/outputs/tmp_final_source_closure")
@@ -314,6 +317,7 @@ def run_final_source_closure(
     raw_mirror_path: Path = _RAW_MIRROR,
     dedup_index_path: Path = _DEDUP,
     gdelt_rl_path: Path = _GDELT_RL,
+    host_gate_path: Path = _HOST_GATE,
     state_path: Path = _STATE,
     monitoring_dir: Path = _MONITORING,
     output_dir: Path = _OUTDIR,
@@ -344,10 +348,15 @@ def run_final_source_closure(
         ph_fetch = lambda: fetch_product_hunt(limit=5)
     if culture_fetch is None:
         culture_fetch = lambda: fetch_culture_info(limit=5, now=now)
+    # R-GdeltGovernorSplitBrain: host 단위 floor의 단일 출처(메인루프/resurrection과 동일 파일).
+    # 실제 gdelt 호스트 호출 직전에 이 gate를 통과해야 한다(no-bypass).
+    host_gate = HostRateGate(state_path=(host_gate_path if write_outputs else None))
     if gdelt_collect is None:
         def gdelt_collect(gov):
             return collect_gdelt(governor=gov, min_interval_seconds=gdelt_min_interval_seconds,
-                                 max_probes=gdelt_max_probes, now=now, sleep=time.sleep)
+                                 max_probes=gdelt_max_probes, now=now, sleep=time.sleep,
+                                 host_gate=host_gate, host=GDELT_HOST,
+                                 host_min_spacing_seconds=gdelt_min_interval_seconds)
 
     governor = RateLimitGovernor(state_path=(gdelt_rl_path if write_outputs else None))
 

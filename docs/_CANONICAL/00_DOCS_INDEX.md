@@ -35,7 +35,7 @@ opt-in), 46소스 **전수** 라이브 sweep·LLM급 카드 콘텐츠 미완(상
 | 09 | **09_VALIDATION_AND_TESTS.md** | 검증·테스트 현황 |
 | 10 | **10_DOCS_COVERAGE_MANIFEST.md** | 원본 MD 50개 전수 처리 증명 |
 
-비개발자/의사결정자: **00 → 03 → `_RISK/RISK_REGISTER.md`(구 05) → 07**.
+비개발자/의사결정자: **`../0_ONBOARDING/00_MASTER_OVERVIEW.md`(비개발자 통합 개관, 서사 레이어) → 00 → 03 → `_RISK/RISK_REGISTER.md`(구 05) → 07**.
 구현자: **00 → 01 → 02 → 04**.
 
 ---

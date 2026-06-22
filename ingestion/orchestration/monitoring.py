@@ -86,14 +86,24 @@ def build_alerts(
 
 
 def _scan_secret_suspect(records) -> bool:
-    """queue/raw_events payload에 secret 흔적(api_key=, bearer, sk-)이 있는지 보수적 검사."""
-    needles = ("api_key=", "apikey=", "authorization: bearer", "bearer ey", "sk-", "secret=")
+    """queue/raw_events payload에 secret 흔적이 있는지 보수적 검사.
+
+    `api_key=`/`apikey=`/`secret=`/`bearer` 등 키-할당 형태는 보수적 substring으로 잡고,
+    `sk-` 같은 토큰형 패턴은 정식 스캐너(scan_secrets.text_has_secret)의 단어경계+고엔트로피
+    판별을 재사용한다. naive `"sk-"` substring은 기사 URL slug(`musk-`/`risk-`/`samsung-sk-hynix`)를
+    오탐해 매 production run을 거짓 CRITICAL로 만들었다 — 정식 스캐너와 판정을 일치시킨다.
+    """
+    from ingestion.tools.scan_secrets import text_has_secret
+
+    needles = ("api_key=", "apikey=", "authorization: bearer", "bearer ey", "secret=")
     for rec in records:
         try:
-            blob = json.dumps(rec, ensure_ascii=False).lower()
+            blob = json.dumps(rec, ensure_ascii=False)
         except (TypeError, ValueError):
             continue
-        if any(n in blob for n in needles):
+        if any(n in blob.lower() for n in needles):
+            return True
+        if text_has_secret(blob):
             return True
     return False
 

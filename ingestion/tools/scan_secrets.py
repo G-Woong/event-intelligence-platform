@@ -208,6 +208,34 @@ def scan_paths(
     }
 
 
+def text_has_secret(text: str) -> bool:
+    """True if text contains a Layer-1 secret-shaped token.
+
+    Shares the exact Layer-1 detection of ``scan_paths`` (patterns + placeholder /
+    OpenAI-url-slug / code-reference false-positive guards) so callers like the
+    production monitor agree with the canonical scanner. This avoids naive-substring
+    false positives such as ``musk-``/``risk-``/``samsung-sk-hynix`` URL slugs that a
+    bare ``"sk-"`` check would wrongly flag. Layer-2 (.env exact value) is not applied
+    here — pass blobs through ``scan_paths`` for that.
+    """
+    for line in text.splitlines():
+        if _ALLOWLIST_PRAGMA in line:
+            continue
+        for pat_name, pattern in _SECRET_PATTERNS:
+            m = pattern.search(line)
+            if not m or _is_placeholder(m.group(0), line):
+                continue
+            if pat_name == "openai_key":
+                prev = line[m.start() - 1] if m.start() > 0 else ""
+                if prev.isalnum() or _is_openai_url_slug_false_positive(m.group(0)):
+                    continue
+            if pat_name == "generic_api_key_assign" and \
+                    _is_code_reference_false_positive(m.group(0), line, m.end()):
+                continue
+            return True
+    return False
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Scan files for leaked secrets. Reports key NAMES only, never values."

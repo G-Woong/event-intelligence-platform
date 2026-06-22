@@ -15,6 +15,7 @@
 
 | 생애주기 | 폴더 | 무엇 | 누가 먼저 |
 |---|---|---|---|
+| **온보딩 설명** | `0_ONBOARDING/` | 비개발자/의사결정자용 통합 개관(서사 레이어, 코드 사실 아님). 사실은 `_CANONICAL` 가리킴 | 비개발자 첫 진입 |
 | **현재 사실** | `_CANONICAL/` (00~10) | 오늘 구현된 시스템의 단일 출처(흐름·아키텍처·소스·오픈태스크·검증·충돌) | **전원 1순위** |
 | **거버넌스** | `_RISK/` · `_DECISIONS/` | 열린/종결 RISK 등록부 · 월별 의사결정 ledger(ADR) | 의사결정자 |
 | **미래 계획** | `2_ROADMAP/` | 확장 전략·레이어 로드맵(ideation 02·04~15·18). **미구현**, 방향 참조 | 아키텍트/제품 |
@@ -29,7 +30,7 @@
 
 ## 2. 목적별 빠른 진입
 
-- **비개발자/의사결정자:** `_CANONICAL/00 → 03 → 07`, `2_ROADMAP/18_FINAL_EXECUTIVE_SUMMARY`.
+- **비개발자/의사결정자:** `0_ONBOARDING/00_MASTER_OVERVIEW`(비개발자 통합 개관 — 3분요약·하루의삶·FAQ·치트시트), 그다음 `_CANONICAL/00 → 03 → 07`, `2_ROADMAP/18_FINAL_EXECUTIVE_SUMMARY`.
 - **구현자:** `_CANONICAL/01 → 02 → 04`, `5_REFERENCE/`(API_CONTRACT·EVENT_SCHEMA·FILE_MAP).
 - **운영/리스크:** `_RISK/RISK_REGISTER`, `_DECISIONS/2026-06`.
 - **하네스 작업:** `Harness_Construction/00_HARNESS_BLUEPRINT_INDEX`.

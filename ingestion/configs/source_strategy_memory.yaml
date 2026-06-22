@@ -1,5 +1,5 @@
 schema_version: 1
-run_id: 20260616T111027Z
+run_id: 20260622T011739Z
 entries:
 - source_id: aladin
   previous_status: NEEDS_PARSER_UNRESOLVED
@@ -117,7 +117,7 @@ entries:
   adapter_name: null
   body_fetch_strategy: null
   browser_strategy: null
-  parser_notes: role=community_preview_signal;no_pii_nickname;list_meta_only;corroboration_required;publish_gated;detail_audit=DETAIL_BODY_ALIVE(best_body_chars=230)
+  parser_notes: role=community_preview_signal;no_pii_nickname;list_meta_only;corroboration_required;publish_gated;detail_audit=DETAIL_BODY_ALIVE(best_body_chars=142)
   cooldown_policy: respect_min_interval
   safety_policy: no_bypass
   evidence: gallery=stockus_only;items=30;robots_user_agent_star_allow;ai_training_crawler_block_honored_via_generic_ua;tos_automated_use_unverified_publish_gated;detail_body_static=DETAIL_BODY_ALIVE;role=community_preview_signal;no_bypass;source_specific_proof:eq=30;raw=30;contract_pass=True
@@ -166,7 +166,7 @@ entries:
   - RATE_LIMITED
   root_cause_after:
   - PROVIDER_429_THROTTLE
-  - CONSECUTIVE_PENDING_1
+  - CONSECUTIVE_PENDING_2
   - AUTO_RESUME_SCHEDULED
   successful_strategy: null
   failed_strategies: []
@@ -175,9 +175,9 @@ entries:
   body_fetch_strategy: null
   browser_strategy: null
   parser_notes: null
-  cooldown_policy: respect_cooldown_until:2026-06-16T11:25:27Z
+  cooldown_policy: respect_cooldown_until:2026-06-22T01:32:39Z
   safety_policy: no_bypass
-  evidence: attempts=broad;cause=provider_429_throttle;consecutive_pending=1;escalation=scheduled_resume;next_resume_at=2026-06-16T11:25:27Z;host_level_rate_limit=gdelt_host;query_profile=broad;repro_cmd=python
+  evidence: attempts=broad;cause=provider_429_throttle;consecutive_pending=2;escalation=scheduled_resume;next_resume_at=2026-06-22T01:32:39Z;host_level_rate_limit=gdelt_host;query_profile=broad;repro_cmd=python
     -m ingestion.tools.run_final_source_closure --sources gdelt --gdelt-min-interval-seconds
     10;colab_parity:code_identical(endpoint+params+parse,test-verified);response_diff=UNVERIFIED
   llm_agent_hints:

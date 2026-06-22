@@ -9,6 +9,7 @@ _ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(_ROOT))
 
 from ingestion.core.artifact_store import new_run_id, url_hash as make_url_hash
+from ingestion.core.env_loader import load_env
 from ingestion.core.logging_setup import configure_ingestion_logging, get_ingestion_logger
 from ingestion.core.retry_policy import STRATEGY_SEQUENCE
 from ingestion.core.source_registry import load_registry
@@ -124,6 +125,13 @@ def run_source(source_id: str) -> dict:
     logger = get_ingestion_logger("runners.run_one_source")
 
     logger.info("=== run_one_source: %s ===", source_id)
+
+    # R-EnvLoadAsymmetry: run_source() is the shared funnel for the run_one_source /
+    # run_phase / run_all_phases entrypoints. Load .env into os.environ (idempotent
+    # setdefault) BEFORE precheck so key-required sources' precheck_status() (os.getenv)
+    # sees keys that exist in .env — aligning these entrypoints with the production
+    # orchestration path's env contract. Values are never read or printed here.
+    load_env()
 
     from ingestion.sources._registry import get_source_instance
     src = get_source_instance(source_id)

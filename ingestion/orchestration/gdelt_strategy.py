@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
 
+from ingestion.orchestration.host_rate_gate import GDELT_HOST, HostRateGate
 from ingestion.orchestration.rate_limit_governor import RateLimitGovernor
 from ingestion.orchestration.vendor_api_routes import VendorRouteResult, fetch_gdelt
 
@@ -52,11 +53,19 @@ def collect_gdelt(
     now: Optional[datetime] = None,
     sleep: Optional[Callable[[float], None]] = None,
     ladder: tuple[tuple[str, str, int, str], ...] = _DEFAULT_LADDER,
+    host_gate: Optional[HostRateGate] = None,
+    host: str = GDELT_HOST,
+    host_min_spacing_seconds: Optional[int] = None,
 ) -> GdeltStrategyResult:
     """정책 준수 spaced probe로 gdelt를 수집. 429면 pending_resume(자동 재개) state.
 
     sleep는 주입형(테스트=no-op). 쿨다운 중이면 네트워크 호출 없이 즉시 pending_resume.
+
+    host_gate가 주어지면(R-GdeltGovernorSplitBrain) **실제 호출 직전** host 단위 floor를 통과해야
+    한다 — 다른 루프(메인 production loop 등)가 host_min_spacing 안에서 호스트를 이미 쳤다면 호출
+    없이 pending_resume(no-bypass). host_min_spacing_seconds 기본은 min_interval_seconds.
     """
+    spacing = host_min_spacing_seconds if host_min_spacing_seconds is not None else min_interval_seconds
     # 1) 쿨다운/간격 검사 — 막혀 있으면 호출하지 않는다(no tight-loop)
     decision = governor.decide("gdelt", min_interval_seconds=min_interval_seconds, now=now)
     if not decision.allowed:
@@ -64,12 +73,26 @@ def collect_gdelt(
             "gdelt", False, None, (), 0, (), "EXTERNAL_RATE_LIMITED_PENDING_RESUME",
             decision.cooldown_until, decision.cooldown_until, decision.reason)
 
+    # 2) host 단위 floor(cross-loop 단일 출처) — run 진입 시 1회 차단 검사. 다른 루프(메인
+    #    production loop 등)가 host_min_spacing 안에서 호스트를 이미 쳤다면 호출 없이
+    #    pending_resume(no-bypass). run 내부 ladder 간격은 아래 sleep(min_interval)이 보장하므로
+    #    재차단하지 않고, 각 호출 직전 record로 host last_call을 갱신해 cross-loop 가시성 유지.
+    if host_gate is not None:
+        hd = host_gate.decide(host, min_spacing_seconds=spacing, now=now)
+        if not hd.allowed:
+            return GdeltStrategyResult(
+                "gdelt", False, None, (), 0, (),
+                "EXTERNAL_RATE_LIMITED_PENDING_RESUME",
+                hd.next_allowed_at, hd.next_allowed_at, f"host_gate_block:{hd.reason}")
+
     attempts: list[str] = []
     last_status: Optional[int] = None
     last_error: Optional[str] = None
     for i, (label, query, limit, timespan) in enumerate(ladder[:max_probes]):
         if i > 0 and sleep is not None:
             sleep(min_interval_seconds)          # 정책 간격(테스트=no-op)
+        if host_gate is not None:
+            host_gate.record_call(host, now=now)   # 실제 호출 직전 기록(성공/실패 무관)
         governor.record_call("gdelt", now=now)
         res = vendor_fetch(query=query, limit=limit, timespan=timespan)
         attempts.append(label)

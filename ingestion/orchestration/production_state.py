@@ -20,9 +20,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 import time
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -77,6 +79,13 @@ DEAD_END_STATES: frozenset[str] = frozenset({
 CONDITIONAL_SKIP_STATES: frozenset[str] = frozenset({
     EXTERNAL_RATE_LIMITED, EXTERNAL_API_ERROR, VENDOR_CONTRACT_REQUIRED,
     QUARANTINED, COOLDOWN, NEEDS_OPERATOR_REVIEW,
+})
+# R-GdeltMainLoopResume: cooldown 만료 시 메인 플래너가 자동 재probe하는 rate-limit/cooldown 상태.
+# 외부 429/cooldown은 코드 실패가 아니라 provider 제한이므로, deadline이 지나면 우회 없이 재시도한다.
+# (EXTERNAL_API_ERROR/VENDOR_CONTRACT_REQUIRED/NEEDS_OPERATOR_REVIEW 등은 cooldown 기반이 아니라
+#  operator/계약 개입이 필요 — 자동 재개 대상이 아니다.)
+RESUMABLE_RATE_LIMIT_STATES: frozenset[str] = frozenset({
+    EXTERNAL_RATE_LIMITED, COOLDOWN,
 })
 
 # E-3 terminal final_status → production state 매핑
@@ -176,6 +185,40 @@ class ProductionStrategyDecision:
     dead_end: bool
 
 
+def _extract_resume_at(mem: SourceStrategyMemory) -> Optional[str]:
+    """rate-limited memory에서 재개 시각(ISO)을 뽑는다(없으면 None).
+
+    우선순위: cooldown_policy='respect_cooldown_until:<ISO>' → 없으면 evidence의
+    'next_resume_at=<ISO>'. 키/값이 아니라 시각 문자열만 다룬다(secret 무관).
+    """
+    cp = mem.cooldown_policy or ""
+    prefix = "respect_cooldown_until:"
+    if cp.startswith(prefix):
+        return cp[len(prefix):].strip() or None
+    ev = mem.evidence or ""
+    m = re.search(r"next_resume_at=([0-9T:.+\-Z]+)", ev)
+    if m and m.group(1) and m.group(1) != "None":
+        return m.group(1)
+    return None
+
+
+def _cooldown_elapsed(cooldown_until: Optional[str], now: Optional[datetime] = None) -> bool:
+    """cooldown_until(ISO)이 설정돼 있고 now 이상으로 경과했으면 True.
+
+    미설정/파싱불가 → False(보수적: deadline을 모르면 자동 재개하지 않는다).
+    """
+    if not cooldown_until:
+        return False
+    try:
+        dt = datetime.fromisoformat(str(cooldown_until).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    now = now or datetime.now(timezone.utc)
+    return now >= dt
+
+
 def derive_production_state(
     profile,
     *,
@@ -259,6 +302,9 @@ def derive_production_state(
                 current_status=mapped, production_ready=False,
                 known_dead_end=(mapped in DEAD_END_STATES),
                 rate_limit_status=("rate_limited" if mapped == EXTERNAL_RATE_LIMITED else None),
+                # R-GdeltMainLoopResume: surface the memory's resume deadline so the main
+                # planner can auto-reprobe once it elapses (rate-limit only; not a failure).
+                cooldown_until=(_extract_resume_at(mem) if mapped == EXTERNAL_RATE_LIMITED else None),
                 terminal_reason=(";".join(mem.root_cause_after) or fs),
                 **base,
             )
@@ -305,10 +351,15 @@ def decide_production_strategy(
     profile,
     memory: Optional[dict],
     state: Optional[ProductionSourceState],
+    *,
+    now: Optional[datetime] = None,
 ) -> ProductionStrategyDecision:
     """F-5/F-6: 성공 전략 재사용 + dead-end skip + failed 전략 회피.
 
     - state.known_dead_end 또는 dead-end final_status → skip(dead_end)
+    - rate-limit/cooldown 상태(RESUMABLE_RATE_LIMIT_STATES)는 cooldown 만료 시 자동 재probe
+      (R-GdeltMainLoopResume): 외부 429/cooldown은 코드 실패가 아니라 provider 제한 —
+      deadline이 지나면 not_ready skip을 면제하고 재시도(우회 없음). cooldown 미경과/미상이면 skip 유지.
     - memory의 successful_strategy/preferred_next_strategy 우선
     - 없으면 profile.preferred_strategy fallback
     """
@@ -322,10 +373,14 @@ def decide_production_strategy(
                 skip_reason=f"dead_end:{state.current_status}", dead_end=True,
             )
         if not state.production_ready:
-            return ProductionStrategyDecision(
-                source_id=source_id, strategy=state.next_strategy, skip=True,
-                skip_reason=f"not_ready:{state.current_status}", dead_end=False,
-            )
+            resumable = (state.current_status in RESUMABLE_RATE_LIMIT_STATES
+                         and _cooldown_elapsed(state.cooldown_until, now))
+            if not resumable:
+                return ProductionStrategyDecision(
+                    source_id=source_id, strategy=state.next_strategy, skip=True,
+                    skip_reason=f"not_ready:{state.current_status}", dead_end=False,
+                )
+            # cooldown 만료 → 재probe 후보로 fall through(skip=False, 학습 전략 재사용).
     elif is_known_dead_end(source_id, mem_dict):
         return ProductionStrategyDecision(
             source_id=source_id, strategy=None, skip=True,

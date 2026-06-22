@@ -125,3 +125,33 @@ def test_full_profile_coverage_every_source_classified():
     # 모든 source는 due 또는 skip 둘 중 하나로 분류(누락 0)
     classified = set(plan.due_sources) | set(plan.skipped_sources)
     assert classified == {p.source_id for p in profiles}
+
+
+def _rl_mem(sid, cooldown_until, *, preferred="host_rate_limit_spaced_probe"):
+    return SourceStrategyMemory(
+        source_id=sid, previous_status="EXTERNAL_RATE_LIMITED",
+        final_status="EXTERNAL_RATE_LIMITED_PENDING_RESUME",
+        preferred_next_strategy=preferred,
+        cooldown_policy="respect_cooldown_until:%s" % cooldown_until)
+
+
+def test_rate_limited_due_in_main_plan_after_cooldown():
+    # R-GdeltMainLoopResume: cooldown 만료 → 메인 플래너가 자동 재probe(due). 개별 spaced-probe 의존 제거.
+    profiles = [_profile("gdelt", source_group="official")]
+    mem = {"gdelt": _rl_mem("gdelt", "2026-06-16T11:25:27Z")}
+    states = _states(profiles, mem)
+    plan = build_production_run_plan(profiles, states=states, memory=mem,
+                                     now=datetime(2026, 6, 22, tzinfo=timezone.utc),
+                                     mode=MODE_VALIDATION)
+    assert "gdelt" in plan.due_sources
+
+
+def test_rate_limited_skipped_in_main_plan_while_cooling():
+    profiles = [_profile("gdelt", source_group="official")]
+    mem = {"gdelt": _rl_mem("gdelt", "2099-01-01T00:00:00Z")}
+    states = _states(profiles, mem)
+    plan = build_production_run_plan(profiles, states=states, memory=mem,
+                                     now=datetime(2026, 6, 22, tzinfo=timezone.utc),
+                                     mode=MODE_VALIDATION)
+    assert "gdelt" in plan.skipped_sources
+    assert plan.skip_category_counts.get("skipped_cooldown", 0) >= 1

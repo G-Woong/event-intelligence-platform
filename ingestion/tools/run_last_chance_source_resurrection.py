@@ -22,6 +22,7 @@ from ingestion.orchestration.dcinside_strategy import collect_dcinside, list_url
 from ingestion.orchestration.eventqueue_dedup import DedupIndex
 from ingestion.orchestration.gdelt_strategy import collect_gdelt
 from ingestion.orchestration.google_trends_strategy import assess_google_trends
+from ingestion.orchestration.host_rate_gate import GDELT_HOST, HostRateGate
 from ingestion.orchestration.last_chance_source_resurrection import (
     NEEDS_OPERATOR_REVIEW,
     PENDING_RESUME,
@@ -49,6 +50,8 @@ _QUEUE = Path("ingestion/outputs/jsonl/last_chance_event_queue.jsonl")
 _RAW_MIRROR = Path("ingestion/outputs/raw_events/last_chance_raw_events_mirror.jsonl")
 _DEDUP = Path("ingestion/outputs/state/eventqueue_dedup_index.json")
 _GDELT_RL = Path("ingestion/outputs/state/gdelt_rate_limit_state.json")
+# R-GdeltGovernorSplitBrain: host 단위 floor의 단일 출처(메인루프/closure와 동일 파일).
+_HOST_GATE = Path("ingestion/outputs/state/host_rate_gate.json")
 _MONITORING = Path("ingestion/outputs/monitoring")
 _OUTDIR = Path("ingestion/outputs/tmp_last_chance_source_resurrection")
 _EXTRACTED = Path("ingestion/outputs/extracted_payload")
@@ -206,6 +209,7 @@ def run_last_chance_source_resurrection(
     raw_mirror_path: Path = _RAW_MIRROR,
     dedup_index_path: Path = _DEDUP,
     gdelt_rl_path: Path = _GDELT_RL,
+    host_gate_path: Path = _HOST_GATE,
     monitoring_dir: Path = _MONITORING,
     output_dir: Path = _OUTDIR,
     robots_get: Optional[Callable] = None,
@@ -227,10 +231,14 @@ def run_last_chance_source_resurrection(
         robots_get = _default_robots_get
     if dcinside_collect is None:
         dcinside_collect = lambda: collect_dcinside(gallery_id=_DC_GALLERY, minor=True, robots_allowed=True)
+    # R-GdeltGovernorSplitBrain: host 단위 floor의 단일 출처(메인루프/closure와 동일 파일).
+    host_gate = HostRateGate(state_path=(host_gate_path if write_outputs else None))
     if gdelt_collect is None:
         def gdelt_collect(gov):
             return collect_gdelt(governor=gov, min_interval_seconds=gdelt_min_interval_seconds,
-                                 max_probes=gdelt_max_probes, now=now, sleep=time.sleep)
+                                 max_probes=gdelt_max_probes, now=now, sleep=time.sleep,
+                                 host_gate=host_gate, host=GDELT_HOST,
+                                 host_min_spacing_seconds=gdelt_min_interval_seconds)
     if google_trends_assess is None:
         google_trends_assess = assess_google_trends
 

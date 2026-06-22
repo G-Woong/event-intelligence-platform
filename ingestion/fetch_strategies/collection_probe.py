@@ -48,11 +48,17 @@ def run_collection_probe(
 
     # Route 1: has probe spec → use api probe
     if has_probe_spec and source_id not in _PLAYWRIGHT_FIRST_SOURCES:
-        # query 없으면 기존 호출 형태 유지 (하위호환 — 기존 mock 단언 보존)
+        # R-GdeltGovernorSplitBrain: host-gated source(gdelt)는 실제 HTTP 직전에 host 단위 floor의
+        # 단일 출처(closure/resurrection과 동일 파일)를 통과해야 한다. 프로덕션 라우터에서만 gate를
+        # 구성해 run_api_live_probe로 주입 — 직접 호출 단위테스트는 미주입(실 상태파일 미오염).
+        host_gate = _host_gate_for(source_id)
+        # host_gate는 host-gated source(gdelt)에만 전달 — 그 외엔 기존 호출 형태 그대로 유지
+        # (하위호환: 기존 mock/fake 단언 보존).
+        _gate_kw = {"host_gate": host_gate} if host_gate is not None else {}
         if query:
-            probe_result = run_api_live_probe(source_id, max_calls=1, query=query)
+            probe_result = run_api_live_probe(source_id, max_calls=1, query=query, **_gate_kw)
         else:
-            probe_result = run_api_live_probe(source_id, max_calls=1)
+            probe_result = run_api_live_probe(source_id, max_calls=1, **_gate_kw)
         return _update_health(CollectionProbeResult(
             source_id=source_id,
             status=probe_result.status,
@@ -155,6 +161,23 @@ def run_collection_probe(
             "integrate_into_pipeline" if status == "LIVE_SUCCESS" else "investigate"
         ),
     ))
+
+
+def _host_gate_for(source_id: str):
+    """host-gated source면 공유 host gate(단일 출처 파일)를 구성해 반환, 아니면 None.
+
+    R-GdeltGovernorSplitBrain: 메인루프의 실제 HTTP(run_api_live_probe)가 closure/resurrection과
+    동일한 host_rate_gate.json을 본다. 비-host-gated 소스나 미설치 환경은 None(게이팅 없음).
+    """
+    try:
+        from pathlib import Path
+
+        from ingestion.orchestration.host_rate_gate import HOST_GATED_SOURCES, HostRateGate
+        if source_id not in HOST_GATED_SOURCES:
+            return None
+        return HostRateGate(state_path=Path("ingestion/outputs/state/host_rate_gate.json"))
+    except Exception:
+        return None
 
 
 def _health_gate(source_id: str, force: bool = False) -> Optional[CollectionProbeResult]:

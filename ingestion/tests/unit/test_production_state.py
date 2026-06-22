@@ -1,7 +1,10 @@
 """F-1: ProductionSourceState — 전 source 상태 보유 + UNKNOWN 0 + 매핑(네트워크 0)."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from ingestion.orchestration.production_state import (
+    EXTERNAL_RATE_LIMITED,
     NEEDS_OPERATOR_REVIEW,
     POLICY_BLOCKED_NO_BYPASS,
     POLICY_EXCLUDED,
@@ -143,6 +146,52 @@ def test_ready_source_strategy_reused():
     decision = decide_production_strategy("tmdb", p, mem, s)
     assert decision.skip is False
     assert decision.strategy == "adapter:tmdb"
+
+
+def _rl_mem(sid, *, cooldown_policy=None, evidence=None, preferred=None):
+    return SourceStrategyMemory(
+        source_id=sid, previous_status="EXTERNAL_RATE_LIMITED",
+        final_status="EXTERNAL_RATE_LIMITED_PENDING_RESUME",
+        preferred_next_strategy=preferred, cooldown_policy=cooldown_policy, evidence=evidence)
+
+
+def test_derive_sets_cooldown_until_from_cooldown_policy():
+    # R-GdeltMainLoopResume: rate-limited memory의 resume deadline이 state.cooldown_until로 노출.
+    p = _profile("gdelt", source_group="official")
+    mem = {"gdelt": _rl_mem("gdelt", cooldown_policy="respect_cooldown_until:2026-06-16T11:25:27Z")}
+    s = derive_production_state(p, memory=mem)
+    assert s.current_status == EXTERNAL_RATE_LIMITED
+    assert s.cooldown_until == "2026-06-16T11:25:27Z"
+
+
+def test_derive_sets_cooldown_until_from_evidence_next_resume_at():
+    p = _profile("gdelt", source_group="official")
+    mem = {"gdelt": _rl_mem("gdelt", cooldown_policy="respect_cooldown",
+                            evidence="attempts=broad;next_resume_at=2026-06-16T11:25:27Z;host=gdelt")}
+    s = derive_production_state(p, memory=mem)
+    assert s.cooldown_until == "2026-06-16T11:25:27Z"
+
+
+def test_rate_limited_reprobes_after_cooldown_elapsed():
+    # cooldown 만료(now > deadline) → not_ready skip 면제, 학습 전략으로 재probe.
+    p = _profile("gdelt", source_group="official")
+    mem = {"gdelt": _rl_mem("gdelt", cooldown_policy="respect_cooldown_until:2026-06-16T11:25:27Z",
+                            preferred="host_rate_limit_spaced_probe")}
+    s = derive_production_state(p, memory=mem)
+    now = datetime(2026, 6, 22, 0, 0, 0, tzinfo=timezone.utc)
+    d = decide_production_strategy("gdelt", p, mem, s, now=now)
+    assert d.skip is False and d.dead_end is False
+    assert d.strategy == "host_rate_limit_spaced_probe"
+
+
+def test_rate_limited_still_cooling_keeps_skip():
+    # cooldown 미경과(now < deadline) → 여전히 skip(우회 없음).
+    p = _profile("gdelt", source_group="official")
+    mem = {"gdelt": _rl_mem("gdelt", cooldown_policy="respect_cooldown_until:2099-01-01T00:00:00Z")}
+    s = derive_production_state(p, memory=mem)
+    now = datetime(2026, 6, 22, 0, 0, 0, tzinfo=timezone.utc)
+    d = decide_production_strategy("gdelt", p, mem, s, now=now)
+    assert d.skip is True and d.dead_end is False
 
 
 def test_state_roundtrip_serialization(tmp_path):

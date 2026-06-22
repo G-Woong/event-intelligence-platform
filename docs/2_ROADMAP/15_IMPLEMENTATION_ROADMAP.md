@@ -1,23 +1,38 @@
-# 15 — IMPLEMENTATION ROADMAP (Phase 0~10)
+# 15 — IMPLEMENTATION ROADMAP (Phase 0~10 + Event 토대 + Agent Debate)
 
-> 원칙: 토대(배선·dedup·mock 해제)를 먼저 닫고, 고급 layer(검색확장·rerank·GraphRAG)는 그 위에 얹는다. 순서 역전 금지(적대적 비판). 각 Phase는 측정 가능한 acceptance를 가진다.
+> ┌─ 진행상황 식별 (STATUS STAMP) ──────────────────────────
+> │ **상태:** 🟡 PARTIAL — **Phase 0 DONE / Phase 1–3 PARTIAL DONE / Phase 4–10 NOT_DONE.** 신규 Event 토대(S1)·Agent Debate Phase는 코드 0(설계).
+> │ **구현순위:** #4 (00_ROADMAP_INDEX) · **그룹:** A
+> │ **검증 근거:** Phase1(`ingestion/integration/` BackendApiRawEventsWriter, 라이브 e2e 5타입)·Phase2(`event_queue.py` `_redis_*`, `workers/queue/dlq.py`)·Phase3(`evidence_check`·`publish_or_hold` fail-closed, `agents/nodes/baselines.py`)는 `_CANONICAL/01·04·09`가 권위. Phase4–10·S1·Agent Debate는 grep 0(미배선).
+> │ **잔여(미구현):** S1(events/event_updates/cluster_event_map/event_links + alembic 0004), Phase4(tiered+budget+gate+ChangeDetection), Phase5/7(Event/Update+heat+FSD), Phase6(P/G/F+unsafe gate+audit+유형→role), Phase8(EvidenceNode), Phase9(트래픽KPI+광고4종+커뮤니티), Agent Debate Phase.
+> │ **완료정의(DoD):** 각 Phase Acceptance 충족 + 전단계 1517 green 유지 + 우회 0·전문저장 0·투자조언 0.
+> │ **권위:** 구현 사실은 `_CANONICAL/*`(본 문서보다 최신). 결정 = `_DECISIONS/2026-06.md` ADR#14/#15/#16. 본 문서는 ROADMAP(미래계획).
+> └────────────────────────────────────────────────────────
 
-> 📌 **로드맵 문서(ABSORB, 10 Group E E16)**: P0(ingestion→raw_events 배선)은 **완료**됨(ap_news 라이브 E2E; canonical `04 T-IngA`·`01`). 아래 Phase의 "DONE 여부"는 `docs/_CANONICAL/04·09`가 권위(본 문서보다 최신). Phase 의존 순서는 `04` 상단에 흡수됨.
+> 원칙: 토대(배선·dedup·mock 해제)를 먼저 닫고, 고급 layer(검색확장·rerank·GraphRAG)는 그 위에 얹는다. 순서 역전 금지(적대적 비판). 각 Phase는 측정 가능한 acceptance를 가진다. **새 방향(ADR#16):** 카드 dedup 위에 **Event/Update 타임라인 토대(S1)**가 **임계경로 최상위**로 들어온다 — 카드 알맹이 AI 품질(Phase3 잔여)을 올리기 전에 Event 형태를 고정하지 않으면 곧 폐기될 1회성 스키마 위에 쌓인다(00_ROADMAP_INDEX §4).
+
+> 📌 **로드맵 문서(ABSORB, 10 Group E E16)**: P0(ingestion→raw_events 배선)은 **PARTIAL DONE**(ap_news 라이브 E2E; canonical `04 T-IngA`·`01`). 아래 Phase의 "DONE 여부"는 `docs/_CANONICAL/04·09`가 권위(본 문서보다 최신). Phase 의존 순서는 `04` 상단 + 00_ROADMAP_INDEX §4 임계경로(S1~S11)에 흡수됨.
 
 ---
 
-## P0/P1 우선순위 요약
+## P0/P1 우선순위 요약 (Phase 1–3 PARTIAL DONE; 새 방향 반영)
 
 ```text
-P0  ingestion 57소스 엔진 → 실 raw_events Postgres 배선 (mirror→DB)
-P1  Redis Stream/DLQ/retry/monitoring 실배선 + 6 mock 노드 결정론분 해제 + dedup/clustering
-P2  Search API expansion layer (provider-agnostic)
-P3  OpenSearch+vector hybrid + reranker + nori
-P4  LLM SourceSupervisor 실 provider 연결
-P5  Event clustering/timeline/ranking 완성
-P6  KG-RAG/GraphRAG (고가치 multi-hop 한정)
-P7  Commercial dashboard/alert/report/API
+[PARTIAL] P0  ingestion 57소스 엔진 → 실 raw_events Postgres 배선 (mirror→DB; ap_news 라이브 E2E)
+[PARTIAL] P1  Redis Stream/DLQ/retry/monitoring 실배선 + mock 노드 결정론분 baseline화
+[PARTIAL] P3  published 게이트 fail-closed (evidence_check·publish_or_hold) — dedup/clustering 잔여
+[NOT_DONE] S1  ★Event/Update 타임라인 토대★ (임계경로 최상위, ADR#16 — 아래 Phase 'Event 토대' 참조)
+[NOT_DONE] P4  Search API expansion layer (tiered 무료→유료 + per-event/월 budget + ChangeDetection)
+[NOT_DONE] P5  hybrid search + reranker + nori (indexing)
+[NOT_DONE] P6  LLM SourceSupervisor 실 provider 연결 (P/G/F + unsafe gate + audit + 사건유형→role)
+[NOT_DONE] P7  Event clustering/timeline/ranking 완성 (heat + FSD)
+[NOT_DONE] P8  KG-RAG/GraphRAG (조건부, <1000 엔티티 금지) + EvidenceNode
+[NOT_DONE] P9  ★수익화 전환★ 구독 폐기 → 트래픽 KPI + 광고 4종 + 커뮤니티 루프 (ADR#15)
+[NOT_DONE] PD  Agent Debate Phase (페르소나 논쟁 + 발화 게이트 fail-closed, S9)
+[NOT_DONE] P10 Enterprise 보안/컴플라이언스 (RBAC·SSRF allowlist·TTL·PII·라이선스)
 ```
+
+> **정직 주의:** 위 P0~P3 PARTIAL은 토대(배선·큐·게이트·baseline)만 실구현이고 DoD(잔여 0·risk 0) 미달이다. 어떤 Phase도 ✅ DONE(risk 0)에 도달하지 않았다 — 권위 = `_CANONICAL/*`, 00_ROADMAP_INDEX §1.
 
 ---
 
@@ -42,54 +57,100 @@ P7  Commercial dashboard/alert/report/API
 - 남음: 자동 주기 트리거(Celery beat/cron), DLQ depth 모니터링/알림, cost/rate 대시보드(04 T-Ops-DLQ 잔여).
 - Acceptance: enqueue→consume→ack, PEL→DLQ 회수, cost+rate+health 3축 노출. Complexity: 중상.
 
-## Phase 3 — mock 노드 해제 + dedup/clustering  — **published 게이트 PARTIAL DONE 2026-06-18**
+## Phase 3 — mock 노드 해제 + dedup → **Event append** (clustering)  — **published 게이트 PARTIAL DONE 2026-06-18**
 - Goal: LangGraph mock 중 결정론 가능분(entity_linking=NER, evidence_check=URL/출처 검증) 실구현 + cross-source dedup/cluster.
 - DONE(노출 차단): `evidence_check` 실 source URL 채택(`evidence_rules` 구조검증), `publish_or_hold` 근거+본문+
   fact_check 게이트(fail-closed), 공개 API published-only. → mock/근거없는 카드 published 차단(라이브 proof).
 - 남음: evidence_check **도달성(HTTP)** 검증, entity_linking=NER, sector_mapping 분류기, impact_analysis 실구현,
   MinHash LSH, 임베딩 HDBSCAN, prompt injection 방어 layer.
-- Acceptance: end-to-end 카드 1건 **실데이터 콘텐츠** 생성(현재는 배관+노출게이트만, 알맹이 mock), cluster purity≥0.8, leakage<10%. Complexity: 상.
+- **방향 전환(ADR#16):** `cross_source_dedup` 출력을 **카드 dedup이 아니라 Event append로 라우팅**한다(아래 Event 토대 Phase 의존). 2번째 보도 → 새 카드 아님, 기존 Event에 Update append. **R-FalseMerge:** Union-Find transitive 오염이 영속 Event로 전파되지 않도록 **clique 게이트** 필수(약신호 edge가 끌어온 멤버 자동승격 금지).
+- Acceptance: end-to-end 카드 1건 **실데이터 콘텐츠** 생성(현재는 배관+노출게이트만, 알맹이 mock), cluster purity≥0.8, leakage<10%, **transitive-only 클러스터 자동승격 0**. Complexity: 상.
 
-## Phase 4 — Search API expansion layer
-- Goal: provider-agnostic tiered router(무료→유료), event 트리거 enrichment.
-- Acceptance: candidate→확장→dedup→raw_events, per-event/월 예산 guard, 다중 fallback. Complexity: 중.
+## Phase Event 토대 (S1) — **Event/Update 타임라인 토대 [임계경로 최우선·NOT_DONE]** (ADR#16)
+- Goal: 사건을 1회성 카드 → **진화하는 Event 타임라인 객체**로. 카드 = Event의 최신 스냅샷 뷰로 재정의(비파괴).
+- Net-new: `events`(canonical_title/status/first_seen/last_update/heat/domains/tags/primary_entity_ids/snapshot_card_id) +
+  `event_updates`(append-only: observed_at/delta_summary/evidence/added_domains/source_refs/heat_delta) +
+  `cluster_event_map`(cluster_id→event_id 라우팅, **단일 진실원천**) + `event_links`(possible/confirmed/rejected) +
+  `event_cards.event_id` nullable FK. domains = 닫힌 8섹터 → **열린 2층(통제어휘 ~20 + free-form tags)**. heat = 시계열 활성도(half-life 감쇠).
+- Why first(임계경로): 카드 알맹이 AI 품질을 올리기 전에 토대 형태를 고정 안 하면 곧 폐기될 1회성 스키마 위에 쌓인다(코딩 전 판단 원칙).
+- Acceptance: alembic 0004(**additive**, nullable/신규 테이블, downgrade 제공), "2번째 보도 → 기존 Event Update append" E2E,
+  **3엔진(PG/Milvus/OpenSearch) 동일 card_id 정합성 불변식 테스트 + 미전파 카드 메트릭(outbox SLO)**, 1517 green 무조건.
+- Risks: 카드↔Event 이중쓰기 정합성 드리프트(R-EventModelMigration), Union-Find 오병합 영속화(R-FalseMerge). Complexity: 상.
+- 상세: `docs/2_ROADMAP/19_WEB_INTELLIGENCE_IMPLEMENTATION_SPEC.md §1·§2`(NET-NEW, 00_INDEX 순위 #17) + `5_REFERENCE/EVENT_SCHEMA.md`(DDL) + `12`(개정).
+
+## Phase 4 — Search API expansion layer (tiered + budget + gate + Change Detection)
+- Goal: provider-agnostic tiered router(무료→유료), event 트리거 enrichment. **LAYER P(LLM 확장쿼리) → LAYER G(게이트) → LAYER F(fetch)** 분리(ADR#14).
+- Net-new(미배선): `query_generator.generate()`(현 `NotImplementedError`), `expansion_router.py`(tiered + per-event/월 budget guard + SSRF allowlist 14 §3), Change Detection(ETag/Last-Modified/norm_hash→SKIP verdict — **S1과 동시 착수 권장**, 비용 지렛대 선점).
+- Acceptance: candidate→확장→dedup→**Event append**(카드 아님), per-event/월 예산 guard 강제, 다중 fallback, **batch 1후보 실패가 나머지 확장 차단 안 함**(R-ExpansionPartialFailure 격리). Complexity: 중.
 
 ## Phase 5 — hybrid search + reranker + nori (indexing)
 - Goal: RRF hybrid → cross-encoder rerank → nori.
 - Acceptance: golden set nDCG/Recall@k 베이스라인, p99 내, fusion-only 폴백. Complexity: 중.
 
-## Phase 6 — LLM SourceSupervisor 실 provider 연결
-- Goal: `llm_propose` 콜백 실연결(allowed 게이트 강제, 끄면 규칙기반 동작).
-- Acceptance: 옵션 on/off 모두 동작, audit trace, fallback 100%, eval CI. Complexity: 중.
+## Phase 6 — LLM SourceSupervisor 실 provider 연결 (P/G/F + unsafe gate + audit, ADR#14)
+- Goal: `llm_propose` 콜백 실연결(LAYER P, allowed 게이트 LAYER G 강제, 끄면 규칙기반 동작). **사건유형 → role 매핑**(source_role.py 7역할 재사용).
+- Net-new(미배선): `source_supervisor.decide(llm_propose=create_judge_client 래퍼, llm_available=LLM_PROVIDER≠"")` 실 provider 배선 + **audit trace 구조화**(제안·채택·거부) — 현 `source_supervisor.py:104`는 허용 밖 제안을 *침묵 폐기*(R-LLMCollectBoundary).
+- Acceptance: 옵션 on/off 모두 동작, **LLM 동적 unsafe 제안이 반환값+로그에 명시되는 회귀**, 월 예산 상한 강제, fallback 100%, eval CI. Complexity: 중.
 
-## Phase 7 — Event clustering / ranking / timeline 완성
-- Goal: 4신호 랭킹(freshness/corroboration/diversity/impact) + timeline(FSD).
-- Acceptance: 설명가능 랭킹, timeline 단조 정렬, corroboration precision 측정. Complexity: 중상.
+## Phase 7 — Event clustering / ranking / timeline 완성 (heat + FSD)
+- Goal: 4신호 랭킹(freshness/corroboration/diversity/impact) + timeline(FSD) + **heat 시계열 활성도(half-life 감쇠)**.
+- 의존: Event 토대 Phase(S1). 랭킹·timeline은 카드가 아니라 **Event/Update 객체** 위에서 동작.
+- Acceptance: 설명가능 랭킹, timeline 단조 정렬, corroboration precision 측정, **heat 우선순위 큐가 발견 triage 예산을 굶기지 않음**(R-DiscoveryCostStarvation: budget 3축화). Complexity: 중상.
 
-## Phase 8 — KG-RAG / GraphRAG (조건부)
-- Goal: vector RAG로 못 푸는 multi-hop use case 한정 PoC.
+## Phase 8 — KG-RAG / GraphRAG (조건부) + Evidence Graph
+- Goal: vector RAG로 못 푸는 multi-hop use case 한정 PoC + **EvidenceNode(증거 그래프, 09 경계 유지)**.
 - Why now: mock 엔티티 제거 + vector RAG 커버리지 실측 이후에만.
+- 불변(ADR#15): evidence graph **직접 판매(구독)는 닫힌 길** — 검증 위젯/SEO 허브/Live Index로 트래픽 증폭만(전문·구독·투자조언 저촉 금지).
 - Acceptance: PoC 게이트(사전 성공기준) 통과, 근거 노드 인용, ROI 추적. Complexity: 상. Do-not-do: <1000 엔티티에 도입, mock 위 그래프.
 
-## Phase 9 — Commercial pilot (dashboard/alert/report/API)
-- Goal: 단일 vertical alert/API 베타 + 파일럿.
-- Required: evidence 구조화, alert 규칙/채널, API 키 인증/rate plan.
-- Acceptance: freemium 출시, alert 구독 가동, 파일럿 LOI 3, API 베타. Complexity: 상.
+## Phase 9 — 수익화 전환: 트래픽 × 광고 × 커뮤니티 (구독 폐기, ADR#15)
+- **방향 전환:** 레거시 "B2B alert/report/API **구독** 4티어"는 **폐기**. 수익 = **트래픽 기반 광고 + 커뮤니티식 운영**(구독형 진화 안 함). 성장 루프 = 고품질 사건추적(시계열·다분야) + 에이전트 해설/논쟁 + 유저 상호작용 → 체류↑·재방문↑ → 페이지뷰↑ → 광고 노출↑.
+- 선행 필수: **Event 토대(S1) + 실데이터** 이후(그 전엔 영업이 모래성, 00_ROADMAP_INDEX §4).
+- Net-new(미배선, 제품 표면 0): 광고 인벤토리 4종(self-serve 수요측 도메인 직판 포함) + 커뮤니티(`comment.py` 확장 + Agent Debate, 아래 PD) + Live Index/SEO 허브/검증 위젯(트래픽 증폭) + KPI 계측.
+- KPI(구독 LOI3/유료30 **폐기**): **북극성 = Monetizable Dwell**(도메인 RPM 비대칭) + **광고주 갱신율**(수요측). 신뢰 트래픽 등급제(봇/AI콘텐츠 방어) + 페이지 비전문비율 게이트(광고 정당성 측정·강제).
+- 불변: 정보제공(투자조언 0) · 전문저장 0 · finance 광고는 비투자 B2B 화이트리스트만 · evidence graph 직접 판매(구독) 금지.
+- Acceptance: 단일 vertical 라이브 → 광고 인벤토리 1종 가동 → 활성 광고주 N + 갱신율 X% + Monetizable Dwell 계측. Complexity: 상. Risks: R-AdModelFragility(콜드스타트·봇·brand-safety·단일점).
+- 상세: `docs/2_ROADMAP/13_COMMERCIALIZATION_AND_PRODUCT_STRATEGY.md`(상업화 단일출처, ADR#15 개정 반영).
+
+## Phase Agent Debate (PD) — 페르소나 논쟁 + 발화 게이트 fail-closed (S9, NET-NEW)
+- Goal: 에이전트 페르소나가 사건을 해설·반박하는 논쟁 레이어(커뮤니티 트래픽 루프의 핵심 콘텐츠, Phase 9 연결).
+- Net-new(미배선): `comment.py` debate 컬럼 확장 + `agent_debate` 페르소나 논쟁 그래프 + **발화 게이트**(14 §2.2).
+- 발화 게이트 fail-closed: ① `evidence_refs` 필수(없으면 게시 거부) ② 투자조언 톤 필터(`has_investment_advice`) ③ injection 방어(EvidenceGate 확장, 에이전트 출력=untrusted) ④ kill switch `DEBATE_ENABLED=false`.
+- Acceptance: evidence 없는 에이전트 발화 거부 테스트 + 투자조언 표현 차단 회귀 + injection 차단 테스트. Risks: R-AgentDebateSafety(투자조언화·근거없는 단정·injection). Complexity: 중상.
+- 상세: `docs/2_ROADMAP/19_WEB_INTELLIGENCE_IMPLEMENTATION_SPEC.md §9`(NET-NEW, 00_INDEX 순위 #17).
 
 ## Phase 10 — Enterprise-grade security / compliance
 - Goal: Admin RBAC(빈토큰 bypass 해제), SSRF allowlist, retention TTL, PII 스크럽, 라이선스 매트릭스, prod docker/TLS.
-- Acceptance: 상업 공개 선행조건(14) 전수 충족, secret scan PASS. Complexity: 상.
+- Acceptance: 상업 공개 선행조건(14 §7 (1)~(6) 전수) 충족, secret scan PASS. Complexity: 상.
 
 ---
 
-## 의존 그래프
+## 의존 그래프 (Event 토대 임계경로 반영 — 00_ROADMAP_INDEX §4 정합)
 
 ```text
-P1(배선) ─┬─> P2(큐/관측) ─┬─> P4(검색확장)
-          └─> P3(mock해제/dedup) ─┬─> P5(hybrid/rerank)
-                                  ├─> P7(clustering/rank) ─> P8(GraphRAG, 조건부)
-                                  └─> P6(supervisor 실연결)
-P5+P7 ─> P9(상용 alert/API) ─> P10(enterprise 보안/컴플라이언스)
+P1(배선) ─┬─> P2(큐/관측) ───────────────────────────────┐
+          └─> P3(mock해제/dedup) ─┐                       │
+                                  ▼                       ▼
+                        S1(★Event/Update 토대★)[임계경로 최우선]
+                        + S1.5 Change Detection(동시 착수, 비용 선점)
+                                  │
+                                  ▼
+                        P4(검색확장: LAYER P/G/F + budget)
+                                  │
+            ┌─────────────────────┼─────────────────────┐
+            ▼                     ▼                     ▼
+   P5(hybrid/rerank)    P7(clustering/rank/heat)   P6(supervisor 실연결 + audit)
+                                  │
+                                  ▼
+                        P8(GraphRAG, 조건부 <1000 금지) + Evidence Graph
+                                  │
+                                  ▼
+                        P9(트래픽×광고×커뮤니티, 구독폐기) ──> PD(Agent Debate)
+                                  │
+                                  ▼
+                        P10(enterprise 보안/컴플라이언스, 14 §7 (1)~(6))
 ```
 
-> P8(GraphRAG)·P4 유료 routine 호출은 P1+P3 이후. 토대 없이 고급 layer 욕심 금지.
+> **S1이 선행:** Event 토대를 먼저 고정하지 않으면 Phase3 잔여(카드 AI 품질)·P4 확장이 곧 폐기될 1회성 카드 스키마 위에 쌓인다(ADR#16). **선행 필수:** 상용화(P9)·검색고도화(P5)는 S1+실데이터 이후. 토대 없이 고급 layer 욕심 금지.
+>
+> **RISK 링크(`_RISK/RISK_REGISTER.md`):** S1=R-EventModelMigration·R-FalseMerge · P4=R-ExpansionPartialFailure·R-DiscoveryCostStarvation · P6=R-LLMCollectBoundary·R-PromptInjection(상향) · PD=R-AgentDebateSafety · P9=R-AdModelFragility. **불변(모든 Phase):** 우회 0 · 전문저장 0 · 투자조언 0 · `.env` 미열람 · 1517 green.

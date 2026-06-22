@@ -571,11 +571,17 @@ def run_api_live_probe(
     env_path: Optional[Path] = None,
     dry_run: bool = False,
     query: Optional[str] = None,
+    host_gate=None,
 ) -> ProbeResult:
     """Run one live API probe for the given service. Returns ProbeResult.
 
     query가 주어지고 probe spec에 query_param 메타가 있으면 검색어를 주입한다
     (_apply_query_override — 전역 스펙은 불변). 메타가 없으면 기존 거동 그대로.
+
+    host_gate(R-GdeltGovernorSplitBrain): host 단위 호출 간격 단일 출처. HOST_GATED_SOURCES
+    (gdelt 등) 소스는 **실제 HTTP 직전** 이 gate를 통과해야 하며(다른 오케스트레이션 루프가
+    host_min_spacing 안에 호스트를 이미 쳤으면 RATE_LIMITED 반환, 호출 안 함), 통과 시 호출
+    직전 즉시 기록(성공/실패 무관). closure/resurrection의 collect_gdelt와 동일 파일 공유.
     """
     if env_path:
         load_env(env_path)
@@ -691,6 +697,23 @@ def run_api_live_probe(
     # 일부 소스(tmdb)는 기본 endpoint가 query 미지원 — query 시 전용 endpoint로 전환
     if query and probe_spec.get("query_param") and probe_spec.get("query_endpoint"):
         url = probe_spec["query_endpoint"]
+
+    # R-GdeltGovernorSplitBrain: host 단위 floor — 실제 HTTP 직전 단일 출처 gate 통과 + 기록.
+    # 다른 루프(closure/resurrection)가 host_min_spacing 안에 호스트를 이미 쳤으면 호출하지 않는다.
+    # gate는 프로덕션 라우터(run_collection_probe)가 host-gated source에 한해 주입한다. 미주입이면
+    # 게이팅하지 않아(기존 동작 보존) run_api_live_probe 직접 호출 테스트가 실 상태파일을 안 건드린다.
+    if host_gate is not None:
+        from ingestion.orchestration.host_rate_gate import HOST_GATED_SOURCES
+        _hg = HOST_GATED_SOURCES.get(service_id)
+        if _hg is not None:
+            _host, _spacing = _hg
+            if not host_gate.decide(_host, min_spacing_seconds=_spacing).allowed:
+                return ProbeResult(
+                    source_id=service_id, method="api", query=query,
+                    status="RATE_LIMITED", error_category="HOST_RATE_LIMIT",
+                    next_action="retry_after_host_cooldown",
+                )
+            host_gate.record_call(_host)   # 실제 HTTP 직전 기록(성공/실패 무관)
 
     try:
         import httpx

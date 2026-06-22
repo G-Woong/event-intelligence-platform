@@ -12,6 +12,11 @@
 CLAUDE.md
 .claude/settings.local.json
 .claude/cache/
+# MCP server config (local). Canonical template lives in
+# WEB_INTELLIGENCE_HARNESS_EVOLUTION.md §4 — gitignored to block accidental secret commit (sec audit WARN-1).
+.mcp.json
+# Playwright MCP transient snapshots/output
+.playwright-mcp/
 
 # Codex / local sub-agent
 .codex/

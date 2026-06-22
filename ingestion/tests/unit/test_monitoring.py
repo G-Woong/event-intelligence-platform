@@ -98,6 +98,22 @@ def test_secret_in_payload_detected_via_summary():
     assert any(a["code"] == "secret_exposure_suspected" for a in summary["critical_alerts"])
 
 
+def test_url_slug_with_sk_not_flagged_as_secret():
+    # Regression: 'sk-' inside news URL slugs (musk-/risk-/samsung-sk-hynix) must NOT
+    # raise the CRITICAL secret alert. Bare-substring 'sk-' previously false-positived
+    # on every run that collected such a URL → exit 1. Now uses scan_secrets word-boundary.
+    states = [_state("cnbc", "PRODUCTION_READY")]
+    plan = _plan(["cnbc"], [])
+    clean = [{"source_id": "cnbc",
+              "canonical_url": "https://www.cnbc.com/2026/06/19/musk-spacex-samsung-sk-hynix-stock-risk-buy.html",
+              "title": "Musk, SK Hynix and risk appetite"}]
+    summary = build_monitoring_summary(
+        run_id="r1", plan=plan, source_states=states, records_collected=1,
+        eventqueue_written=1, duplicates_skipped=0, bridge_result=_PASS_BRIDGE,
+        queue_or_raw_sample=clean)
+    assert not any(a["code"] == "secret_exposure_suspected" for a in summary["critical_alerts"])
+
+
 def test_write_monitoring_report_creates_files(tmp_path):
     states = [_state("bbc", "PRODUCTION_READY")]
     plan = _plan(["bbc"], [])

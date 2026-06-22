@@ -119,8 +119,8 @@ def build_production_run_plan(
             reasons[sid] = f"policy_excluded:{state.terminal_reason or 'excluded'}"
             continue
 
-        # 2) dead-end / not-ready (전략 결정에 위임)
-        decision = decide_production_strategy(sid, profile, memory, state)
+        # 2) dead-end / not-ready (전략 결정에 위임; now → cooldown 만료 rate-limit 자동 재개)
+        decision = decide_production_strategy(sid, profile, memory, state, now=now)
         if decision.skip:
             skipped.append(sid)
             reasons[sid] = decision.skip_reason or f"not_ready:{state.current_status}"

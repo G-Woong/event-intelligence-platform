@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
+from ingestion.core.env_loader import load_env
 from ingestion.orchestration.bridge_to_raw_events import (
     RawEventBridgeWriter,
     bridge_records,
@@ -501,6 +502,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         respect_rate_limit=str(args.respect_rate_limit).lower() == "true",
     )
     env_path = Path(args.env_path) if args.env_path else None
+
+    # R-EnvLoadAsymmetry: make the .env contract explicit at the CLI entrypoint instead
+    # of relying solely on audit_api_key_readiness' load side-effect (idempotent
+    # setdefault). The injectable run_production_orchestration() core used by tests is
+    # unchanged. Values are never read or printed.
+    load_env(env_path)
 
     # plan 미리보기 출력(실행 전)
     profiles = load_source_profiles(str(config.profiles_path))

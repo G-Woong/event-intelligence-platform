@@ -1,66 +1,155 @@
 # 13 — COMMERCIALIZATION & PRODUCT STRATEGY (L0 / L13 / L14)
 
-> **상업화 단일 출처 (2026-06-19):** 상업화·수익모델·가격 논의는 이 문서가 권위. 구 중복본 `Orchestration_Construction/10_COMMERCIALIZATION`(→ `3_ARCHIVE/2026-06_orchestration_design/`로 보관)과 `18_FINAL_EXECUTIVE_SUMMARY`의 상업화 단편은 여기로 통합됨. 전부 **미구현 ROADMAP**이다(현재 구현 사실은 `_CANONICAL/*`).
+> ┌─ 진행상황 식별 (STATUS STAMP) ──────────────────────────────────────────────
+> │ **상태:** 📘 REFERENCE — 상업화 전략 단일출처. **코드 산출물 0**(제품 표면 = 대시보드만 구현, alert/광고/커뮤니티 미구현).
+> │ **구현순위:** #14 (00_ROADMAP_INDEX, 그룹 C) — **Event 토대(S1)+실데이터 이후** 착수(그 전엔 영업이 모래성).
+> │ **검증 근거:** 대시보드만 구현(`_CANONICAL/01`). 광고/커뮤니티/Live Index/Entity Dossier 전부 미구현.
+> │ **잔여(미구현):** 광고 인벤토리·self-serve 수요측·커뮤니티(Agent Debate, 19 §9)·Live Index·SEO 허브·KPI 계측.
+> │ **완료정의(DoD):** Event 토대 위 단일 vertical 라이브 → 광고 인벤토리 1종 가동 → 활성 광고주 N + 광고주 갱신율 X% + Monetizable Dwell 계측.
+> │ **권위:** 결정 = `_DECISIONS/2026-06.md` **ADR#15**(구독→광고). 구현 사실 = `_CANONICAL/*`.
+> └────────────────────────────────────────────────────────────────────────────
 
-> 결론: 이 플랫폼은 검색엔진이 아니라 event intelligence platform이고, **1차 수익은 광고가 아닌 B2B alert/report/API**다. MVP는 단일 vertical로 좁히고, source coverage보다 event quality로 차별한다. 단, **P0 브리지(A→B)가 풀리기 전 영업은 공허**하다(데모 불가).
+> **상업화 단일 출처 (2026-06-20 개정):** 본 문서가 상업화·수익모델·제품표면 권위. **방향 전환(ADR#15):** 레거시 "B2B alert/report/API **구독** 4티어"는 **폐기**되고 **트래픽 기반 광고 + 커뮤니티식 운영**으로 전환됐다. 구 중복본(`3_ARCHIVE/2026-06_orchestration_design/10`)과 `18_FINAL_EXECUTIVE_SUMMARY`의 상업화 단편은 여기로 통합·갱신됐다. 전부 **미구현 ROADMAP**(현재 사실은 `_CANONICAL/*`).
+>
+> ⚖️ **불변(타협 불가):** 정보 제공이지 투자 조언 아님(매수/매도·가치판단 금지) · 전문 저장/재배포 금지(요약+증거URL만) · 우회 금지 · 구독 아님(트래픽×광고).
 
 ---
 
-## 1. 상업화 10대 판단 기준
+## 1. 결론 — 검색엔진이 아니라 event intelligence platform, 수익은 트래픽×광고×커뮤니티
 
-1. 검색엔진이 아니라 event intelligence platform이다.
-2. 직접 웹 전체 크롤링은 비현실적이다.
-3. core source + 검색 API + 자체 index + LLM judge + event graph 조합이 현실적.
-4. 초기 MVP vertical을 좁혀야 한다.
-5. source coverage보다 event quality가 중요하다.
-6. full body 저장보다 evidence URL+summary+metadata가 안전하다.
-7. community source는 early signal이지 verified evidence가 아니다.
-8. B2B alert/report/API가 광고보다 현실적 수익화다.
-9. 저작권/robots/API terms가 제품 범위를 결정한다.
-10. LLM agent는 판단자이지 무제한 crawler가 아니다.
+이 플랫폼은 사건(event)을 **진화하는 다분야 시계열 객체**로 추적·정제해 신뢰가능한 인텔리전스를 무료로 제공하고, 그 위에 **광고**를 싣는다. 핵심 차별은 source coverage가 아니라 **event quality + 증거 체인 + 커뮤니티 UGC**다.
 
-## 2. MVP vertical 평가 (1-5, Score 합산)
+**왜 구독이 아니라 광고인가 (ADR#15):**
+- 사용자가 새로 못박은 방향: "커뮤니티식 운영으로 트래픽을 늘리고 광고 기반으로 간다. 구독형으로 진화 안 함."
+- 레거시 우려("전문 재배포 금지 → 광고 트래픽 모델 성립 안 함")는 **거짓 전제**다(§9.2 정면 해결): 우리가 노출하는 것은 전문이 아니라 **요약 + 증거링크 + UGC(유저 댓글·에이전트 논쟁) + 시계열 다분야 시각화**이며, 이는 파생 콘텐츠라 광고 면적이 된다(구글뉴스·Techmeme·Liveuamap 동일 구조).
 
-| Vertical | Source avail | WTP | Legal risk(낮을수록↑) | Differentiation | MVP feasibility | Score |
-|---|---|---|---|---|---|---|
-| **AI/tech 제품 incident** | 5 | 3 | 5 | 4 | 5 | **22** |
-| 정책/규제(federal_register/EU/공시) | 4 | 4 | 5 | 4 | 4 | 21 |
-| 금융/공시/시장(sec/opendart) | 5 | 5 | 2(투자조언 경계) | 4 | 4 | 20 |
-| 반도체/배터리/전자 | 3 | 4 | 4 | 3 | 3 | 17 |
-| 미디어/브랜드 리스크 | 4 | 3 | 3 | 4 | 3 | 17 |
-| 글로벌위기/안보 OSINT | 3 | 4 | 2(오정보) | 4 | 3 | 16 |
+**보존(레거시에서 살리는 것):** ① 원칙1 투자조언 금지 ② 전문저장 금지 ③ 단일 vertical 좁히기(아래 §8) ④ 증거 체인·교차검증이라는 차별 4축(§9).
 
-**추천 1차 vertical: AI/tech 제품 incident(22)** — 소스가 가장 두껍고(전용 6+커뮤니티 반응) 투자조언/안보 오정보 지뢰가 없어 정책 불변조항과 충돌 최소. ICP: AI/SaaS 제품팀·DevRel·경쟁 모니터링 PM. **Phase 2 확장: 금융/공시(WTP 최고).**
-> 적대적 비판 대안: "한국 규제/공시 vertical(opendart/krx/federal_register)"도 1인이 방어 가능한 해자 후보. 두 안 모두 좁은 vertical 집중이라는 점에서 일치.
+---
 
-## 3. 제품 표면 우선순위 (L13)
+## 2. 성장 루프 — 콘텐츠 → 트래픽 → 광고 (+ 신규 유입 분기)
 
-```text
-alert > API > report > dashboard(이미 구현, lead-in) > community(후순위)
+```
+신규 유입(검색·소셜·위젯 역유입) ──┐
+                                   ▼
+고품질 사건추적(시계열·다분야) ─┐   재방문(미수렴 쟁점 재점화·습관 트래픽)
+에이전트 해설/논쟁            ├─► 체류↑ 재방문↑ ─► 페이지뷰↑ ─► 광고 노출↑ ─► 수익
+유저 댓글·반응·에이전트 상호작용 ─┘            ▲                              │
+                                              └──── 수익 일부 재투자(소스·LLM)─┘
 ```
 
-- **alert**(이벤트 push): retention/B2B 매출 1순위. confidence+evidence 인프라 재사용 → ROI 높음. 규칙 빌더(theme/sector/keyword), 채널(email/web/webhook), 빈도 제어.
-- **API**: events/search를 외부 계약으로 노출 + 키 인증 + rate plan(usage 과금).
-- **report**: themes/sectors 집계(PARTIAL 해소 선행), 주간 vertical 요약.
-- **신뢰 UI(차별 핵심)**: evidence를 `string[]` → `{source_name, url, published_at, snippet, source_status}` 구조화. confidence는 근거 추적 tooltip + 가치판단 없는 중립 표기. 재배포 금지 소스(guardian/nyt)는 snippet+링크만.
-- PARTIAL 처리: comments/ai_replies는 feature flag 뒤로(MVP 제외), themes/sectors는 "미검증" 라벨.
+> **레거시 성장루프의 결함(adversarial/insight 보강):** 레거시 루프는 "체류→재방문→광고"의 **닫힌 루프**라 외부 신규 유입이 없으면 천장에 부딪힌다. 광고 매출 = 신규 × 기존이므로 **신규 유입 분기**(아래 §6 SEO 허브)를 반드시 병행한다.
 
-## 4. 가격 모델 (L14)
+---
 
-- 웹 리서치: 순수 per-seat 15%로↓, **61% hybrid(base+usage)**, 3-4 티어. AI가 seat-가치 상관을 깸 → usage 신호(alert 발송/API콜/레코드).
-- 구조: Free(기본 피드+제한 alert) / Pro(무제한 alert+evidence 심층) / Team(다인+섹터필터) / Enterprise(API+custom+SLA). base seat + usage add-on.
-- 진입가는 경쟁 최저가 이하(SMB 침투). enterprise는 custom.
+## 3. 광고 수요측 설계 — "누가 광고를 사는가"부터 (CPM이 아니라 오디언스 정밀도)
 
-## 5. 경쟁 차별 (4축) & 수익 경로 (3)
+> 인사이트 #1 (commercialization-strategist). 근거: DIRECTION §24 인벤토리 표는 광고의 *위치·형태*만 정의하고 **수요측(누가 사는가)을 비워둠** + `13:ICP 정의`.
 
-- 차별: ① 다중소스 교차검증 ② 증거체인(evidence link) ③ 사건중심 능동감지 ④ 정보제공 규제안전.
-- 대비: Dataminr(가격 접근성)·AlphaSense(능동 alert vs 검색)·Recorded Future(범용 incident vs 사이버)·Meltwater/Talkwalker(증거검증)·Liveuamap(검증+요약 vs 지도).
-- 수익 경로: ① alert 구독 ② B2B event queue API ③ 정기 리포트 구독.
+**핵심:** 초기(콜드스타트~MAU 수만)에는 프로그래매틱 디스플레이(AdSense류) RPM이 사실상 0에 수렴한다. 따라서 광고 모델은 **'CPM 디스플레이'가 아니라 '도메인 적합 B2B self-serve 직판'**으로 출발한다.
 
-## 6. 버려야 할 착각 / KPI / 검증기준
+- `/domains/{technology}`의 'AI/테크 incident' 독자 = DevRel·제품팀·경쟁모니터링 PM(우리 ICP와 동일). 이들에게 노출되길 원하는 광고주 = 옵저버빌리티 SaaS·인시던트 관리 툴·개발자 도구.
+- **1차 인벤토리 = '도메인 스폰서 슬롯' self-serve 대시보드 판매**(월 정액 또는 CPL). 우리는 트래픽 *규모*가 아니라 **오디언스 정밀도**를 판다. → 구독 아님(광고주가 인벤토리를 사고, 사용자에게는 여전히 무료).
+- **트레이드오프:** 직판은 영업 공수 ↔ "1인 운영 해자". 완화: self-serve 결제+자동 슬롯 배정으로 공수 0 수렴 + 초기 앵커 광고주 3~5곳만 수동. 미판매 슬롯은 자사 제품 CTA로 fallback.
+- **위험(원칙1):** finance 도메인은 투자권유 광고 유인 → **비투자 B2B 툴만 화이트리스트 강제**(광고주 심사).
 
-- 버릴 착각: "57소스 다 켜면 가치↑"(P0 전엔 무의미), "광고로 무료앱"(전재 금지+트래픽 부재), "google_trends/x로 실시간 우위"(차단/제외 소스).
-- 6개월 KPI: 파일럿 LOI 3 + 유료 30 + MRR 검증. false alert rate·churn·LTV/CAC(≥3) 추적.
-- 검증기준: P0 해소 → 단일 vertical 라이브 큐 → freemium → alert 구독(수익경로1) → 파일럿 LOI 3 → API 베타(수익경로2). 차별 4축 + hybrid 3-4티어 가격표 + bottom-up SOM 확정. **TAM은 bottom-up(ICP수×ARPU)만**, 근거 없는 top-down 금지.
+---
 
-> 주의: 본 문서는 정보 제공 목적이며 투자 조언이 아니다.
+## 4. 광고 인벤토리 4종 + 신뢰 트래픽 등급제 + 비전문비율 게이트
+
+| 인벤토리 | 위치 | 형태 |
+|---|---|---|
+| 네이티브 피드 | 사건 목록/Live Index 사이 | 도메인 적합 스폰서 카드(광고 라벨 명시) |
+| 사이드 배너 | Event 상세 우측 | 도메인 직판 슬롯 |
+| 도메인 스폰서 | `/domains/{d}` 상단 | self-serve 월 정액(§3) |
+| 논쟁 하단 | Agent Debate 스레드 말미 | 컨텍스트 광고 |
+
+**신뢰 트래픽 등급제 (인사이트 #6):** 광고 모델의 숨은 적은 봇/저품질 트래픽이다. 우리가 이미 가진 fail-closed 게이트·evidence 필수·역할 정책을 **트래픽 품질**로 확장 — 광고주에게 '전체 트래픽'이 아니라 **'검증 트래픽(verified human + evidence-engaged session)'**으로 보고. 에이전트 논쟁도 발화 게이트 통과분만 색인(저품질 논쟁이 페이지 오염 차단). → "작아도 질이 보증된 프리미엄 인벤토리"(§3 정밀 직판가 정당화).
+
+**비전문비율 게이트 (BI 인사이트 #6):** 광고 정당성을 *주장*이 아니라 **측정·강제 가능 정책**으로. 각 Event 페이지의 '외부 인용 스니펫 글자수' vs '우리/유저 생성물(요약·논쟁·시계열·집계) 글자수' 비율을 계측하고, **우리 생성 면적 ≥ 임계(예 70%)**인 페이지에만 광고 게재(`AD_PAGE_NONSOURCE_RATIO_MIN`). → 전문저장 금지를 *더 강하게* 집행하는 헌법 도구(brand-safety 프리미엄).
+
+---
+
+## 5. 북극성·KPI — Monetizable Dwell + 광고주 갱신율 (구독 KPI 전면 폐기)
+
+레거시 구독 KPI(파일럿 LOI 3 · 유료 30 · LTV/CAC≥3)는 **폐기**한다.
+
+**(공급측) 북극성 = Monetizable Dwell (인사이트 #2):** 순수 체류시간이 아니라 도메인 RPM 비대칭을 반영.
+```
+Monetizable Dwell = Σ (도메인 d 체류시간 × 도메인 d 광고수요지수)
+```
+- defense/diplomacy는 체류가 길어도 광고주가 적고 투자/안보 오정보 광고 배제 → RPM 낮음. technology/regulation/telecom은 B2B 광고 두꺼움. **순수 체류를 북극성 삼으면 '수익화 불가 트래픽'에 LLM·에이전트 비용을 쏟는 허영 함정**. heat 차등 폴링을 `heat × 수익화지수`로 확장해 비용을 수익에 비례.
+- 보조지표: DAU/MAU, 논쟁 깊이, 재방문율, 페이지뷰, RPM. (저수익 도메인도 최소 baseline 커버리지 보장 — 공익·차별성 유지.)
+
+**(수요측) 북극성 = 광고주 90일 갱신율 × ARPA (인사이트 #4):** 구독의 churn처럼, 광고의 진짜 건강지표는 '광고주가 효과 보고 재구매하는가'. 트래픽이 늘어도 광고주가 이탈하면 매출 붕괴(미디어 사망원인 1위). → self-serve 광고주에게 '클릭→리드' 경량 어트리뷰션 무료 제공(개인 추적 없이 슬롯 단위 집계).
+
+**6개월 검증 게이트 (교체):** ~~유료 30·LOI 3~~ → **활성 광고주 N곳 + 광고주 갱신율 X% + 슬롯 판매율 + Monetizable Dwell 추세.**
+
+---
+
+## 6. 제품 표면 우선순위 — community가 성장엔진 1순위
+
+```text
+community(성장엔진) ≈ Live Index ≈ Event 페이지(시계열·다분야) > Entity Dossier > 신뢰 UI > dashboard(구현, lead-in)
+```
+> 레거시 "alert > API > report"(구독 표면)는 폐기. 아래는 전부 **무료·로그인리스·광고 면적**.
+
+- **커뮤니티(Agent Debate, 19 §9):** 유저 댓글 + 에이전트 논쟁(claim→counter→evidence). 체류·UGC 생성 엔진. (a)신뢰도 신호 커뮤니티(hold 봉인 유지)와 (b)사이트 UGC 커뮤니티(성장)는 **다른 객체**(분리).
+- **Live Index (BI 인사이트 #5):** `heat × domain_spread × update_frequency`로 '지금 여러 분야로 번지는 사건'을 홈/도메인 페이지에 자동 큐레이션. 폐기한 구독 alert의 '능동 감지(push)' 가치를 **무료 공개 인덱스**로 회수(편집자 없는 24시간 뉴스룸 1면). corroboration 가중치 충분히 높여 미검증 핫이슈 상위 진입 차단(published만 색인).
+- **미수렴 쟁점 리텐션 (BI 인사이트 #2):** 논쟁의 '미수렴(unresolved)' 태그 + 새 Update append = '내가 보던 쟁점에 새 증거 도착' **무료 웹 알림**(로그인/구독 아님). 구독 alert가 갖던 '리텐션 1순위'를 구독 없이 회수. 수렴 판정은 에이전트 발화가 아니라 corroboration 결정론 신호로 자동(게이밍 차단).
+- **Entity Dossier (BI 인사이트 #3):** `/entity/{id}` = 그 엔티티가 등장한 모든 사건 시계열 + 도메인 + 공식소스. 사건 페이지는 식지만 엔티티 페이지는 **비휘발 SEO 롱테일 영구 랜딩**(앵커 확정 엔티티만, N건 이상 연결분만 인덱싱 — thin content 방지).
+- **Spillover Map (BI 인사이트 #1):** `event_updates.added_domains`를 Event 모집단 전체에 집계 → 'energy 사건이 평균 N시간 뒤 shipping으로 번진' **전이 통계**(`/spillover/energy→shipping`). **예측 아님 — '과거 N건 중 M건이 이 경로(증거 링크)'의 사후 빈도 서술만**(투자조언 톤 필터 재사용, 표본 작으면 숨김).
+- **Event Replay (BI 인사이트 #7):** 종료(dormant/closed)된 사건의 append-only 완결 타임라인을 '복기' 아카이브로 재포장 + `retrieve_past_context`(이미 구현)로 새 사건↔과거 유사사건 병치(예언 아님, 과거 기록 병치).
+- **SEO 허브 (인사이트 #5):** Event/타임라인/논쟁은 본질적으로 SEO 친화 롱폼 구조. Event 페이지 SSR + schema.org 마크업 + 영구 URL화 → '호르무즈 timeline'류 검색의 자연 신규 유입(닫힌 루프의 신규 채널). published 게이트 통과분만 색인(저품질 AI 콘텐츠 페널티 방어).
+- **신뢰 UI (차별 핵심):** evidence를 `{source_type, url, confidence, relation}` 구조화 + **출처 다양성 배지**(official 2·news 3·gov 1) + **반증(refutes) 섹션**(경쟁사 누구도 안 하는 '이견까지 보여주는 인텔리전스'). confidence는 **'교차검증 출처 수'로 중립 명명**(가치판단·매수 신호 금지, 원칙1).
+
+---
+
+## 7. Evidence Graph 수익화 — 한계선과 합법 우회로 (인사이트 #3)
+
+**정직한 한계선:** evidence graph(증거 노드+관계)를 **데이터 상품(피드/API 판매)으로 파는 길은 불변원칙상 닫힌 길**이다 — (1) 데이터 피드 구독 = 정의상 구독(ADR#15 위반), (2) 증거 스니펫이 일정 이상이면 전문 재배포 경계, (3) finance 증거를 '시그널'로 팔면 사실상 투자정보 상품(원칙1). → **직접 판매(소유권 이전)는 전략적으로 정직하게 '닫힌 길'로 명시.**
+
+**합법 가능성 (판매 아님, 증폭):**
+- **검증 위젯(embeddable badge):** 외부 블로그/뉴스레터가 우리 Event를 임베드 → 우리 사이트로 트래픽 역유입(광고 면적 확대). 위젯은 무료, 수익은 역유입 광고에서. 위젯은 '요약+검증배지+우리 사이트 CTA'만(전체 타임라인·논쟁은 우리 사이트에서만 — 카니발 방지). 배지 문구 '교차검증 출처 N개'로 중립화(투자 안전 오독 방지).
+- **메서드 신뢰(전문성) 인증:** 교차검증 방법론·소스 정책을 공개 표준화 → 'X-verified' 브랜드 자산.
+- **위험:** 위젯 오인용 시 명예훼손/오정보 책임 귀속 → legal-safety 검토 필수.
+
+---
+
+## 8. MVP vertical 평가 (트래픽 잠재력으로 재프레임)
+
+| Vertical | 소스 두께 | **트래픽 잠재력** | 광고수요(B2B) | Legal risk(낮을수록↑) | Score |
+|---|---|---|---|---|---|
+| **AI/tech 제품 incident** | 5 | 4 | 5 | 5 | **추천 1차** |
+| 정책/규제(federal_register/EU/공시) | 4 | 4 | 4 | 5 | 강 후보 |
+| 금융/공시/시장(sec/opendart) | 5 | 5 | 2(투자조언 경계) | 2 | 보류(원칙1) |
+| 반도체/배터리 | 3 | 3 | 4 | 4 | — |
+| 글로벌위기/안보 OSINT | 3 | 5(화제) | 1(저RPM) | 2 | 트래픽↑·RPM↓ |
+
+> **레거시 WTP(지불의사) 축을 트래픽 잠재력 + 광고수요로 교체**(구독 폐기 반영). **추천 1차 vertical: AI/tech 제품 incident** — 소스 두껍고(전용 6+커뮤니티 반응) 투자/안보 지뢰 없어 광고수요·legal 동시 우위. ICP: AI/SaaS 제품팀·DevRel·경쟁모니터링 PM. **확장: 정책/규제**(legal 안전). 금융은 원칙1 경계로 보류.
+
+---
+
+## 9. 경쟁 차별 (4축) & 재배포금지 정면 해결
+
+### 9.1 차별 4축 (유지)
+① 다중소스 교차검증 ② 증거체인(evidence link, 클릭→원본→인용 가능) ③ 사건중심 능동감지(Live Index=무료 push) ④ 정보제공=규제 안전.
+대비: Dataminr(능동감지 유료 vs 우리 무료 공개)·AlphaSense(엔티티 검색 유료 vs 우리 무료 Dossier)·Recorded Future(사이버 vs 범용 incident)·Meltwater/Talkwalker(양 vs 출처 다양성·반증)·Liveuamap(지도 vs 시계열 전이·복기).
+
+### 9.2 "재배포 금지 → 광고 불가"는 거짓 전제 (정면 해결)
+1. **우리가 보여주는 건 전문이 아니다.** 사건 = 요약 + 증거링크(`raw_events.raw_text`는 HTML 제거 summary만). 요약+분석+링크는 공정이용 파생물이며 그 위 광고는 합법(구글뉴스·Techmeme·Liveuamap 동일 구조).
+2. **트래픽 핵심 콘텐츠는 UGC다.** 광고면적 큰 부분 = 유저 댓글 + 에이전트 논쟁 + 시계열 시각화 — 전부 우리/유저 생성물(재배포 0).
+3. **시계열 추적 자체가 독자 콘텐츠다.** "호르무즈 봉쇄 섹터"의 30일 흐름·다분야 그래프는 어느 단일 기사에도 없는 고유 산출물.
+→ **"재배포 금지"는 광고 장애물이 아니라 차별화 근거.** §4 비전문비율 게이트가 이를 수치로 보증(엔터프라이즈 조달·brand-safety 무기).
+
+---
+
+## 10. 버려야 할 착각 · 검증 게이트 · 트레이드오프/위험
+
+**버릴 착각:** "57소스 다 켜면 가치↑"(Event 토대 전엔 무의미) · "구독으로 가자"(ADR#15 폐기) · "순수 체류시간이 북극성"(허영 트래픽 함정, §5) · "evidence graph를 데이터로 팔자"(§7 닫힌 길).
+
+**검증 순서(DoD 분해):** Event 토대(S1)+실데이터 → 단일 vertical 라이브 → Live Index 가동 → 커뮤니티(Agent Debate) → 광고 인벤토리 1종(도메인 스폰서 self-serve) → 활성 광고주 N + 갱신율 X% + Monetizable Dwell 계측 → SEO 허브로 신규 유입.
+
+**트레이드오프·위험 (→ `_RISK` R-AdModelFragility):** 광고 단일 모델 + 콜드스타트 트래픽 채널 부재 + AI 자동생성 콘텐츠의 광고정책 위반 + brand-safety 저RPM + 구독 폐기로 **단일점 실패**. 완화: 초기 트래픽 채널 1개 검증 + AI 라벨링/모더레이션 + 광고 네트워크 정책 사전검토 + 신뢰 트래픽 등급제 + 비전문비율 게이트.
+
+> 주의: 본 문서는 정보 제공 목적이며 투자 조언이 아니다. TAM은 bottom-up(ICP수×광고 ARPA)만 — 근거 없는 top-down 금지.

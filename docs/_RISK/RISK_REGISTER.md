@@ -165,4 +165,69 @@
 - Remaining gap(정직): 테스트는 **분류기 계약 + 디스크 불변식**을 고정하지, 실제 `Move-Item`을 수행하는 **turn-closeout 스킬의 이동 안전성은 미테스트**(adversarial 지적). dead/superseded 자동 탐지는 머신 마커 의존(현재 마커 0개 → 후보 0). archived→trash retention 전이는 후보 플래그로 미표현(선언만).
 - Closure: 스킬의 실제 이동 경로를 dry-run 통합 테스트로 커버 + 마커 운용 1회 라이브 → 검토. **첫 apply 승인 = `02 §A.4` 팀 감사(docs-memory-curator + adversarial-reality-critic) 통과 + 명시 confirm, 단독 이동 금지**(curator 지적 반영).
 
+### R-LLMCollectBoundary · LLM 수집 라우팅/확장쿼리가 우회·rate위반·비용폭주 제안  — Severity: MEDIUM (미래, 2026-06-20 신규 — ADR#14)
+- Area: ingestion/agents / LLM 수집 관여(P/G/F) / 헌법(우회 금지)
+- Description: S5/S6에서 LLM이 LAYER P(라우팅·확장쿼리)에 관여하며 robots_ignore/proxy_rotation 같은 우회 전략, rate-limit 위반, 유료검색 비용 폭주를 제안할 위험.
+- Current mitigation: LAYER G 결정론 게이트(`_UNSAFE_STRATEGIES` allowlist + per-event/월 budget guard) — **차단 메커니즘은 실구현**(`source_supervisor.py` `_ALLOWED_BY_LAYER`/`_UNSAFE_STRATEGIES`). off 토글(`LLM_PROVIDER=""`)로 결정론 100% 폴백.
+- Remaining gap(정직, adversarial): **(1) audit trace 미구현** — `source_supervisor.py:104`는 허용 밖 LLM 제안을 *침묵 폐기*(반환값·로그 무기록). "제안·채택·거부 구조화 로깅" 완화책은 **TODO**. (2) **신규 발견 cold triage 비용**(Change Detection last_state 부재 구간)은 budget 산식 밖 → R-DiscoveryCostStarvation. (3) `llm_propose` 실 provider 미배선(현재 테스트 람다).
+- Closure: off 100% 폴백 + unsafe 제안 차단 회귀 + **LLM 동적 unsafe 제안이 반환값+로그에 명시**되는 테스트 + 월 예산 상한 강제 테스트.
+
+### R-AgentDebateSafety · 에이전트 발화 투자조언화/근거없는 단정/prompt injection  — Severity: MEDIUM (미래, 2026-06-20 신규 — S9)
+- Area: agents/community / 헌법1(투자조언 금지) / R-PromptInjection 교차
+- Description: Agent Debate Layer의 에이전트 발화가 ① 매수/매도·가격판단 톤(투자조언), ② evidence 없는 단정, ③ 외부 텍스트 injection에 조종될 위험.
+- Current mitigation: (설계, 미구현) 발화 게이트 fail-closed — evidence_refs 필수(없으면 게시 거부) + 투자조언 톤 필터(`has_investment_advice`, publish 게이트 철학 확장) + injection 방어(EvidenceGate 확장). kill switch = `DEBATE_ENABLED=false`.
+- Remaining gap: comment.py debate 컬럼 0(미구현), 페르소나 논쟁 그래프 부재. 발화 게이트 코드 부재.
+- Closure: 발화 게이트 fail-closed 테스트(evidence 없는 에이전트 발화 거부) + 투자조언 표현 차단 회귀 + injection 차단 테스트.
+
+### R-EventModelMigration · 카드→Event/Update 전환 + 3엔진 정합성 드리프트  — Severity: MEDIUM (미래, 2026-06-20 신규 — S1)
+- Area: data-model / 비파괴 마이그레이션 / L5 정합성
+- Description: 1회성 카드 → Event/Update 모델 전환 시 기존 카드·테스트·UI 호환성 + 신규 이중쓰기(events↔event_cards 스냅샷) 정합성 위험. event_cards 스냅샷이 자주 재생성되면 3엔진(PG/Milvus/OpenSearch) 색인 드리프트 빈도 증가.
+- Current mitigation: (설계) additive 마이그레이션(신규 컬럼 nullable/신규 테이블) + 카드=스냅샷 뷰 비파괴 유지(alembic downgrade 제공).
+- Remaining gap(정직, adversarial): **"1517 green=비파괴"는 신규 경로(신규 테이블·재색인)를 커버하지 않음** — green은 기존 경로 무손상만 증명. 색인 swallow(MASTER L5)와 결합 시 검색-목록 불일치(신뢰 훼손).
+- Closure: 1517 green + Event append E2E + **3엔진 동일 card_id 정합성 불변식 테스트 + 미전파 카드 메트릭(outbox SLO)**. ADR로 `cluster_event_map` 단일 진실원천 vs `event_cards.event_id` derived 결정 기록.
+
+### R-FalseMerge · Union-Find transitive 오염이 영속 Event로 전파  — Severity: MEDIUM (R-Dedup LOW→MEDIUM 승격, 2026-06-20 — adversarial)
+- Area: clustering / Event Resolution / 차별(교차검증 신뢰)
+- Description: `cross_source_dedup.py:149`가 title Jaccard≥0.8(`_TITLE_JACCARD_THRESHOLD=0.8`)이면 union → Union-Find transitive 폐쇄(A–B 0.8, B–C 0.8이면 A–C 유사도 0이어도 같은 cluster). `:165-169` `has_strong=any(...)`라 클러스터에 강신호 edge 1개만 있어도 약신호로 끌려온 무관 레코드까지 전체가 CONF_DUPLICATE→자동 APPEND. 현재는 카드 1회성이라 오염이 갇히나, **Event append 라우팅(ADR#16) 도입 시 영속 Event에 누적·전파**.
+- Current mitigation: (설계) 강신호 자동/약신호 possible 보류 — 단 cluster-level confidence만 봄(transitive 멤버 미보호).
+- Remaining gap: clique(완전연결) 게이트·edge provenance 부재. 고heat Event가 무관 사건 흡수 시 1건의 명백한 오병합도 차별점(교차검증 신뢰) 붕괴.
+- Closure: **transitive-only 클러스터 자동승격 금지 테스트** + clique 게이트 통과 E2E + 약신호 edge가 추가한 멤버에만 pairwise 검사(분모 축소) + event_links edge-level provenance(split 가역).
+
+### R-DiscoveryCostStarvation · 발견 triage가 확장 LLM 예산 잠식  — Severity: MEDIUM (미래, 2026-06-20 신규 — adversarial)
+- Area: Authority Discovery / budget / 발견 폭주
+- Description: Change Detection의 비용 절감은 last_state가 있는 안정 소스 재폴링에만 적용. Authority Discovery(자기증식)가 매일 신규 엔티티/소스를 발견하면 **신규 URL은 last_state 부재→항상 CHANGED→LLM triage**. heat 우선순위 백프레셔는 "순서"만 조절(heat 알려면 일단 봐야 함=닭-달걀), 총량 미감소 → 발견 triage가 월 예산을 통째 소진해 핵심(고heat Event 확장) 예산 굶음.
+- Current mitigation: (설계) heat 우선순위 큐 + 사람 승인 큐(순서 조절).
+- Remaining gap: budget이 per-event/월 2축뿐, discovery 입구 쿼터 부재. cold triage 저가 사전필터 부재.
+- Closure: budget 3축화(per-event + 월 + **신규 발견당 초기 triage 상한 + 일일 발견 승인 쿼터**) + cold triage 결정론/SLM 사전필터 테스트.
+
+### R-AdModelFragility · 트래픽×광고 단일 모델의 콜드스타트·봇·brand-safety 취약성  — Severity: MEDIUM (2026-06-20 신규 — adversarial, commercialization 핸드오프)
+- Area: commercialization / 수익 단일점 / 광고 정책
+- Description: 구독 폐기(ADR#15)로 대체 수익경로 없음. ① 콜드스타트 — UGC 트래픽 루프는 사용자가 이미 있어야 돌아감(초기 신규 유입 채널 문서 부재). ② AI 자동생성 콘텐츠(에이전트 논쟁)가 광고 네트워크에서 "무효 트래픽/자동생성"으로 판정→계정 정지 위험. ③ brand-safety — 지정학/재난 사건 옆 광고는 광고주 기피(저RPM). ④ finance 도메인 투자권유 광고 유입 유인(원칙1 충돌).
+- Current mitigation: (설계) §3.4 재배포금지=차별화근거(요약+UGC+시계열=전문 아님), AI 라벨링.
+- Remaining gap: 초기 트래픽 채널 0, AI 콘텐츠 광고정책 사전검토 0, brand-safety 가드 0.
+- Closure: 초기 트래픽 채널 1개(SEO/사건검색 랜딩) 검증 + AI 콘텐츠 라벨링/모더레이션 정책 + 광고 네트워크 정책 사전검토 + finance 광고 비투자 B2B 화이트리스트 + 페이지 비전문비율 게이트. (commercialization-strategist 핸드오프)
+
+### R-ExpansionPartialFailure · 확장쿼리 batch fail-all (1후보 실패가 전체 확장 중단)  — Severity: LOW-MEDIUM (미래, 2026-06-20 신규 — adversarial)
+- Area: ingestion/expansion / 운영 안정성
+- Description: `query_generator.py:37` `generate_batch()`가 `generate()`를 무방비 루프 호출 → 배치 중 한 후보 LLM 실패(타임아웃/레이트리밋/파싱오류)가 전체 배치를 예외로 종료(부분 graceful 없음). LLM 단계에서 같은 구조면 외부 LLM 일시 오류 1건이 그 배치 모든 사건 확장을 산발적 정지.
+- Current mitigation: (설계) `generate()` 내부 결정론 폴백(off 분기)은 명시되나 batch fail-all 구조는 미해소.
+- Remaining gap: 후보 단위 try/except 격리 + 후보 단위 결정론 폴백 degrade 부재.
+- Closure: batch 내 1후보 실패가 나머지 확장을 막지 않는 격리 테스트 + 폴백 발생을 audit trace `degraded_to_deterministic` 카운트.
+
+> **기존 RISK 재평가 (2026-06-20, 새 방향 반영):**
+> - **R-MockCard** — baseline→LLM 전환을 **Event/domains 모델 위에서** 수행해야 폐기 작업 없음(ADR#16 결합). 닫는 조건에 "domains 동적 부여" 추가.
+> - **R-Integration** — "57소스 전수"는 P1 유효하나, 중기 목표가 "닫힌 목록"→"Entity/Authority 발견"으로 이동(범위 재정의, ADR#14·요구6).
+> - **R-PromptInjection** — LLM이 수집 라우팅·에이전트 논쟁으로 **외부 텍스트에 더 노출** → 우선순위 상향. R-LLMCollectBoundary·R-AgentDebateSafety와 교차. 완화책에 "반복 unsafe 제안 카운터·escalation" 추가.
+> - **R-FullText / R-Bypass** — 새 LLM/광고 경로에도 **HIGH 불변 유지**. 광고 모델이 전문 재배포 유발 안 함(요약+UGC+시계열=전문 아님, ADR#15 §3.4) + 페이지 비전문비율 게이트로 측정·강제.
+> - **R-DcToS** — 커뮤니티 (b)층(사이트 UGC)은 우리 자산이라 무관. (a)층(소스 신호) ToS 검토 유지.
+> - **R-Dedup** — R-FalseMerge로 분리·승격(위 참조). dedupe_key 임계 미정은 R-Dedup에 잔존.
+> - **L5 정합성 갭** — Event 스냅샷 빈번 갱신으로 LOW→MEDIUM 재평가(R-EventModelMigration에 흡수).
+>
+> **불변 헌법 조항(흡수, MASTER §7.2 / §0):** ① 정보 제공이지 투자 조언 아님(매수/매도·가치판단 금지) ② 전문 저장·재배포 금지(요약+증거URL만) ③ 우회 전면 금지(robots/ToS/CAPTCHA/login/paywall/rate-limit/proxy) ④ `.env` 미열람/미수정/미커밋·비밀 미노출(길이/존재만) ⑤ 재현성(LLM은 LAYER P 한정, 제어흐름 결정론). 이 5조는 모든 RISK·기능의 상위 제약이다.
+
 > **R-CodeReviewLivePath** 는 2026-06-19 **CLOSED**(→ `RISK_CLOSED.md`): harmless ingestion 변경 → `code_review` flag → `/code-review` 라이브 실호출 → CRLF finding → fix → stamp evidence 적재 1회 관찰.
+
+> **R-EnvLoadAsymmetry** 는 2026-06-22 **CLOSED**(→ `RISK_CLOSED.md`): run_one_source(`run_source` funnel = run_one_source/run_phase/run_all_phases) + `run_production_orchestration.main()` 에 명시적 `load_env()` 배선 + 회귀 테스트(`test_entrypoint_env_bootstrap`) — .env 키 보유 시 precheck NEEDS_API 오판 제거. ingestion 1307 green.
+> **R-GdeltMainLoopResume** 는 2026-06-22 **CLOSED**(→ `RISK_CLOSED.md`): 메인 플래너가 `EXTERNAL_RATE_LIMITED/COOLDOWN` 을 cooldown 만료 시 자동 재probe(`decide_production_strategy` now-gate + derive `cooldown_until`) — 429=외부제한 분류 유지·우회 0, 개별 spaced-probe 단일 의존 제거. 테스트 production_state/scheduler/orchestration_runner.
+> **R-GdeltGovernorSplitBrain** 는 2026-06-22 **CLOSED**(→ `RISK_CLOSED.md`): 신규 `HostRateGate`(host 키 단일 출처, file-backed `host_rate_gate.json`, decide/record 시 파일 재읽기 = cross-process 가시성, record_call 호출 직전 즉시 영속) 도입 + gdelt host 3경로(메인루프 `run_production_orchestration` · `run_final_source_closure` · `run_last_chance_source_resurrection`) 동일 gate 공유 배선. source-level governor(900s/10s) 의미 보존, host floor만 추가(우회/병렬/tight-retry 0). 회귀 8(`test_host_rate_gate`: 공유·spaced-probe 보존·cooldown 자동재개 보존·호출직전 기록(성공/실패무관)·spacing 전 미호출·후 호출·429=외부제한). ingestion 1315 green.
+

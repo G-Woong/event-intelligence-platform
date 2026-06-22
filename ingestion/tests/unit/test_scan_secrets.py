@@ -11,6 +11,7 @@ from ingestion.tools.scan_secrets import (
     EXIT_WARNING,
     main,
     scan_paths,
+    text_has_secret,
 )
 
 # Fixture secret values — fabricated, never real
@@ -27,6 +28,20 @@ def fake_env(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return env
+
+
+def test_text_has_secret_url_slug_is_false_positive():
+    # 'sk-' inside news URL slugs (musk-/risk-/samsung-sk-hynix) is NOT a secret.
+    assert text_has_secret(
+        '{"url":"https://x/2026/06/musk-spacex-samsung-sk-hynix-stock-risk-buy.html"}'
+    ) is False
+
+
+def test_text_has_secret_detects_real_key_shapes():
+    # Real OpenAI-style key (hyphenless 20+ high-entropy token) and serviceKey= param.
+    # Fixtures are fabricated, not real → allowlist pragma exempts the canonical scanner.
+    assert text_has_secret('{"k":"sk-abc123DEF456ghi789jkl012mno"}') is True  # pragma: allowlist secret
+    assert text_has_secret('{"u":"https://x?serviceKey=AbC123dEf456GhI789jKl012MnO345"}') is True  # pragma: allowlist secret
 
 
 def test_clean_dir_passes(tmp_path: Path, fake_env: Path):

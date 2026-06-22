@@ -173,6 +173,26 @@ def test_structured_signal_label_not_literal(tmp_path):
                 assert rec["body_state_or_signal"] != "structured_signal"
 
 
+def test_rate_limited_probe_is_external_not_failure(tmp_path):
+    # R-GdeltMainLoopResume: provider 429는 코드 실패가 아니라 외부 제한 — quarantine/failure로
+    # 집계하지 않고 cooldown으로 기록한다(우회 없음).
+    def _rl_probe(source_id, *, max_items=5, force=False):
+        paths = types.SimpleNamespace(raw_payload=None, extracted_payload=None,
+                                      raw_html=None, raw_signal=None)
+        return types.SimpleNamespace(status="RATE_LIMITED", artifact_paths=paths,
+                                     error_category=None, http_status=429)
+
+    profiles = [_profile("gdelt", source_group="official")]
+    result = run_production_orchestration(
+        _config(tmp_path, "production-validation"), profiles=profiles, memory={},
+        api_ready_map={}, probe_fn=_rl_probe, write_outputs=True)
+    st = {s.source_id: s for s in result["states"]}["gdelt"]
+    assert st.current_status != "QUARANTINED"
+    assert st.consecutive_failure_count == 0           # 429 != failure
+    assert "gdelt" not in result["summary"]["error_by_source"]
+    assert result["critical_alerts"] == 0
+
+
 def test_probe_exception_isolated(tmp_path):
     def boom(source_id, *, max_items=5, force=False):
         raise RuntimeError("probe boom")
