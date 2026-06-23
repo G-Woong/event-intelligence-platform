@@ -59,6 +59,44 @@ _RECORD_TYPE_TO_SOURCE_TYPE = {
 }
 _MAX_TITLE_LEN = 512   # 헤드라인 라벨 상한(전문 본문 위장 차단).
 
+# record_type → 사용자용 출처 종류 라벨(delta_summary 자연어화). allowlist 밖은 라벨 생략.
+_SOURCE_KIND_KO = {
+    "article_candidate": "뉴스",
+    "official_record": "공식",
+    "structured_signal": "구조화 지표",
+    "search_result": "검색",
+    "community_signal": "커뮤니티",
+}
+
+
+def build_delta_summary(
+    *, confidence: Optional[str], reason: Optional[str], member_count: int,
+    record_type: Optional[str] = None,
+) -> str:
+    """cross_source_dedup 결과(confidence/reason/멤버수/출처종류) → **사용자용 자연어 변화 설명**.
+
+    기존 `f"{confidence}:{reason}"` 디버그 라벨(예 `"duplicate:strong_key_match"`)을 대체한다.
+    LLM/network 0(결정적 template). **resolver 가 확인한 사실만** 설명한다(출처 수·교차 신호 강도) —
+    원문 본문/허위/투자판단 미생성. 과장 표현("확정/사실/검증 완료") 금지: 강신호=`보도했습니다`,
+    약신호=`추정됩니다(자동 병합 전 교차 검토)`. (`reason` 은 향후 세분화 여지로 받되 현재 미사용.)
+    """
+    # n = **distinct 출처/근거 수**(동일 URL collapse 후). evidence 링크 개수와 일치시켜
+    # "N곳"이 화면 evidence 수와 어긋나지 않게 한다(과대계수 차단, adversarial P2-1).
+    n = max(int(member_count or 1), 1)
+    kind = _SOURCE_KIND_KO.get(record_type or "")
+    kind_prefix = f"{kind} " if kind else ""
+    if confidence == "duplicate":  # 강신호(동일 링크/식별자)
+        if n >= 2:
+            return f"서로 다른 {kind_prefix}출처 {n}곳이 동일 식별자로 같은 사건을 보도했습니다."
+        # distinct 1(동일 URL이 여러 피드에 실린 경우) — "서로 다른 N곳" 단언 금지.
+        return f"{kind_prefix}보도가 동일 식별자로 확인된 사건입니다."
+    if confidence == "possible_duplicate":  # 약신호(유사 제목·같은 시점)
+        return (
+            f"유사한 제목·같은 시점의 {kind_prefix}보도 {n}건이 같은 사건으로 추정됩니다"
+            f"(자동 병합 전 교차 검토)."
+        )
+    return f"교차 출처 신호로 묶인 {kind_prefix}사건입니다(출처 {n}건)."
+
 
 @dataclass
 class EventIngestSummary:
@@ -171,7 +209,13 @@ def candidate_from_cluster(
     return ResolvedCandidate(
         canonical_title=canonical_title,
         observed_at=observed_at,
-        delta_summary=f"{cluster.confidence}:{cluster.reason}",  # provenance 라벨(본문 아님)
+        # 사용자용 자연어 변화 설명(디버그 라벨 `"{confidence}:{reason}"` 대체 — R-EventTimelineRenderHardening②).
+        delta_summary=build_delta_summary(
+            confidence=cluster.confidence,
+            reason=cluster.reason,
+            member_count=len(distinct_members),  # distinct 근거 수(evidence 링크 수와 일치, P2-1)
+            record_type=rt,
+        ),
         domains=domains,
         tags=tags,
         evidence=tuple(evidence),

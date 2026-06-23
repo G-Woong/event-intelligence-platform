@@ -22,11 +22,63 @@ from ingestion.orchestration.cross_source_dedup import cluster_records
 from backend.app.services import event_ingest_pipeline as ip
 from backend.app.services.event_ingest_pipeline import (
     EventIngestSummary,
+    build_delta_summary,
     build_record_index,
     candidate_from_cluster,
     ingest_records_to_events,
     make_orchestration_event_sink,
 )
+
+
+# ── delta_summary 자연어화(R-EventTimelineRenderHardening②) ──────────────────────────
+def _is_debug_label(s: str) -> bool:
+    # 원시 confidence/reason enum 이 본문에 누출됐는지 탐지(콜론 휴리스틱보다 견고 — adversarial P2-2).
+    raw = ("duplicate:", "possible_duplicate:", "strong_key_match", "title_date_similarity")
+    return any(r in s for r in raw)
+
+
+def test_delta_summary_strong_signal_natural_language():
+    # distinct 출처 2곳 이상 → "서로 다른 N곳".
+    s = build_delta_summary(
+        confidence="duplicate", reason="strong_key_match", member_count=2,
+        record_type="article_candidate",
+    )
+    assert s == "서로 다른 뉴스 출처 2곳이 동일 식별자로 같은 사건을 보도했습니다."
+    assert not _is_debug_label(s)
+    assert all(w not in s for w in ("확정", "검증 완료", "사실로"))   # 과장 표현 금지
+    # distinct 1(동일 URL이 여러 피드에) → "서로 다른 N곳" 단언 금지(P2-1).
+    s1 = build_delta_summary(
+        confidence="duplicate", reason="strong_key_match", member_count=1,
+        record_type="article_candidate",
+    )
+    assert s1 == "뉴스 보도가 동일 식별자로 확인된 사건입니다."
+    assert "서로 다른" not in s1 and "1곳" not in s1
+
+
+def test_delta_summary_weak_signal_hedged():
+    s = build_delta_summary(
+        confidence="possible_duplicate", reason="title_date_similarity", member_count=3,
+        record_type="article_candidate",
+    )
+    assert "추정됩니다" in s and "자동 병합 전" in s   # 약신호는 단정 금지(헤지)
+    assert "3건" in s and not _is_debug_label(s)
+
+
+@pytest.mark.parametrize("rt,label", [
+    ("official_record", "공식"), ("structured_signal", "구조화 지표"),
+    ("community_signal", "커뮤니티"), ("search_result", "검색"),
+])
+def test_delta_summary_source_kind_label(rt, label):
+    s = build_delta_summary(confidence="duplicate", reason="strong_key_match", member_count=2, record_type=rt)
+    assert label in s and not _is_debug_label(s)
+
+
+def test_delta_summary_unknown_confidence_safe_fallback():
+    # 미지 confidence/None → 안전 fallback(디버그 라벨/예외 없음).
+    s = build_delta_summary(confidence=None, reason=None, member_count=0, record_type=None)
+    assert s and not _is_debug_label(s) and "사건" in s
+    s2 = build_delta_summary(confidence="weird", reason=None, member_count=1, record_type="unknown_type")
+    assert s2 and not _is_debug_label(s2)
 
 
 # ── 입력 record / fake session ────────────────────────────────────────────────────
@@ -163,7 +215,10 @@ def test_mapper_maps_primary_record_fields():
     assert cand.observed_at == datetime(2025, 6, 2, tzinfo=timezone.utc)
     assert cand.domains == ("wire",)
     assert cand.tags == ("article_candidate",)
-    assert cand.delta_summary == "duplicate:strong_key_match"   # provenance 라벨(본문 아님)
+    # delta_summary 는 사용자용 자연어(디버그 라벨 `"{confidence}:{reason}"` 아님 — R-EventTimelineRenderHardening②).
+    # 강신호+동일 URL → distinct 근거 1개 → "서로 다른 N곳" 단언 금지(evidence 수와 정합, P2-1).
+    assert cand.delta_summary == "뉴스 보도가 동일 식별자로 확인된 사건입니다."
+    assert len(cand.evidence) == 1 and not _is_debug_label(cand.delta_summary)
     # 같은 canonical_url 멤버는 동일 key 로 collapse → distinct evidence/ref 1개.
     assert cand.evidence == ({"source_type": "article", "relation": "primary", "url": "https://wire/x"},)
     assert cand.source_refs[0].startswith("xcluster:")
@@ -196,6 +251,10 @@ def test_mapper_distinct_urls_preserve_multi_source_evidence():
     cand = candidate_from_cluster(clusters[0], build_record_index(recs))
     urls = {ev.get("url") for ev in cand.evidence}
     assert urls == {"https://ap/x", "https://bbc/y"}          # 두 소스 모두 증거로 보존
+    # 약신호 멀티소스(실 검증 코스피/대우건설 동형) → 자연어 delta_summary(헤지·디버그 라벨 아님).
+    assert cand.delta_summary == (
+        "유사한 제목·같은 시점의 뉴스 보도 2건이 같은 사건으로 추정됩니다(자동 병합 전 교차 검토)."
+    )
 
 
 def test_mapper_fallback_title_when_primary_missing():
