@@ -115,6 +115,10 @@ services:
       MILVUS_HOST: milvus-standalone
       MILVUS_PORT: 19530
       DATABASE_URL: postgresql+asyncpg://event_user:event_pass@postgres:5432/event_intel
+      # D-2c 데모: Event 타임라인 read API 노출(/api/events/timeline*). 기본 on(데모 목적, 오버라이드 가능).
+      # write(EVENT_RESOLUTION_ENABLED)와 분리 — seed 는 service 직접 영속이라 read flag 만 필요.
+      # 데모 데이터: `python -m backend.app.tools.seed_event_timeline`(합성·멱등·오프라인).
+      EVENT_TIMELINE_API_ENABLED: ${EVENT_TIMELINE_API_ENABLED:-true}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-mock}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-1536}

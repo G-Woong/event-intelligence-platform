@@ -33,22 +33,21 @@ import contextlib
 import sys
 from typing import Callable, Iterator, Optional
 
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from backend.app.core.config import settings
 from backend.app.services.event_ingest_pipeline import make_orchestration_event_sink
+from backend.app.tools.db_target import target_db_label
 from ingestion.tools.run_production_orchestration import main as ingestion_main
 
 
 def _target_db_label() -> str:
-    """settings.DATABASE_URL 의 host:port/dbname 만(자격증명 제외) — 운영/테스트 DB 혼동 방어 표시."""
-    try:
-        u = make_url(settings.DATABASE_URL)
-        return f"{u.host or '?'}:{u.port or '?'}/{u.database or '?'}"
-    except Exception:
-        return "?"
+    """settings.DATABASE_URL 의 host:port/dbname 만(자격증명 제외) — 운영/테스트 DB 혼동 방어 표시.
+
+    seed(seed_event_timeline)와 동일 정책 공유 — `db_target.target_db_label` 단일 출처.
+    """
+    return target_db_label(settings.DATABASE_URL)
 
 
 @contextlib.contextmanager

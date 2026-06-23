@@ -81,12 +81,7 @@
 - 잔여(open): **④ 임의 주입 passthrough + 운영 배포** — `event_timeline_service.create_event`/`append_update` 의 `canonical_title`/`delta_summary` 는 sanitize 미적용(길이 상한 없음). 기본 매퍼는 안전하나 **외부가 `candidate_for`/raw `ResolvedCandidate` 를 직접 주입**하면 무검열 영속 가능 — 영속층 title/delta 상한 가드는 차기 하드닝(legal residual ①②). + 운영 DB 0006 배포 + 주기 auto-trigger(Celery beat)/실 production-validation Event 누적(D-1 능력은 확보, 운영 가동 미입증).
 - Closure: ④ 영속층 title/delta passthrough 가드(또는 주입 호출자 검증 계약) + 운영 DB 0006 배포 + 주기 트리거로 실 수집 Event 누적 입증 시 **완전 종결**. (①②③ test-DB 입증·④ 기본 매퍼 경로 가드 + D-1 composition root 완료 — severity LOW.)
 
-### R-EventSinkDbTarget · 운영 결선 sink 가 의도치 않은 DB(dev/prod)에 Event 영속  — Severity: LOW-MEDIUM (신규 2026-06-23 · D-1 adversarial)
-- Area: operational / Event 영속 / 데이터 격리
-- Description: `backend/app/tools/run_event_orchestration.py` 의 sink 는 `settings.DATABASE_URL` 로 전용 엔진을 만든다(`config.py` 기본값=dev DB `event_intel`; `.env` 빈 값이면 기본값 폴백). 운영자가 `--event-resolution`(특히 `--mode production-validation` 동반)을 잘못된 DATABASE_URL 환경에서 켜면 의도치 않은 DB 에 Event 가 쓰일 수 있다. live-PG 테스트는 `_LIVE_PG_URL`(event_intel_test)로 명시 격리하나 운영 CLI 경로엔 환경 가드가 없었다.
-- 완화(D-1, 2026-06-23): `--event-resolution` ON 시 **대상 DB host:port/dbname 를 stdout 에 명시 출력**(자격증명 제외, `_target_db_label`) → 운영자가 어느 DB 에 쓰는지 보임. **off-by-default**(`EVENT_RESOLUTION_ENABLED=false`)라 명시 opt-in 없이는 미발생.
-- 잔여(open): 구조적 가드 미배선 — APP_ENV/명시 `--event-db-url` 분리 또는 production-validation+event-resolution 동시 사용 시 확인 게이트. 대상 DB 출력은 "보임"이지 "차단"이 아님.
-- Closure: 운영 배포 전 환경 가드(APP_ENV 기반 DB 선택 또는 명시 확인) 추가 시 종결. severity LOW-MEDIUM(off-by-default + 출력 가시화로 완화, 구조적 차단 잔여).
+> **R-EventSinkDbTarget** — **CLOSED 2026-06-23**(D-2c). APP_ENV 기반 fail-closed 가드(`backend/app/tools/db_target.py`: staging/production write 거부, `--allow-non-dev-db` 명시 opt-in) + seed/runner 단일 출처 공유. 흐름·근거는 `RISK_CLOSED.md`.
 
 ### R-EventTimelineApiScale · Event 타임라인 read API 의 대규모 응답/페이지네이션 비용  — Severity: LOW (신규 2026-06-23 · D-2a architecture/code)
 - Area: api / web / 성능

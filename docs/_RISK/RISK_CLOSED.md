@@ -14,6 +14,11 @@ R-<id> · <제목>  — CLOSED (날짜)
 
 ---
 
+### R-EventSinkDbTarget · 운영 결선/seed 가 의도치 않은 DB(dev/prod)에 Event 영속  — CLOSED (2026-06-23)
+- 종결 근거: `backend/app/tools/db_target.py`(`assert_safe_write_target` — **2중 fail-closed**: ① APP_ENV **allowlist**(dev/test 만 무명시 허용 → staging/production·오타·미지 환경 모두 거부; denylist 의 fail-open 회귀 차단), ② **DATABASE_URL dbname prod 마커 교차검증**(APP_ENV=dev 오설정 + URL→prod 우회 차단 — APP_ENV 단일 신뢰 회피); `--allow-non-dev-db` 명시 opt-in 으로만 우회; `target_db_label` host:port/dbname 자격증명 제외). seed(`seed_event_timeline`)·runner(`run_event_orchestration._target_db_label`) 동일 출처 공유. 테스트 `backend/tests/test_seed_event_timeline.py`(dev/test 허용·staging/prod·오타 env 거부·dev+prod dbname 거부·override·자격증명 미노출 + CLI 실증).
+- 흐름: D-1 sink 가 settings.DATABASE_URL 로 전용 엔진 생성 → 잘못된 환경에서 켜면 오영속 가능, 완화는 "대상 DB 출력(보임)"뿐이고 구조적 차단 부재 → D-2c 에서 APP_ENV allowlist + dbname prod-마커 교차검증 fail-closed 가드 추가로 "보임→차단" 승격·종결(adversarial: APP_ENV 단일 신뢰는 dbname 교차검증으로 보강).
+- 잔여(LOW, 비차단): prod 마커 없는 DB명 + APP_ENV 오설정이 동시 발생하는 극단 케이스는 휴리스틱 밖 — 배포 환경변수 규율이 최종 방어선(R-Auth 동일 한계). 심층 prod 토폴로지 탐지는 범위 밖.
+
 ### R-HookOutputEncoding · Stop hook 한글 출력 깨짐(cp949 stdout)  — CLOSED (2026-06-19)
 - 종결 근거: `turn_state_snapshot._nudge_message`(ASCII-safe 영문)+`json.dumps`(ensure_ascii=True), harness CLI 4종(`harness_doctor`/`dead_code_scan`/`docs_lifecycle_audit`/`closeout_sig`) stdout UTF-8 reconfigure. 테스트 `tests/test_harness_hooks.py`(`test_nudge_message_is_ascii`/`test_stop_hook_stdout_is_ascii`/doctor crash 회귀).
 - 흐름: Stop feedback 한글이 cp949 stdout에서 mojibake(`����`)→운영성 실패 → nudge를 ASCII 영문화 + CLI 스크립트 UTF-8 reconfigure(doctor의 em-dash crash 포함) → stdout이 순수 ASCII로 디코드(깨짐 불가) 검증.
