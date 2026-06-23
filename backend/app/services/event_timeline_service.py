@@ -83,6 +83,10 @@ class ResolvedCandidate:
     # 제외해 **대표 record 가 held degenerate 로 이중 등장하는 것을 차단**(데이터 정합). None=미설정(레거시
     # candidate; 제외 없음 — 하위호환).
     primary_member_key: Optional[str] = None
+    # source-type publish gate 입력(ADR#36): 강신호 core 멤버 source_type(weak_only 제외). resolve_and_apply_
+    # cluster 가 이걸로 gate 판정 — 강신호 core 에 publishable 없으면 WITHHELD(weak_only publishable 로 발행 금지).
+    # ()=미설정(레거시 candidate; resolution_pipeline 이 candidate.evidence 로 fallback — 하위호환).
+    core_source_types: tuple[str, ...] = ()
 
 
 @dataclass

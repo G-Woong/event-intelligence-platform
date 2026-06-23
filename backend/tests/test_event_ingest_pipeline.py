@@ -487,12 +487,12 @@ def test_primary_authority_news_news_tie_keeps_first():
     assert cand.canonical_title == "AP headline"                 # tie → members[0](ap) 유지
 
 
-# ── held-publishable 이중등장 제거 (ADR#35) ────────────────────────────────────────
+# ── weak-primary 정책 (ADR#36 core-policy) ─────────────────────────────────────────
 @pytest.mark.asyncio
-async def test_held_dedup_authority_primary_excluded_from_held():
-    # authority primary(official)가 weak_only(held)인 cluster: community 2(강신호 core via official_id)
-    # + official 1(약신호 title-link). primary-authority 가 official 을 대표로 세우되, official 이
-    # held degenerate 로 **이중 등장하지 않는다**(데이터 정합).
+async def test_weak_primary_strong_community_core_weak_official_withheld():
+    # ADR#36: 강신호 core 가 community(non-publishable) 2 + official 1은 weak_only(약신호 title-link).
+    # weak official 로 발행하지 않는다 → WITHHELD(검증 안 된 약신호 멤버가 Event 얼굴이 되거나 비-publishable
+    # core 를 weak publishable 로 발행시키는 것 차단). 이전(ADR#34/#35)엔 official 을 대표로 발행했음.
     acc = "0001193125-26-000555"
     recs = [
         _rec(record_type="community_signal", source_id="hn",
@@ -507,11 +507,53 @@ async def test_held_dedup_authority_primary_excluded_from_held():
     ]
     s = _FakeSession()
     summary = await ingest_records_to_events(s, recs, enabled=True)
+    assert summary.clusters_total == 1
+    assert summary.created == 0 and summary.withheld_source_type == 1   # weak publishable 로 발행 안 함
+    assert len(s.events) == 0 and summary.held_member_links == 0        # 영속 0
+
+
+@pytest.mark.asyncio
+async def test_weak_primary_strong_market_core_weak_news_withheld():
+    # ADR#36: 강신호 core 가 structured/market(signal-key) 2 + news 는 weak_only → market 으로 발행 안 함
+    # (투자조언 경계 — 시장 신호가 약신호 news 로 Event 화하지 않음). market 이 입력 첫(members[0]) → core.
+    recs = [
+        _rec(record_type="structured_signal", source_id="coinbase",
+             body_state_or_signal="price_snapshot",
+             title_or_label="Oil benchmark daily snapshot", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="structured_signal", source_id="binance",
+             body_state_or_signal="price_snapshot",
+             title_or_label="Oil benchmark daily snapshot", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="article_candidate", source_id="reuters",
+             canonical_url="https://reuters.com/oil",
+             title_or_label="Oil benchmark daily snapshot", published_at_or_observed_at="2025-06-02"),
+    ]
+    s = _FakeSession()
+    summary = await ingest_records_to_events(s, recs, enabled=True)
+    assert summary.created == 0 and summary.withheld_source_type == 1
+    assert len(s.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_weak_primary_strong_news_core_weak_community_publishes():
+    # ADR#36: 강신호 core 가 news 2 + community 1은 weak_only → news 대표 발행, community held(보존).
+    acc = "0001193125-26-000444"
+    recs = [
+        _rec(record_type="article_candidate", source_id="ap",
+             source_url_or_evidence=f"https://ap.example.com/{acc}",
+             title_or_label="Bank collapse triggers market selloff", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="article_candidate", source_id="reuters",
+             source_url_or_evidence=f"https://reuters.example.com/{acc}",
+             title_or_label="Bank collapse triggers market selloff", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="community_signal", source_id="hn",
+             canonical_url="https://news.ycombinator.com/c",
+             title_or_label="Bank collapse triggers market selloff", published_at_or_observed_at="2025-06-02"),
+    ]
+    s = _FakeSession()
+    summary = await ingest_records_to_events(s, recs, enabled=True)
     assert summary.created == 1 and summary.withheld_source_type == 0
-    assert summary.held_member_links == 0          # official(대표)은 held 제외 → held degenerate 0
-    assert len(s.events) == 1                       # core Event 만(held degenerate 없음 — 이중등장 차단)
-    rel = {e["source_type"]: e["relation"] for e in s.updates[0].evidence}
-    assert rel.get("official") == "primary"         # 대표는 official(authority), evidence 보존
+    assert summary.held_member_links == 1          # community weak_only → held(대표 아님)
+    prims = [e for e in s.updates[0].evidence if e.get("relation") == "primary"]
+    assert len(prims) == 1 and prims[0]["source_type"] == "article"   # 대표는 news(강신호 core)
 
 
 @pytest.mark.asyncio

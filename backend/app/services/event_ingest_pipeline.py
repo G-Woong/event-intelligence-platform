@@ -35,7 +35,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ingestion.orchestration.cross_source_dedup import cluster_records
+from ingestion.orchestration.cross_source_dedup import CONF_DUPLICATE, cluster_records
 from ingestion.orchestration.eventqueue_dedup import _external_url, compute_record_key
 
 from backend.app.core.config import settings
@@ -207,12 +207,24 @@ def candidate_from_cluster(
     now = now or datetime.now(timezone.utc)
     # 같은 canonical_url 멤버는 동일 member key 로 collapse → distinct key 만 순회(evidence/ref 중복 제거).
     distinct_members = tuple(dict.fromkeys(cluster.duplicate_group))
-    # primary-authority(ADR#34): 발행 Event 의 대표(title/도메인/관측시각/evidence primary)를 멤버 중
-    # **최고 authority source_type**(official>article>signal>search>community>미지)로 선정 — mixed cluster
-    # 에서 community/market 이 Event 대표가 되는 것 차단. tie 는 distinct_members 순서(결정적). 멤버 부재면
-    # cluster.primary_record_key fallback. (단일타입/collapse 클러스터는 tie→members[0]=기존 동작, 회귀 0.)
-    primary_key = _select_primary_by_authority(distinct_members, index) or cluster.primary_record_key
+    # primary-authority + weak-primary 정책(ADR#34/#36): 발행 Event 의 대표(title/도메인/관측시각/
+    # delta_summary kind/evidence primary)를 **강신호 core 멤버 중 최고 authority**(official>article>signal>
+    # search>community>미지)로 선정. **core-policy(ADR#36)**: 강신호(duplicate) cluster 는 weak_only(약신호로만
+    # 끌려온 held 후보)를 대표·발행 근거에서 제외 — 검증 안 된 약신호 멤버가 Event 얼굴이 되거나 비-publishable
+    # core 를 weak publishable 로 발행시키는 것 차단(R-FalseMerge 정합). 약신호(possible_duplicate) cluster 는
+    # 강신호 core 가 없어 전체를 동등 저신뢰로 본다(ADR#29 뉴스 약신호 흐름 보존). tie=입력순(결정적·회귀 0).
+    weak_only = set(getattr(cluster, "weak_only_members", ()) or ())
+    is_strong = cluster.confidence == CONF_DUPLICATE
+    core_members = tuple(m for m in distinct_members if m not in weak_only) if is_strong else distinct_members
+    core_members = core_members or distinct_members  # core 는 members[0] 포함이라 보통 비지 않음(방어)
+    primary_key = _select_primary_by_authority(core_members, index) or cluster.primary_record_key
     primary = index.get(primary_key) or {}
+    # source-type publish gate(ADR#33/#36) 입력 = **core 멤버 source_type**(weak_only 제외). 강신호 core 에
+    # publishable(official/article)이 없으면 발행 차단(weak_only publishable 로는 발행 안 함 = WITHHELD).
+    core_source_types = tuple(
+        _RECORD_TYPE_TO_SOURCE_TYPE.get((index.get(m) or {}).get("record_type"), "rss")
+        for m in core_members if index.get(m)
+    )
 
     title = primary.get("title_or_label")
     canonical_title = (title or f"event:{cluster.cluster_id}")[:_MAX_TITLE_LEN]
@@ -253,8 +265,11 @@ def candidate_from_cluster(
         source_refs=(cluster.cluster_id, *distinct_members),
         heat_delta=0.0,
         # 대표 멤버 키(ADR#35): apply_routing 이 held_members 에서 제외(대표 record 의 held degenerate
-        # 이중 등장 차단). authority primary 가 weak_only(held)인 edge 에서만 실효.
+        # 이중 등장 차단·방어). core-policy(ADR#36)상 primary 는 강신호 core 라 보통 held 에 없음.
         primary_member_key=primary_key,
+        # source-type gate 입력(ADR#36): 강신호 core 멤버 source_type(weak_only 제외) → resolver 가
+        # core publishable 0이면 WITHHELD. 약신호 cluster 는 전체.
+        core_source_types=core_source_types,
     )
 
 

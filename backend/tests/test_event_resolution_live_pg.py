@@ -438,6 +438,28 @@ async def test_live_primary_authority_official_over_community(session):
     assert title == "SEC official filing title"          # community 아님 — official 대표
 
 
+async def test_live_weak_primary_community_core_weak_official_withheld(session):
+    # ADR#36 core-policy: 강신호 core(community via official_id) + weak official → WITHHELD(실 DB 영속 0).
+    from backend.app.services.event_ingest_pipeline import ingest_records_to_events
+
+    acc = "0001193125-26-000333"
+    recs = [
+        _rec(record_type="community_signal", source_id="hn",
+             source_url_or_evidence=f"https://hn.example.com/{acc}",
+             title_or_label="Cloud outage hits region", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="community_signal", source_id="reddit",
+             source_url_or_evidence=f"https://reddit.example.com/{acc}",
+             title_or_label="Cloud outage hits region", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="official_record", source_id="sec",
+             source_url_or_evidence="https://sec.gov/unrelated-doc",
+             title_or_label="Cloud outage hits region", published_at_or_observed_at="2025-06-02"),
+    ]
+    summary = await ingest_records_to_events(session, recs, enabled=True)
+    assert summary.created == 0 and summary.withheld_source_type == 1   # weak publishable 로 발행 안 함
+    assert await _count(session, "events") == 0
+    assert await _count(session, "event_updates") == 0
+
+
 async def test_live_failed_cluster_isolated_other_persists(session):
     # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
     # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).
