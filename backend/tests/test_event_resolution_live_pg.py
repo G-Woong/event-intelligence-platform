@@ -134,7 +134,7 @@ async def test_live_first_cluster_creates_event_and_maps(session):
     assert res.action == ACTION_CREATE
     assert await _count(session, "events") == 1
     assert await _count(session, "cluster_event_map") == 1
-    assert await _count(session, "event_updates") == 0   # CREATE 는 update 0
+    assert await _count(session, "event_updates") == 1   # CREATE 는 genesis update 1행(생성 근거, ADR#31)
 
 
 async def test_live_second_report_appends_not_new_event(session):
@@ -144,7 +144,7 @@ async def test_live_second_report_appends_not_new_event(session):
     assert r1.action == ACTION_CREATE and r2.action == ACTION_APPEND
     assert r2.event_id == r1.event_id
     assert await _count(session, "events") == 1          # 새 Event 남발 0
-    assert await _count(session, "event_updates") == 1   # append +1
+    assert await _count(session, "event_updates") == 2   # genesis(CREATE) + append
 
 
 async def test_live_rerun_idempotent(session):
@@ -153,7 +153,7 @@ async def test_live_rerun_idempotent(session):
         await pipe.resolve_and_apply_cluster(session, c, candidate=_cand(observed=obs))
     assert await _count(session, "events") == 1
     assert await _count(session, "cluster_event_map") == 1
-    assert await _count(session, "event_updates") == 2   # 2·3번째만 append
+    assert await _count(session, "event_updates") == 3   # genesis(CREATE) + 2·3번째 append
 
 
 async def test_live_transitive_weak_member_held_not_merged(session):
@@ -170,7 +170,7 @@ async def test_live_transitive_weak_member_held_not_merged(session):
     res = await pipe.resolve_and_apply_cluster(session, c, candidate=_cand())
     assert res.action == ACTION_CREATE
     assert await _count(session, "events") == 2          # core + degenerate held(blog)
-    assert await _count(session, "event_updates") == 0   # 자동병합 0
+    assert await _count(session, "event_updates") == 1   # core genesis 1행(자동병합 0 — blog 미흡수)
     links = (await session.execute(text(
         "SELECT status, linked_event_id::text FROM event_links"
     ))).all()
@@ -186,7 +186,7 @@ async def test_live_fsd_first_seen_pulled_earlier(session):
     ev, updates = await svc.get_event(session, await _first_event_id(session))
     assert ev.first_seen_at == _T1     # 실 LEAST 로 과거로 당김
     assert ev.last_update_at == _T2    # 실 GREATEST 로 후퇴 안 함
-    assert len(updates) == 1
+    assert len(updates) == 2           # genesis(@T2) + 이른 보도 append(@T1)
 
 
 async def test_live_last_update_monotonic_forward(session):
@@ -209,8 +209,10 @@ async def test_live_evidence_source_refs_sanitized(session):
         source_refs=("raw-001", "C" * 5000),
     ))
     _, updates = await svc.get_event(session, await _first_event_id(session))
-    assert updates[0].evidence == [{"url": "https://reuters/x", "relation": "supports"}]
-    assert updates[0].source_refs == ["raw-001"]
+    # updates[0]=genesis(@T2, _cand 기본 evidence 없음), updates[1]=APPEND(@T3, dirty→sanitize 대상).
+    assert updates[0].evidence == []                                                   # genesis: evidence 없음
+    assert updates[1].evidence == [{"url": "https://reuters/x", "relation": "supports"}]
+    assert updates[1].source_refs == ["raw-001"]
 
 
 # ── append-only / tz / UUID 방어 (실 DB) ──────────────────────────────────────────
@@ -221,7 +223,7 @@ async def test_live_append_only_rows_accumulate(session):
     await pipe.resolve_and_apply_cluster(session, c, candidate=_cand(observed=_T3))
     # append-only: update 행이 누적(덮어쓰기 0). 각 행 고유 id.
     ids = (await session.execute(text("SELECT id FROM event_updates"))).scalars().all()
-    assert len(ids) == 2 and len(set(ids)) == 2
+    assert len(ids) == 3 and len(set(ids)) == 3   # genesis(CREATE) + 2 append, 각 행 고유 id
 
 
 async def test_live_tz_naive_defended_and_stored_aware(session):
@@ -298,7 +300,7 @@ async def test_live_fk_restrict_blocks_event_delete_with_history(session):
     await session.rollback()
     # 감사 이력은 보존됨(삭제 안 됨).
     assert await _count(session, "events") == 1
-    assert await _count(session, "event_updates") == 1
+    assert await _count(session, "event_updates") == 2   # genesis(CREATE@T2) + append(@T3)
 
 
 # ── ★ 2-세션 동시 CREATE race (실 Postgres unique + rollback) ★ ────────────────────
@@ -320,8 +322,8 @@ async def test_live_concurrent_create_no_orphan(engine):
         assert await _count(s, "cluster_event_map") == 1  # 매핑 1개
         # 두 라우팅 모두 같은 (승자) event 로 수렴.
         assert r1.event_id == r2.event_id
-        # event_updates: 패자가 승자로 degrade append(1) — 중복/누락 없음.
-        assert await _count(s, "event_updates") == 1
+        # event_updates: 승자 genesis(1) + 패자 degrade append(1) — 중복/누락 없음.
+        assert await _count(s, "event_updates") == 2
 
 
 # ── C live wiring: 수집 후보 records → Event 영속(실 DB) ────────────────────────────
@@ -340,12 +342,16 @@ async def test_live_candidate_records_create_then_append(session):
     assert s1.enabled is True and s1.created == 1 and s1.appended == 0
     assert await _count(session, "events") == 1
     assert await _count(session, "cluster_event_map") == 1
-    assert await _count(session, "event_updates") == 0      # CREATE 는 update 0
+    assert await _count(session, "event_updates") == 1      # CREATE 는 genesis update 1행(생성 근거)
+    # genesis 가 디버그 라벨이 아니라 build_delta_summary 자연어인지(실 파이프라인 → genesis 영속).
+    genesis_summary = (await session.execute(text(
+        "SELECT delta_summary FROM event_updates"))).scalar_one()
+    assert "사건" in genesis_summary and ":" not in genesis_summary  # 예 "뉴스 보도가 동일 식별자로 확인된 사건입니다."
 
     s2 = await ingest_records_to_events(session, recs, enabled=True)
     assert s2.created == 0 and s2.appended == 1
     assert await _count(session, "events") == 1             # Event 남발 0
-    assert await _count(session, "event_updates") == 1      # 2번째 배치 append
+    assert await _count(session, "event_updates") == 2      # genesis + 2번째 배치 append
     # evidence 가 실 JSONB 로 sanitize 되어 영속됐는지(allowlist scalar 만).
     ev = (await session.execute(text(
         "SELECT evidence FROM event_updates LIMIT 1"))).scalar_one()
@@ -446,7 +452,7 @@ def test_live_d1_orchestration_sink_persists_event():
     asyncio.run(engine.dispose())
 
     ev, up = asyncio.run(_counts())
-    assert ev == 1 and up == 1             # 운영 결선 경로로 Event 1 누적 + append 1
+    assert ev == 1 and up == 2             # Event 1 + genesis(CREATE) + 2번째 배치 append
 
 
 # ── D-2a Event 타임라인 read API (실 DB list/get) ──────────────────────────────────

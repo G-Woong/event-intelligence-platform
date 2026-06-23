@@ -14,6 +14,11 @@ R-<id> · <제목>  — CLOSED (날짜)
 
 ---
 
+### R-EventTimelineRenderHardening · Event 타임라인 렌더 보강(에러표현·내부식별자·delta_summary 가시성)  — CLOSED (2026-06-23)
+- 종결 근거: ①(ADR#26) page/전역 `error.tsx` 일반화 — 비-404 raw 에러 미노출. ③(ADR#26) `Public*` 스키마(`api/events.py`)가 내부 식별자(source_refs·primary_entity_ids·snapshot_card_id) wire 구조적 제외. ②(ADR#30+#31) delta_summary 디버그 라벨→`build_delta_summary` 자연어 + `apply_routing` CREATE **genesis update**(`event_timeline_service.py`)로 CREATE-only Event 의 빈 상세 해소. 실 파이프라인 CREATE→`/events/timeline/{id}` 화면에 genesis 자연어("뉴스 보도가 동일 식별자로 확인된 사건입니다.")+evidence 링크 렌더 **1회 관측(Playwright)**. 테스트: 불변식 의존 21단언 의도적 갱신(backend 268 green, live-PG 21 포함) + frontend timeline.test.mjs 12 green.
+- 흐름: ①③ 은 실데이터 비의존 메커니즘으로 ADR#26 종결 → ② delta_summary 는 ADR#30 에서 코드 자연어화했으나 adversarial P1-1 이 "실 Event 는 CREATE-only(update 0) 라 화면 미도달"을 지적(부분종결 환원) → ADR#31 이 CREATE clean-win 에 genesis update 1행 추가(불변식 "CREATE는 update 0" 의도적 개정, 마이그레이션 0)해 자연어가 update 행→public API→화면에 실제 도달함을 브라우저로 관측하여 ② 종결(단 관측은 **synthetic 강신호 record** — 실 네트워크 fetch genesis 렌더는 R-RealSourceLoopUnproven 로 추적) → ①②③ **render 메커니즘** 종결.
+- 잔여(비차단): 실 네트워크 fetch APPEND 의 화면 자연어는 R-RealSourceLoopUnproven 으로 추적(본 종결은 render *메커니즘*; 실 fetch 커버리지는 별건). 화면 관측은 synthetic 강신호 record(distinct 1 → "보도가 동일 식별자로 확인" 문안).
+
 ### R-EventSinkDbTarget · 운영 결선/seed 가 의도치 않은 DB(dev/prod)에 Event 영속  — CLOSED (2026-06-23)
 - 종결 근거: `backend/app/tools/db_target.py`(`assert_safe_write_target` — **2중 fail-closed**: ① APP_ENV **allowlist**(dev/test 만 무명시 허용 → staging/production·오타·미지 환경 모두 거부; denylist 의 fail-open 회귀 차단), ② **DATABASE_URL dbname prod 마커 교차검증**(APP_ENV=dev 오설정 + URL→prod 우회 차단 — APP_ENV 단일 신뢰 회피); `--allow-non-dev-db` 명시 opt-in 으로만 우회; `target_db_label` host:port/dbname 자격증명 제외). seed(`seed_event_timeline`)·runner(`run_event_orchestration._target_db_label`) 동일 출처 공유. 테스트 `backend/tests/test_seed_event_timeline.py`(dev/test 허용·staging/prod·오타 env 거부·dev+prod dbname 거부·override·자격증명 미노출 + CLI 실증).
 - 흐름: D-1 sink 가 settings.DATABASE_URL 로 전용 엔진 생성 → 잘못된 환경에서 켜면 오영속 가능, 완화는 "대상 DB 출력(보임)"뿐이고 구조적 차단 부재 → D-2c 에서 APP_ENV allowlist + dbname prod-마커 교차검증 fail-closed 가드 추가로 "보임→차단" 승격·종결(adversarial: APP_ENV 단일 신뢰는 dbname 교차검증으로 보강).

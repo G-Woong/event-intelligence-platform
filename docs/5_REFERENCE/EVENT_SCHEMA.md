@@ -179,21 +179,21 @@ Analyzer: standard (기본). 한국어 nori는 STEP 010+ TODO.
 
 인덱스: `heat DESC`, `status`, `last_update_at DESC`, `domains` GIN, `first_seen_at`.
 
-## EventUpdate (event_updates 테이블 — ✅ 구현됨 S1, **append-only** 변화분, SPEC §1.2)
+## EventUpdate (event_updates 테이블 — ✅ 구현됨 S1, **append-only** 관측 이력, SPEC §1.2)
 
 | 컬럼 | 타입 | NULL | 설명 |
 |---|---|---|---|
 | id | UUID | NO | PK |
 | event_id | UUID | NO | FK → events.id (**RESTRICT**, 0006 — 감사 이력 보호) |
 | observed_at | TIMESTAMPTZ | NO | 이 변화가 관측된 시각 |
-| delta_summary | VARCHAR | NO | "유가 +4% 반응" 같은 변화 요약 |
+| delta_summary | VARCHAR | NO | 변화 요약("유가 +4% 반응") 또는 genesis 생성 근거("…동일 식별자로 확인된 사건입니다") |
 | evidence | JSONB | NO | 이 Update의 EvidenceNode[] (§EvidenceNode) |
 | added_domains | JSONB | NO | 이 Update로 새로 엮인 도메인[] |
 | source_refs | JSONB | NO | raw_events.id[] / cluster_id |
 | heat_delta | FLOAT | NO | 이 Update의 heat 기여분 |
 | created_at | TIMESTAMPTZ | NO | |
 
-인덱스: `(event_id, observed_at DESC)`. **불변식: INSERT만(UPDATE/DELETE 금지)** → 가역성·감사.
+인덱스: `(event_id, observed_at DESC)`. **불변식: INSERT만(UPDATE/DELETE 금지)** → 가역성·감사. **CREATE 의 첫 행 = genesis update**(생성 근거: candidate 의 delta_summary/evidence; ADR#31 — 이전 "CREATE 는 update 0" 의도적 개정), 이후 행 = 변화분.
 
 ## event_cards 의미 전환 (비파괴, SPEC §1.3)
 - 기존 컬럼 전부 유지. **추가만**: `event_id UUID NULL` (FK → events.id).

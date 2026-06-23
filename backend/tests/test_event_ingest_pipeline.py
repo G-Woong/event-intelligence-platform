@@ -326,7 +326,7 @@ async def test_second_batch_appends_not_new_event():
     summary2 = await ingest_records_to_events(s, _strong_records(), enabled=True)
     assert summary2.appended == 1 and summary2.created == 0
     assert len(s.events) == 1                   # Event 남발 0
-    assert len(s.updates) == 1                  # 2번째 배치만 append
+    assert len(s.updates) == 2                  # genesis(1번째 배치 CREATE) + 2번째 배치 append
 
 
 @pytest.mark.asyncio
@@ -335,7 +335,7 @@ async def test_rerun_idempotent_no_duplicate_event():
     for _ in range(3):
         await ingest_records_to_events(s, _strong_records(), enabled=True)
     assert len(s.events) == 1 and len(s.cmap) == 1
-    assert len(s.updates) == 2                   # 2·3번째 배치만 append
+    assert len(s.updates) == 3                   # genesis(1번째 배치) + 2·3번째 배치 append
 
 
 @pytest.mark.asyncio
@@ -354,7 +354,7 @@ async def test_transitive_weak_member_held_not_merged():
     assert summary.created == 1                  # 강신호 core 새 Event
     assert summary.held_member_links == 1        # blog 분리 보류
     assert len(s.links) == 1 and s.links[0].status == "possible"
-    assert s.updates == []                       # 자동병합 0
+    assert len(s.updates) == 1                   # core 의 genesis 1행만(자동병합 0 — blog 미흡수)
 
 
 # ── 4. 후보 단위 실패 격리 ────────────────────────────────────────────────────────

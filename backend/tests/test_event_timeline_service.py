@@ -351,7 +351,8 @@ async def test_apply_routing_create_makes_event_and_maps_cluster():
     m_get.assert_awaited_once()  # CREATE 는 먼저 매핑 조회(orphan 가드).
     m_create.assert_awaited_once_with(session, candidate=_cand_eq(), commit=False)
     m_map.assert_awaited_once_with(session, cluster_id="c1", event_id="evt-new", commit=False)
-    m_append.assert_not_awaited()
+    # genesis update(생성 근거, ADR#31): clean-win CREATE 는 신규 event 로 append_update 1회(첫 타임라인 항목).
+    m_append.assert_awaited_once_with(session, event_id="evt-new", candidate=_cand_eq(), commit=False)
     m_hold.assert_not_awaited()
     session.commit.assert_awaited_once()  # 단일 원자 커밋.
 

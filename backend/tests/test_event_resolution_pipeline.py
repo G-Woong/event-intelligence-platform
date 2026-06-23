@@ -159,7 +159,8 @@ async def test_first_cluster_creates_event_and_maps():
     assert res.action == ACTION_CREATE
     assert len(s.events) == 1                       # 새 Event 1개
     assert s.cmap[c.cluster_id] is not None         # cluster_event_map 매핑됨
-    assert s.updates == []                          # CREATE 는 update 0(첫 스토리=event row)
+    assert len(s.updates) == 1                      # CREATE 는 genesis update 1행(생성 근거, ADR#31)
+    assert s.updates[0].delta_summary == "update"   # candidate 의 delta_summary 가 genesis 로 영속
     assert s.commits == 1                           # 단일 원자 커밋
 
 
@@ -173,8 +174,9 @@ async def test_second_report_appends_not_new_event():
     assert r1.action == ACTION_CREATE and r2.action == ACTION_APPEND
     assert r2.event_id == r1.event_id               # 같은 Event
     assert len(s.events) == 1                       # 새 Event 남발 0
-    assert len(s.updates) == 1                       # event_updates +1(append)
-    assert s.updates[0].delta_summary == "유가 +4%"
+    assert len(s.updates) == 2                       # genesis(CREATE) + append(2번째 보도)
+    assert s.updates[0].delta_summary == "update"    # genesis(첫 보도, 생성 근거)
+    assert s.updates[1].delta_summary == "유가 +4%"   # 2번째 보도 append
 
 
 @pytest.mark.asyncio
@@ -187,7 +189,7 @@ async def test_rerun_same_cluster_idempotent():
     await pipe.resolve_and_apply_cluster(s, c, candidate=_cand(observed=_T3))
     assert len(s.events) == 1            # Event 1개 유지
     assert len(s.cmap) == 1              # 매핑 1개
-    assert len(s.updates) == 2           # 2·3번째 보도만 append
+    assert len(s.updates) == 3           # genesis(CREATE) + 2·3번째 보도 append(Event/매핑은 멱등)
 
 
 @pytest.mark.asyncio
@@ -210,8 +212,8 @@ async def test_transitive_weak_member_held_not_merged():
     assert len(s.links) == 1                             # blog 는 event_links(possible) 보류
     assert s.links[0].status == "possible"
     assert str(s.links[0].linked_event_id) == res.event_id   # held → primary(core)
-    # blog 가 core 의 update 로 흡수되지 않음(자동병합 0).
-    assert s.updates == []
+    # blog 가 core 의 update 로 흡수되지 않음(자동병합 0) — core 의 update 는 genesis 1행뿐.
+    assert len(s.updates) == 1                           # core 의 genesis(생성 근거)만; blog 미흡수
 
 
 @pytest.mark.asyncio
@@ -244,7 +246,7 @@ async def test_fsd_first_seen_pulled_earlier_only():
     ev, updates = out
     assert ev.first_seen_at == _T1     # 과거로 당겨짐
     assert ev.last_update_at == _T2    # last_update 는 더 이른 보도로 후퇴하지 않음
-    assert len(updates) == 1
+    assert len(updates) == 2           # genesis(@T2) + 이른 보도 append(@T1)
 
 
 @pytest.mark.asyncio

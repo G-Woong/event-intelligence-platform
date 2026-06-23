@@ -87,11 +87,12 @@
 - Area: product / pipeline / Event 타임라인 / 검증
 - Description: **전수 감사(2026-06-23, 3-agent)** 가 경로 A(수집→raw_events; →event_cards)는 실데이터 PROVEN, 경로 B(수집→cross_source_dedup→`event_ingest_pipeline`→`event_resolution_pipeline`→`event_timeline_service`→`/api/events/timeline`→`/events/timeline`)는 **코드 배선 완료이나 실 웹 데이터 0회**로 판정했었다. → **이후 실 소스 production-validation 으로 경로 B 실데이터 1회 입증(아래).**
 - ✅ **입증(2026-06-23, ADR#29):** keyless 뉴스 10소스 live fetch(0 error·0 rate_limited) → **411 real records** → `event_ingest_pipeline`(EVENT_RESOLUTION_ENABLED on, DB=event_intel_test) → cross_source_dedup **2 클러스터**(possible_duplicate) → resolver **CREATE 2 + HOLD(held members 3→possible links 3)** → `/api/events/timeline` 실데이터 **2 Event non-empty** → `/events/timeline` **브라우저 렌더**(실 헤드라인: yna `[속보] 코스피 서킷브레이커`, 매경 `대우건설 중동재건 TF`). **경로 B 가 실 웹 데이터로 Event 를 만들어 화면에 노출함을 최초 입증.** + 약신호 corroborator 를 HOLD 로 보류(자동병합 금지 — **R-FalseMerge 보호가 실데이터로 작동**).
-- **핵심 발견(실 파이프라인 특성):** ① **Event 생성은 cross-source 겹침 필요** — 작은/다양한 fetch(4소스·62records)는 클러스터 0→Event 0(singletons_dropped 전량); 볼륨(10소스·411)에서야 2 클러스터. ② **CREATE genesis = updates 0** — candidate 의 evidence/delta_summary 는 APPEND 에서만 영속, CREATE 단독 Event 는 evidence 미표시(설계 gap). ③ market 소스는 자산별 아닌 **단일 집계 스냅샷** 1건 → 미클러스터.
-- ✅ **추가 해소(ADR#30, 2026-06-23):** ⑦ delta_summary 자연어화 = **`build_delta_summary` 실경로 적용·종결**(R-EventTimelineRenderHardening 종결). + APPEND 경로 **결정론 관측**(강신호 CREATE→APPEND, event_intel_test 실 update 자연어 delta_summary — 단 synthetic record, 실 fetch APPEND 은 잔여).
-- 잔여(open, LOW): **CREATE genesis evidence/update 미표시 gap**(ADR#30 이월 — `apply_routing` "CREATE는 update 0" 불변식 변경 = 큰 설계) · **실 fetch APPEND 미관측**(같은 사건 재출현 필요) · **source-type fidelity**: 뉴스만 Event 형성(official/community/market 은 singleton → Event 미형성, 타입 보존 미입증) · 주기 auto-trigger 미배선 · 운영 DB(event_intel) 0006 미배포(검증은 event_intel_test).
-- Closure(완전 종결): CREATE genesis evidence 표시(또는 실 fetch APPEND 관측) + 비-뉴스 타입 Event 형성 1회 + 주기 auto-trigger. severity **LOW**(제품 북극성=실 웹 인텔리전스 경로 B 핵심 흐름·delta_summary 자연어 입증; 잔여는 genesis 가시화·커버리지·운영 가동).
-- 관계: R-EventTimelineS2Hardening(④ 운영 가동 잔여)·R-EventModelMigration(synthetic records 기준)·R-EventTimelineRenderHardening②(delta_summary)·R-Integration(경로 A 실데이터)을 **제품 수준에서 통합 추적**(중복 등재 아님 — 분산된 잔여를 단일 closure 로 묶음).
+- **핵심 발견(실 파이프라인 특성):** ① **Event 생성은 cross-source 겹침 필요** — 작은/다양한 fetch(4소스·62records)는 클러스터 0→Event 0(singletons_dropped 전량); 볼륨(10소스·411)에서야 2 클러스터. ② **CREATE genesis = updates 0**(당시) — candidate 의 evidence/delta_summary 가 APPEND 에서만 영속됐던 설계 gap → **ADR#31 genesis update 로 해소**(CREATE 시 첫 타임라인 항목 영속·화면 렌더 관측). ③ market 소스는 자산별 아닌 **단일 집계 스냅샷** 1건 → 미클러스터.
+- ✅ **추가 해소(ADR#30, 2026-06-23):** ⑦ delta_summary 자연어화 = **`build_delta_summary` 실경로 적용·종결**. + APPEND 경로 **결정론 관측**(강신호 CREATE→APPEND, event_intel_test 실 update 자연어 delta_summary — 단 synthetic record, 실 fetch APPEND 은 잔여).
+- ✅ **CREATE genesis 가시화(ADR#31, 2026-06-23):** clean-win CREATE 가 genesis update(생성 근거) 1행 영속 → CREATE-only Event 의 빈 상세 해소. 실 파이프라인 CREATE → `/events/timeline/{id}` 화면에 genesis 자연어("뉴스 보도가 동일 식별자로 확인된 사건입니다.")+evidence 렌더 **1회 관측(Playwright)**. **R-EventTimelineRenderHardening 완전 종결**.
+- 잔여(open, LOW): **실 fetch APPEND 미관측**(같은 사건 재출현 필요; genesis 자연어 화면 도달은 ADR#31 로 입증) · **source-type fidelity**: 뉴스만 Event 형성(official/community/market 은 singleton → Event 미형성, 타입 보존 미입증) · 주기 auto-trigger 미배선 · 운영 DB(event_intel) 0006 미배포(검증은 event_intel_test).
+- Closure(완전 종결): ✅ CREATE genesis evidence 표시(ADR#31 완료) + **비-뉴스 타입 Event 형성 1회** + **주기 auto-trigger** + 실 fetch APPEND 관측. severity **LOW**(경로 B 핵심 흐름·delta_summary 자연어·genesis 가시화 입증; 잔여는 타입 커버리지·운영 가동·실 fetch APPEND).
+- 관계: R-EventTimelineS2Hardening(④ 운영 가동 잔여)·R-EventModelMigration(synthetic records 기준)·R-EventTimelineRenderHardening(**CLOSED — ADR#31 genesis 렌더**)·R-Integration(경로 A 실데이터)을 **제품 수준에서 통합 추적**(중복 등재 아님 — 분산된 잔여를 단일 closure 로 묶음).
 
 ### R-EventTimelineApiScale · Event 타임라인 read API 의 대규모 응답/페이지네이션 비용  — Severity: LOW (신규 2026-06-23 · D-2a architecture/code)
 - Area: api / web / 성능
@@ -100,12 +101,7 @@
 - 잔여(open): 단건 updates 페이지네이션(또는 `/timeline/{id}/updates` 분리)·IN-서브쿼리 live-PG EXPLAIN(JOIN/EXISTS 대안 비교)·deep-offset → keyset 전환(트래픽 발생 후).
 - Closure: 단건 updates 페이지네이션 + IN-서브쿼리 plan 실측 통과 시 종결. severity LOW(flag off·limit 상한·tie-breaker 로 완화, 트래픽 전까지 비활성).
 
-### R-EventTimelineRenderHardening · Event 타임라인 렌더 보강 — ①③ 종결, ② 코드 done·실 렌더 도달 잔여  — Severity: LOW (부분종결 2026-06-23 · ADR#26+#30)
-- Area: frontend / web / ux / 안전
-- ✅ 종결(ADR#26): ① 상세 비-404 raw 에러표현 → 페이지·전역 error.tsx 일반 안내. ③ 내부 식별자(source_refs·entity/card FK) wire 노출 → Public* 스키마 구조적 제외. (둘 다 실데이터 비의존 메커니즘 — 정당 종결.)
-- ✅ ② **코드 자연어화(ADR#30):** `build_delta_summary`(deterministic·LLM 0)가 실경로 `event_ingest_pipeline.candidate_from_cluster` 의 delta_summary 를 디버그 라벨(`"{confidence}:{reason}"`)에서 사용자용 자연어로 교체. 강신호 distinct≥2=`서로 다른 출처 N곳…보도`, distinct 1=`보도가 동일 식별자로 확인…`, 약신호=`…추정됩니다(자동 병합 전 교차 검토)`. distinct count=evidence 수 정합(과대계수 차단). live-PG 강신호 CREATE→APPEND 로 실 update 자연어 확인.
-- 잔여(open, ②): **실 렌더 표면 미도달** — delta_summary 는 `EventUpdateItem`(update 행)에서만 렌더되는데, 실 검증 Event(ADR#29)는 전량 **CREATE-only(update 0)** 라 자연어가 화면에 안 보인다(adversarial P1-1). 코드는 자연어화됐으나 **사용자 렌더 도달은 APPEND 발생 또는 CREATE genesis update(R-RealSourceLoopUnproven 이월) 전까지 미확인**. + delta_summary 는 교차출처 *메타* 서술(사건 *내용* 은 canonical_title; 전문 저장 금지 원칙).
-- Closure: 실 fetch APPEND(또는 genesis update)에서 자연어 delta_summary 가 `/events/timeline/{id}` 화면에 렌더됨을 1회 관측 시 ② 종결. severity LOW(디버그 라벨 누출은 코드 차단; 잔여는 CREATE-only 가시화).
+> **R-EventTimelineRenderHardening** — **CLOSED 2026-06-23**. ① 비-404 raw 에러 → page/전역 error.tsx 일반화(ADR#26) · ③ 내부 식별자 wire 노출 → Public* 구조적 제외(ADR#26) · ② delta_summary 디버그 라벨 → `build_delta_summary` 자연어(ADR#30) **+ CREATE genesis update(ADR#31) 로 실 렌더 도달**: 실 파이프라인 CREATE → `/events/timeline/{id}` 화면에 genesis 자연어(`"뉴스 보도가 동일 식별자로 확인된 사건입니다."`) + evidence 링크(`example.com … (article · primary)`) 렌더 **1회 관측(Playwright, synthetic 강신호)** — 지난 턴 adversarial P1-1 의 "화면 미도달"을 genesis 로 해소(**render 메커니즘** 종결; 실 fetch genesis 렌더는 R-RealSourceLoopUnproven). 흐름·근거는 `RISK_CLOSED.md`.
 
 ### R-Gdelt429 · gdelt provider 429  — Severity: MEDIUM
 - Area: rate-limit / cooldown / retry
