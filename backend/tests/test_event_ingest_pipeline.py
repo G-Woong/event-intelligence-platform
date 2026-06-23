@@ -412,6 +412,81 @@ async def test_gate_official_plus_news_publishes_fidelity_preserved():
     assert "official" in stypes and "article" in stypes      # source_type fidelity 보존
 
 
+# ── primary-authority (ADR#34) — mixed cluster 대표 선정 ────────────────────────────
+def _cluster_and_candidate(recs):
+    clusters = cluster_records(recs)
+    assert len(clusters) == 1
+    return candidate_from_cluster(clusters[0], build_record_index(recs))
+
+
+def test_primary_authority_official_over_community():
+    # community 가 첫 member 라도 official 이 Event 대표(title/primary evidence/kind).
+    acc = "0001193125-26-000999"
+    recs = [
+        _rec(record_type="community_signal", source_id="hn",
+             source_url_or_evidence=f"https://forum.example.com/t/{acc}",
+             title_or_label="HN discussion thread", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="official_record", source_id="sec",
+             source_url_or_evidence=f"https://sec.gov/{acc}-index.htm",
+             title_or_label="SEC official filing", published_at_or_observed_at="2025-06-02"),
+    ]
+    cand = _cluster_and_candidate(recs)
+    assert cand.canonical_title == "SEC official filing"         # community 아님 — official 대표
+    rel = {e["source_type"]: e["relation"] for e in cand.evidence}
+    assert rel["official"] == "primary" and rel["community"] == "corroborates"
+    assert "공식" in cand.delta_summary                           # kind 도 official 반영
+
+
+def test_primary_authority_news_over_market():
+    # market(structured) 이 첫 member 라도 news 가 대표(market/numeric 이 Event 주체가 되면 안 됨).
+    recs = [
+        _rec(record_type="structured_signal", source_id="coinbase",
+             body_state_or_signal="signal", source_url_or_evidence="https://api.coinbase.com/x",
+             title_or_label="Oil benchmark jumps on supply shock",
+             published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="article_candidate", source_id="reuters",
+             canonical_url="https://reuters.com/oil",
+             title_or_label="Oil benchmark jumps on supply shock",
+             published_at_or_observed_at="2025-06-02"),
+    ]
+    cand = _cluster_and_candidate(recs)
+    rel = {e["source_type"]: e["relation"] for e in cand.evidence}
+    assert rel["article"] == "primary" and rel["signal"] == "corroborates"
+    assert "뉴스" in cand.delta_summary                           # market 아님 — news kind
+
+
+def test_primary_authority_news_over_community_weak():
+    # news+community 약신호(유사 제목·URL 다름), community 첫 member → news 대표.
+    recs = [
+        _rec(record_type="community_signal", source_id="reddit",
+             canonical_url="https://reddit.com/r/x/1",
+             title_or_label="Major outage hits cloud provider regions",
+             published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="article_candidate", source_id="reuters",
+             canonical_url="https://reuters.com/outage",
+             title_or_label="Major outage hits cloud provider regions",
+             published_at_or_observed_at="2025-06-02"),
+    ]
+    cand = _cluster_and_candidate(recs)
+    rel = {e["source_type"]: e["relation"] for e in cand.evidence}
+    assert rel["article"] == "primary" and rel["community"] == "corroborates"
+
+
+def test_primary_authority_news_news_tie_keeps_first():
+    # 동률(news+news)은 입력 순서 유지(members[0]) — 기존 동작 회귀 0.
+    acc = "0001193125-26-000888"
+    recs = [
+        _rec(record_type="article_candidate", source_id="ap",
+             source_url_or_evidence=f"https://ap.example.com/{acc}", title_or_label="AP headline",
+             published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="article_candidate", source_id="reuters",
+             source_url_or_evidence=f"https://reuters.example.com/{acc}", title_or_label="Reuters headline",
+             published_at_or_observed_at="2025-06-02"),
+    ]
+    cand = _cluster_and_candidate(recs)
+    assert cand.canonical_title == "AP headline"                 # tie → members[0](ap) 유지
+
+
 # ── 4. 후보 단위 실패 격리 ────────────────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_failed_cluster_isolated_not_batch_abort():

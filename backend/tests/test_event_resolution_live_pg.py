@@ -415,6 +415,25 @@ async def test_live_gate_official_news_publishes(session):
     assert "official" in stypes
 
 
+async def test_live_primary_authority_official_over_community(session):
+    # ADR#34 primary-authority: community 가 첫 member 라도 official 이 Event 대표(canonical_title), 실 DB.
+    from backend.app.services.event_ingest_pipeline import ingest_records_to_events
+
+    acc = "0001193125-26-000777"
+    recs = [
+        _rec(record_type="community_signal", source_id="hn",
+             source_url_or_evidence=f"https://forum.example.com/t/{acc}",
+             title_or_label="HN discussion thread", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="official_record", source_id="sec",
+             source_url_or_evidence=f"https://sec.gov/{acc}-index.htm",
+             title_or_label="SEC official filing title", published_at_or_observed_at="2025-06-02"),
+    ]
+    summary = await ingest_records_to_events(session, recs, enabled=True)
+    assert summary.created == 1 and summary.withheld_source_type == 0
+    title = (await session.execute(text("SELECT canonical_title FROM events LIMIT 1"))).scalar_one()
+    assert title == "SEC official filing title"          # community 아님 — official 대표
+
+
 async def test_live_failed_cluster_isolated_other_persists(session):
     # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
     # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).

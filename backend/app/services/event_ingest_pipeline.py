@@ -69,6 +69,28 @@ _SOURCE_KIND_KO = {
     "community_signal": "커뮤니티",
 }
 
+# source_type → primary-authority 순위(ADR#34): mixed cluster 에서 Event 대표(primary)를 고를 때
+# **공식>뉴스>구조화 지표>검색>커뮤니티>미지** 순. publishable(official/article)이 비-publishable
+# (signal/search/community)보다 항상 높아, 발행 Event 의 title/대표 evidence 가 community/market 으로
+# 잘못 잡히는 것을 차단(R-SourceTypeFidelityGate). 미지 source_type 은 0(fail-closed authority).
+_SOURCE_TYPE_AUTHORITY = {"official": 5, "article": 4, "signal": 3, "search": 2, "community": 1}
+
+
+def _authority_of(record: dict) -> int:
+    st = _RECORD_TYPE_TO_SOURCE_TYPE.get(record.get("record_type"), "rss")
+    return _SOURCE_TYPE_AUTHORITY.get(st, 0)
+
+
+def _select_primary_by_authority(
+    distinct_members: tuple[str, ...], index: dict[str, dict]
+) -> Optional[str]:
+    """distinct 멤버 중 **최고 authority** source 의 키. 동률은 입력 순서(=cross_source_dedup
+    members 순서, 결정적). index 에 존재하는 멤버가 없으면 None(호출자가 fallback)."""
+    present = [m for m in distinct_members if index.get(m)]
+    if not present:
+        return None
+    return max(present, key=lambda m: _authority_of(index[m]))
+
 
 def build_delta_summary(
     *, confidence: Optional[str], reason: Optional[str], member_count: int,
@@ -178,12 +200,19 @@ def candidate_from_cluster(
 ) -> ResolvedCandidate:
     """클러스터 → ResolvedCandidate(결정적·본문/PII 비포함).
 
-    primary record(cluster.primary_record_key)의 title/시각/도메인을 사건 후보로, 멤버들의
-    url/source_type 을 evidence 로, cluster_id + member key 를 source_refs 로 만든다. 본문 전문/
-    PII 는 싣지 않는다(title 은 짧은 헤드라인 라벨; event_timeline_service sanitize 가 2차 차단).
+    primary record(최고 authority 멤버)의 title/시각/도메인을 사건 후보로, 멤버들의 url/source_type 을
+    evidence 로, cluster_id + member key 를 source_refs 로 만든다. 본문 전문/PII 는 싣지 않는다(title 은
+    짧은 헤드라인 라벨; event_timeline_service sanitize 가 2차 차단).
     """
     now = now or datetime.now(timezone.utc)
-    primary = index.get(cluster.primary_record_key) or {}
+    # 같은 canonical_url 멤버는 동일 member key 로 collapse → distinct key 만 순회(evidence/ref 중복 제거).
+    distinct_members = tuple(dict.fromkeys(cluster.duplicate_group))
+    # primary-authority(ADR#34): 발행 Event 의 대표(title/도메인/관측시각/evidence primary)를 멤버 중
+    # **최고 authority source_type**(official>article>signal>search>community>미지)로 선정 — mixed cluster
+    # 에서 community/market 이 Event 대표가 되는 것 차단. tie 는 distinct_members 순서(결정적). 멤버 부재면
+    # cluster.primary_record_key fallback. (단일타입/collapse 클러스터는 tie→members[0]=기존 동작, 회귀 0.)
+    primary_key = _select_primary_by_authority(distinct_members, index) or cluster.primary_record_key
+    primary = index.get(primary_key) or {}
 
     title = primary.get("title_or_label")
     canonical_title = (title or f"event:{cluster.cluster_id}")[:_MAX_TITLE_LEN]
@@ -193,8 +222,6 @@ def candidate_from_cluster(
     rt = primary.get("record_type")
     tags = (str(rt),) if rt else ()
 
-    # 같은 canonical_url 멤버는 동일 member key 로 collapse → distinct key 만 순회(evidence/ref 중복 제거).
-    distinct_members = tuple(dict.fromkeys(cluster.duplicate_group))
     evidence: list[dict] = []
     for member_key in distinct_members:
         rec = index.get(member_key)
@@ -202,7 +229,7 @@ def candidate_from_cluster(
             continue
         ev: dict = {
             "source_type": _RECORD_TYPE_TO_SOURCE_TYPE.get(rec.get("record_type"), "rss"),
-            "relation": "primary" if member_key == cluster.primary_record_key else "corroborates",
+            "relation": "primary" if member_key == primary_key else "corroborates",
         }
         url = rec.get("canonical_url") or _external_url(rec)
         if isinstance(url, str) and url.startswith(("http://", "https://")):
