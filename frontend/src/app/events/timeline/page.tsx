@@ -18,7 +18,8 @@ export default async function EventTimelinePage() {
     if (e instanceof ApiError && e.status === 404) {
       disabled = true;
     } else {
-      error = e instanceof Error ? e.message : String(e);
+      // backend 장애/네트워크는 raw 메시지 노출 없이 일반 안내(R-EventTimelineRenderHardening).
+      error = "타임라인을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.";
     }
   }
 

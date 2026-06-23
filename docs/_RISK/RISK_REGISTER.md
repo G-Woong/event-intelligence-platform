@@ -95,12 +95,13 @@
 - 잔여(open): 단건 updates 페이지네이션(또는 `/timeline/{id}/updates` 분리)·IN-서브쿼리 live-PG EXPLAIN(JOIN/EXISTS 대안 비교)·deep-offset → keyset 전환(트래픽 발생 후).
 - Closure: 단건 updates 페이지네이션 + IN-서브쿼리 plan 실측 통과 시 종결. severity LOW(flag off·limit 상한·tie-breaker 로 완화, 트래픽 전까지 비활성).
 
-### R-EventTimelineRenderHardening · Event 타임라인 frontend 렌더의 잔여 보강(에러표현·본문품질·wire 노출)  — Severity: LOW (신규 2026-06-23 · D-2b adversarial)
+### R-EventTimelineRenderHardening · Event 타임라인 렌더 잔여 보강 — ③+① 종결, ② 잔여  — Severity: LOW→LOW (부분종결 2026-06-23 · ADR#26)
 - Area: frontend / web / ux / 안전
-- Description: D-2b(ADR#25) frontend 렌더의 비차단 잔여 — ① **상세 페이지 비-404 에러 표현:** `/events/timeline/[eventId]` 가 기존 `/events/[eventId]` 패턴을 답습(`throw e`→`error.tsx` 가 `error.message` 렌더) → backend 장애 시 `fetch failed` 등 raw 내부 메시지가 사용자에게 노출 가능(목록 페이지는 ErrorState graceful — 비대칭). ② **delta_summary 본문 품질:** 현재 결선(`event_ingest_pipeline`)이 `"{confidence}:{reason}"` 디버그 라벨을 delta_summary 에 넣어, 데이터가 있어도 타임라인 본문이 사용자용 자연어 서술이 아님(상류 생성 책임). ③ **source_refs wire 노출:** read API 응답 JSON 에 `source_refs`(내부 식별자)가 평문 포함 — frontend 미렌더라 화면 노출은 0 이나 DevTools/curl 로는 보임(공개/내부 스키마 분리 미적용).
-- 완화(D-2b): evidence url 안전 게이트(`isSafeHttpUrl` http/https + `rel="noopener noreferrer nofollow"`), allowlist 6키만 렌더(전문/PII 미노출), source_refs/heat/primary_entity_ids 미렌더, ApiError.message 는 `API {status}` 로 마스킹됨(raw 누출은 비-ApiError 네트워크 실패 한정). 기존 event_cards 와 동일 패턴이라 신규 위험 클래스 도입 아님.
-- 잔여(open): ① 상세 비-404 에러를 목록처럼 ErrorState/일반 문구로 통일(또는 `error.tsx` 메시지 일반화 — 전역 영향이라 별도). ② delta_summary 자연어 서술 결선(D-2c+ 상류). ③ public read 스키마에서 source_refs 제외 여부 결정.
-- Closure: 상세 에러 표현 통일 + delta_summary 사용자용 서술 + source_refs 노출 정책 확정 시 종결. severity LOW(전문/PII 0·링크 안전·화면 노출 0 으로 핵심 안전은 충족, 잔여는 운영 UX/정직성 보강).
+- Description(잔여): ② **delta_summary 본문 품질** — 현재 결선(`event_ingest_pipeline`)이 `"{confidence}:{reason}"` 디버그 라벨을 delta_summary 에 넣어, 데이터가 있어도 타임라인 본문이 사용자용 자연어 서술이 아님(상류 생성 책임). [① 상세 에러표현·③ source_refs wire 노출은 ADR#26 에서 종결 — 아래.]
+- ✅ 종결(ADR#26, 2026-06-23): ③ **내부 식별자 wire 노출** → `PublicEvent`(primary_entity_ids=entities FK·snapshot_card_id=event_cards FK 제외)·`PublicEventUpdate`(source_refs 제외)·`PublicEventTimelineResponse` 신규로 공개 응답에서 **구조적 제외**(목록·단건 양쪽; frontend 타입도 제거; 테스트 `assert` source_refs·primary_entity_ids·snapshot_card_id 미노출). heat=제품 신호라 유지. ① **상세 비-404 에러표현** → 목록·상세 raw 없이 일반 안내 + **전역 `error.tsx` 도 raw message 미렌더**(render 단계 throw 까지 차단) → backend 장애 시 raw 내부 메시지 노출 전역 차단.
+- 완화(유지): evidence url 안전 게이트(`isSafeHttpUrl` http/https + `rel="noopener noreferrer nofollow"`), allowlist 6키만 렌더(전문/PII 미노출).
+- 잔여(open): ② delta_summary 자연어 서술 결선(상류 `event_ingest_pipeline`/요약 생성 — D-2c+ 데이터 결선과 함께).
+- Closure: delta_summary 가 사용자용 자연어 서술로 채워지면 완전 종결. severity LOW(핵심 안전·wire 노출·에러표현은 종결; 잔여는 본문 가독성=상류 책임).
 
 ### R-Gdelt429 · gdelt provider 429  — Severity: MEDIUM
 - Area: rate-limit / cooldown / retry

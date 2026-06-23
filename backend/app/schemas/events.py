@@ -90,11 +90,46 @@ class EventLink(BaseModel):
     reason: Optional[str] = None
 
 
-class EventTimelineResponse(BaseModel):
-    """단건 Event 타임라인 = Event(주제) + append-only EventUpdate 목록(observed_at ASC). D-2a read API."""
+class PublicEvent(BaseModel):
+    """공개 read API 용 Event 뷰 — 내부 식별자(primary_entity_ids=entities FK, snapshot_card_id=
+    event_cards FK)를 **제외**한다.
 
-    event: Event
-    updates: list[EventUpdate] = Field(default_factory=list)
+    source_refs(EventUpdate)와 동일 원칙으로 내부 그래프 식별자를 공개 wire 에서 차단한다
+    (R-EventTimelineRenderHardening 일관성). heat 는 사건 활성도(제품 신호)라 노출 유지.
+    내부 `Event` 와 분리(write/내부 조회는 full Event)."""
+
+    id: str
+    canonical_title: str
+    status: str
+    first_seen_at: datetime
+    last_update_at: datetime
+    heat: float = 0.0
+    domains: list[str] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class PublicEventUpdate(BaseModel):
+    """공개 read API 용 EventUpdate 뷰 — 내부 식별자(source_refs)를 **제외**한다.
+
+    EventUpdate(내부, source_refs=raw_events.id/cluster_id 등 내부 식별자 보유)와 공개 응답을
+    분리한다(공개/내부 스키마 경계). source_refs 는 화면 미렌더일 뿐 아니라 wire 응답에도
+    싣지 않는다(내부 구조 노출 차단, R-EventTimelineRenderHardening). evidence 는 write 시
+    allowlist sanitize 된 메타데이터만(전문/PII 없음)."""
+
+    id: str
+    event_id: str
+    observed_at: datetime
+    delta_summary: str
+    evidence: list[dict] = Field(default_factory=list)
+    added_domains: list[str] = Field(default_factory=list)
+    heat_delta: float = 0.0
+
+
+class PublicEventTimelineResponse(BaseModel):
+    """공개 단건 타임라인 = PublicEvent + source_refs 제외 EventUpdate 목록. D-2a read API 공개 뷰."""
+
+    event: PublicEvent
+    updates: list[PublicEventUpdate] = Field(default_factory=list)
 
 
 class EventSearchHit(BaseModel):

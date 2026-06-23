@@ -12,8 +12,9 @@ export interface FinalEventCard {
   created_at: string;
 }
 
-// ── Event 타임라인 (D-2b) — backend Event/EventUpdate/EventTimelineResponse 와 1:1 ──
-// (backend/app/schemas/events.py Event/EventUpdate/EventTimelineResponse). read-only.
+// ── Event 타임라인 (D-2b) — backend 공개 read 스키마와 1:1 ──
+// (backend PublicEvent/PublicEventUpdate/PublicEventTimelineResponse). read-only.
+// 내부 식별자(primary_entity_ids·snapshot_card_id·source_refs)는 공개 응답에서 제외되므로 타입에도 없음.
 export interface Event {
   id: string;
   canonical_title: string;
@@ -23,8 +24,6 @@ export interface Event {
   heat: number;
   domains: string[];
   tags: string[];
-  primary_entity_ids: string[];
-  snapshot_card_id: string | null;
 }
 
 // EventUpdate.evidence 는 write 시 allowlist 키만 sanitize 됨(url/source_type/role/confidence/
@@ -38,6 +37,7 @@ export interface EventUpdateEvidence {
   observed_at?: string;
 }
 
+// source_refs(내부 식별자)는 공개 read API 응답에서 제외됨(backend PublicEventUpdate) — 타입에도 없음.
 export interface EventUpdate {
   id: string;
   event_id: string;
@@ -45,7 +45,6 @@ export interface EventUpdate {
   delta_summary: string;
   evidence: EventUpdateEvidence[];
   added_domains: string[];
-  source_refs: string[];
   heat_delta: number;
 }
 

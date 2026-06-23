@@ -8,13 +8,22 @@ from backend.app.db.postgres import get_session
 from backend.app.schemas.events import (
     Event,
     EventSearchResponse,
-    EventTimelineResponse,
     FinalEventCard,
+    PublicEvent,
+    PublicEventTimelineResponse,
+    PublicEventUpdate,
 )
 from backend.app.services import event_service, event_timeline_service
 from backend.app.services.search_service import OpenSearchUnavailable, search_event_cards
 
 router = APIRouter(prefix="/api/events", tags=["events"])
+
+
+def _to_public_event(event: Event) -> PublicEvent:
+    # 공개 응답에서 내부 식별자(primary_entity_ids=entities FK, snapshot_card_id=event_cards FK) 제외.
+    return PublicEvent(
+        **event.model_dump(exclude={"primary_entity_ids", "snapshot_card_id"})
+    )
 
 
 @router.get("", response_model=list[FinalEventCard])
@@ -42,7 +51,7 @@ async def search_events(
 # ── Event 타임라인 read API (D-2a, ADR#24) ─────────────────────────────────────────
 # `/timeline` 은 `/{event_id}` 보다 **먼저** 선언해야 한다(라우트 우선순위 — 그렇지 않으면
 # `/timeline` 이 `/{event_id}` 로 잡혀 event_id="timeline" 으로 처리됨). read-only·결정론(LLM/network 0).
-@router.get("/timeline", response_model=list[Event])
+@router.get("/timeline", response_model=list[PublicEvent])
 async def list_event_timeline(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -51,10 +60,11 @@ async def list_event_timeline(
     # flag off → 미노출(404). 매핑된 실 주제만(held degenerate 제외 — 서비스 계층). event_cards 무관.
     if not settings.EVENT_TIMELINE_API_ENABLED:
         raise HTTPException(status_code=404, detail="not found")
-    return await event_timeline_service.list_events(session, limit=limit, offset=offset)
+    events = await event_timeline_service.list_events(session, limit=limit, offset=offset)
+    return [_to_public_event(e) for e in events]
 
 
-@router.get("/timeline/{event_id}", response_model=EventTimelineResponse)
+@router.get("/timeline/{event_id}", response_model=PublicEventTimelineResponse)
 async def get_event_timeline(
     event_id: str, session: AsyncSession = Depends(get_session)
 ):
@@ -66,7 +76,14 @@ async def get_event_timeline(
     if result is None:
         raise HTTPException(status_code=404, detail="event not found")
     event, updates = result
-    return EventTimelineResponse(event=event, updates=updates)
+    # 공개 응답은 내부 식별자(source_refs·primary_entity_ids·snapshot_card_id)를 제외 — 화면뿐
+    # 아니라 wire 에서도 미노출(R-EventTimelineRenderHardening). Public* 가 해당 필드를 갖지 않으므로 구조적 차단.
+    return PublicEventTimelineResponse(
+        event=_to_public_event(event),
+        updates=[
+            PublicEventUpdate(**u.model_dump(exclude={"source_refs"})) for u in updates
+        ],
+    )
 
 
 @router.get("/{event_id}", response_model=FinalEventCard)

@@ -26,9 +26,20 @@ async def _fake_session():
 
 
 def _event(**kw) -> Event:
-    base = dict(id=_EID, canonical_title="호르무즈 해협 긴장", status="active")
+    # 내부 식별자(primary_entity_ids=entities FK, snapshot_card_id=event_cards FK)를 채워
+    # 공개 응답에서 구조적으로 제외되는지(PublicEvent) 검증할 수 있게 한다.
+    base = dict(
+        id=_EID, canonical_title="호르무즈 해협 긴장", status="active",
+        primary_entity_ids=["ent-iran"], snapshot_card_id="card-xyz",
+    )
     base.update(kw)
     return Event(**base)
+
+
+def _assert_no_internal_event_ids(event_json: dict) -> None:
+    # 공개 Event 뷰는 내부 FK 를 wire 에 싣지 않는다.
+    assert "primary_entity_ids" not in event_json
+    assert "snapshot_card_id" not in event_json
 
 
 # ── flag OFF → 미노출(404) ────────────────────────────────────────────────────────
@@ -67,14 +78,16 @@ def test_timeline_list_returns_events_when_flag_on():
     mock_list.assert_awaited_once()        # /{event_id} 가 아니라 /timeline 라우트로 라우팅됨
     body = resp.json()
     assert len(body) == 1 and body[0]["canonical_title"] == "호르무즈 해협 긴장"
+    _assert_no_internal_event_ids(body[0])  # 목록도 PublicEvent — 내부 FK 미노출
 
 
-# ── flag ON → 단건(event + append-only updates) ──────────────────────────────────
+# ── flag ON → 단건(event + append-only updates); source_refs 는 공개 응답에서 제외 ──────
 def test_timeline_single_returns_event_with_updates():
     app.dependency_overrides[get_session] = _fake_session
     upd = EventUpdate(
         id="22222222-2222-2222-2222-222222222222", event_id=_EID,
         observed_at=datetime(2026, 6, 18, tzinfo=timezone.utc), delta_summary="유가 +4%",
+        source_refs=["raw_events:abc123", "cluster:def456"],  # 내부 식별자 — 공개 미노출 대상
     )
     try:
         with patch.object(settings, "EVENT_TIMELINE_API_ENABLED", True), patch(
@@ -88,6 +101,9 @@ def test_timeline_single_returns_event_with_updates():
     body = resp.json()
     assert body["event"]["canonical_title"] == "호르무즈 해협 긴장"
     assert len(body["updates"]) == 1 and body["updates"][0]["delta_summary"] == "유가 +4%"
+    # 내부 식별자는 화면뿐 아니라 wire 응답에도 실리지 않는다(Public* 스키마).
+    assert "source_refs" not in body["updates"][0]          # PublicEventUpdate
+    _assert_no_internal_event_ids(body["event"])            # PublicEvent (FK 제외)
 
 
 def test_timeline_single_404_when_not_found():

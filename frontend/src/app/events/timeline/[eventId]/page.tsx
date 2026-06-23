@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { api, ApiError } from "@/lib/api/client";
 import type { EventTimelineResponse } from "@/lib/api/types";
 import EventUpdateItem from "@/components/EventUpdateItem";
+import ErrorState from "@/components/ErrorState";
 
 export const metadata = { title: "사건 타임라인 상세 | Event Intelligence" };
 
@@ -24,7 +25,13 @@ export default async function EventTimelineDetailPage({
   } catch (e) {
     // flag off / 미매핑(held degenerate) / 없는 event → 404 → notFound.
     if (e instanceof ApiError && e.status === 404) notFound();
-    throw e;
+    // 그 외(backend 장애/네트워크)는 raw 메시지 노출 없이 일반 안내(R-EventTimelineRenderHardening).
+    return (
+      <ErrorState
+        title="타임라인 로드 실패"
+        message="타임라인을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."
+      />
+    );
   }
 
   const { event, updates } = data;
