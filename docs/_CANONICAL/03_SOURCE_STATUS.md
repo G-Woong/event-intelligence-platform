@@ -40,6 +40,10 @@
 - **헌법 3(역할별 연결) 보증**: search=expansion candidate(증거 승격 금지), community=hold(corroboration
   전 publish 금지)를 publication_policy 가 코드로 강제 — `EXPANSION_SEARCH`/`COMMUNITY_EARLY_SIGNAL` 은
   publication_policy 에 `never_direct_publish` 를 항상 포함(테스트로 잠금).
+  - ⚠️ **범위 한정(ADR#32, 2026-06-23):** 이 강제는 **경로 A(event_cards 발행)** 의 publication_policy 다.
+    **경로 B(Event 타임라인 / `event_resolver`)는 source_type 무관(signal 강도) 라우팅**이라 이 게이트를
+    거치지 않는다 — pure-community/structured cross-source 클러스터가 **발행 Event 를 만들 수 있다**(검증
+    재현: S5/S6/S7). 두 발행 경로의 게이트 불일치 → **R-SourceTypeFidelityGate**(미해소).
 
 ## 2. 비-excluded 4개 risk source 최종 상태 (Phase G-4)
 
