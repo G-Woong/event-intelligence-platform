@@ -51,6 +51,13 @@ async def resolve_and_apply_cluster(
     사이의 race 는 apply_routing 에서 흡수된다.
     """
     mapped = await get_cluster_event(session, cluster.cluster_id)
+    # source-type publish gate 입력(ADR#33): candidate.evidence 가 멤버별 source_type 을 보유
+    # (candidate_for 매퍼가 record_type→source_type 매핑해 채움). resolver 가 이로 직접 발행 가부 판정.
+    member_source_types = tuple(
+        e["source_type"]
+        for e in candidate.evidence
+        if isinstance(e, dict) and e.get("source_type")
+    )
     decision = resolve_routing(
         cluster_id=cluster.cluster_id,
         confidence=cluster.confidence,
@@ -58,6 +65,7 @@ async def resolve_and_apply_cluster(
         member_keys=tuple(cluster.duplicate_group),
         weak_only_members=tuple(cluster.weak_only_members),
         mapped_event_id=mapped,
+        member_source_types=member_source_types,
     )
     return await apply_routing(session, decision, candidate=candidate)
 

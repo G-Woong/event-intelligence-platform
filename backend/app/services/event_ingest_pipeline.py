@@ -44,6 +44,7 @@ from backend.app.services.event_resolver import (
     ACTION_APPEND,
     ACTION_CREATE,
     ACTION_HOLD,
+    ACTION_WITHHELD,
 )
 from backend.app.services.event_timeline_service import ApplyResult, ResolvedCandidate
 
@@ -108,6 +109,7 @@ class EventIngestSummary:
     appended: int = 0
     held: int = 0                 # action == HOLD (약신호 전체 보류)
     held_member_links: int = 0    # held_members 로 생성된 event_links(possible) 수(clique 미달 분리)
+    withheld_source_type: int = 0 # action == WITHHELD (source-type gate: pure non-publishable 미발행, ADR#33)
     failed: int = 0
     skipped_no_primary: int = 0
     singletons_dropped: int = 0   # 단일 소스 record(클러스터 미형성, cross_source_dedup 단일멤버 제외) 수
@@ -122,6 +124,7 @@ class EventIngestSummary:
             "appended": self.appended,
             "held": self.held,
             "held_member_links": self.held_member_links,
+            "withheld_source_type": self.withheld_source_type,
             "failed": self.failed,
             "skipped_no_primary": self.skipped_no_primary,
             "singletons_dropped": self.singletons_dropped,
@@ -234,6 +237,8 @@ def _tally(summary: EventIngestSummary, result: ApplyResult) -> None:
         summary.appended += 1
     elif result.action == ACTION_HOLD:
         summary.held += 1
+    elif result.action == ACTION_WITHHELD:
+        summary.withheld_source_type += 1
     summary.held_member_links += len(result.link_ids)
 
 

@@ -42,6 +42,7 @@ from backend.app.services.event_resolver import (
     ACTION_APPEND,
     ACTION_CREATE,
     ACTION_HOLD,
+    ACTION_WITHHELD,
     EventRoutingDecision,
 )
 
@@ -459,6 +460,12 @@ async def apply_routing(
     동시 CREATE 패배) rollback 으로 우리 orphan event 폐기 + 승자 event 로 append degrade → orphan 0.
     (실 동시 세션·SAVEPOINT 격리 입증은 live Postgres 필요 — 본 로직은 단위로 race 를 시뮬레이션해 검증.)
     """
+    if decision.action == ACTION_WITHHELD:
+        # source-type publish gate(ADR#33): pure community/search/structured 단독 cross-source 는 직접
+        # 발행하지 않는다 — DB 미접근(events/updates/map/links 0)·commit 없음·public timeline 미노출.
+        # idempotent: 미매핑 유지라 재실행도 동일 WITHHELD(영속 0).
+        return ApplyResult(action=ACTION_WITHHELD, event_id=None)
+
     result = ApplyResult(action=decision.action, event_id=decision.event_id)
 
     if decision.action == ACTION_CREATE:

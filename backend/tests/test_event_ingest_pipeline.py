@@ -357,6 +357,61 @@ async def test_transitive_weak_member_held_not_merged():
     assert len(s.updates) == 1                   # core 의 genesis 1행만(자동병합 0 — blog 미흡수)
 
 
+# ── source-type publish gate (ADR#33, R-SourceTypeFidelityGate) — ingest 통합 ───────
+@pytest.mark.asyncio
+async def test_gate_pure_community_cluster_withheld_not_published():
+    # pure-community cross-source(동일 canonical_url 강신호) → 발행 금지(WITHHELD), 영속 0.
+    recs = [
+        _rec(record_type="community_signal", source_id="hn", canonical_url="https://ex.com/p",
+             title_or_label="Show X", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="community_signal", source_id="reddit", canonical_url="https://ex.com/p",
+             title_or_label="X on ex.com", published_at_or_observed_at="2025-06-02"),
+    ]
+    s = _FakeSession()
+    summary = await ingest_records_to_events(s, recs, enabled=True)
+    assert summary.clusters_total == 1                       # 강신호 클러스터는 형성됨
+    assert summary.created == 0 and summary.withheld_source_type == 1
+    assert len(s.events) == 0 and len(s.updates) == 0 and len(s.cmap) == 0   # 영속 0(미발행·미매핑)
+
+
+@pytest.mark.asyncio
+async def test_gate_pure_structured_signal_key_withheld():
+    # structured 2종 동일 signal-key → 발행 금지(투자조언 경계 — 시장 신호 Event화 차단).
+    recs = [
+        _rec(record_type="structured_signal", source_id="coinbase",
+             body_state_or_signal="price_snapshot", title_or_label="BTC spot",
+             published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="structured_signal", source_id="binance",
+             body_state_or_signal="price_snapshot", title_or_label="BTC spot",
+             published_at_or_observed_at="2025-06-02"),
+    ]
+    s = _FakeSession()
+    summary = await ingest_records_to_events(s, recs, enabled=True)
+    assert summary.created == 0 and summary.withheld_source_type == 1
+    assert len(s.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_gate_official_plus_news_publishes_fidelity_preserved():
+    # official+news(동일 official_id) → 발행(publishable). evidence 에 official+article 보존(fidelity).
+    acc = "0001193125-26-000123"
+    recs = [
+        _rec(record_type="official_record", source_id="sec",
+             source_url_or_evidence=f"https://sec.gov/{acc}-index.htm",
+             title_or_label="Acme 8-K", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="article_candidate", source_id="reuters",
+             source_url_or_evidence=f"https://reuters.com/acme-{acc}",
+             canonical_url=f"https://reuters.com/acme-{acc}",
+             title_or_label="Acme deal per SEC filing", published_at_or_observed_at="2025-06-02"),
+    ]
+    s = _FakeSession()
+    summary = await ingest_records_to_events(s, recs, enabled=True)
+    assert summary.created == 1 and summary.withheld_source_type == 0
+    assert len(s.events) == 1
+    stypes = {e.get("source_type") for e in s.updates[0].evidence}
+    assert "official" in stypes and "article" in stypes      # source_type fidelity 보존
+
+
 # ── 4. 후보 단위 실패 격리 ────────────────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_failed_cluster_isolated_not_batch_abort():

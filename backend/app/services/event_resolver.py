@@ -20,13 +20,25 @@ _CONF_DUPLICATE = "duplicate"
 ACTION_APPEND = "APPEND"
 ACTION_CREATE = "CREATE"
 ACTION_HOLD = "HOLD"
+ACTION_WITHHELD = "WITHHELD"    # source-type gate: 직접 발행 금지(미영속·미노출). R-SourceTypeFidelityGate.
+
+# 직접 발행(Event primary) 가능 source_type. 나머지(community/search/signal 등)는 **단독 cross-source
+# 클러스터로 발행하지 않는다**(설계 never_direct_publish / signal_only_not_article_card; ADR#33).
+# 값 계약: event_ingest_pipeline._RECORD_TYPE_TO_SOURCE_TYPE 매핑 결과(official_record→"official",
+# article_candidate→"article"). ingestion 비의존 — 원시 문자열로 받는다.
+_PUBLISHABLE_SOURCE_TYPES = frozenset({"official", "article"})
+
+
+def _has_publishable(member_source_types: tuple[str, ...]) -> bool:
+    """클러스터에 직접 발행 가능한 멤버(official/article)가 하나라도 있으면 True."""
+    return any(st in _PUBLISHABLE_SOURCE_TYPES for st in member_source_types)
 
 
 @dataclass(frozen=True)
 class EventRoutingDecision:
     cluster_id: str
-    action: str                          # APPEND | CREATE | HOLD
-    event_id: Optional[str]              # APPEND/HOLD 대상(매핑된 event); CREATE는 None(신규 할당)
+    action: str                          # APPEND | CREATE | HOLD | WITHHELD
+    event_id: Optional[str]              # APPEND/HOLD 대상(매핑된 event); CREATE/WITHHELD는 None
     reason: str
     held_members: tuple[str, ...] = ()   # event_links(possible)로 분리 보류할 멤버 키(자동병합 금지)
 
@@ -39,10 +51,15 @@ def resolve_routing(
     member_keys: tuple[str, ...],
     weak_only_members: tuple[str, ...] = (),
     mapped_event_id: Optional[str] = None,
+    member_source_types: tuple[str, ...] = (),
 ) -> EventRoutingDecision:
     """클러스터 1개 → 라우팅 결정.
 
     mapped_event_id = cluster_event_map.get(cluster_id) 결과(없으면 None = 미매핑).
+    member_source_types = 멤버 source_type 목록(official/article/community/search/signal). **source-type
+    publish gate**(ADR#33): 미매핑 신규 발행(CREATE) 시 publishable primary(official/article)가 하나도
+    없으면 WITHHELD(미발행) — pure community/search/structured 단독 cross-source 직접 발행 차단. 미제공(())
+    이면 게이트 비활성(하위호환). 매핑된 event 의 APPEND/HOLD 는 게이트 미적용(community 는 corroborator).
     결정적(같은 입력 → 같은 결정) — 재실행/감사 가능.
     """
     is_strong = confidence == _CONF_DUPLICATE
@@ -62,6 +79,16 @@ def resolve_routing(
         # 약신호 → 자동병합 금지, 전체를 possible_link 보류.
         return EventRoutingDecision(
             cluster_id, ACTION_HOLD, mapped_event_id, "weak_signal_possible_link", tuple(member_keys)
+        )
+
+    # source-type publish gate(ADR#33, R-SourceTypeFidelityGate): 미매핑 신규 발행인데 publishable
+    # primary(official/article)가 하나도 없으면(pure community/search/structured) **직접 발행 금지** →
+    # WITHHELD(미영속·public timeline 미노출). 설계 never_direct_publish / signal_only_not_article_card.
+    # member_source_types 미제공(레거시 호출)이면 게이트 비활성(하위호환). 매핑된 event 의 APPEND 는
+    # 위에서 이미 처리(community 가 기존 발행 event 에 corroborator 로 append 하는 것은 허용).
+    if member_source_types and not _has_publishable(member_source_types):
+        return EventRoutingDecision(
+            cluster_id, ACTION_WITHHELD, None, "non_publishable_source_type", tuple(member_keys)
         )
 
     # 미매핑 → 신규 Event 생성(FSD origin). clique 미달이면 약신호-only 멤버는 HOLD.

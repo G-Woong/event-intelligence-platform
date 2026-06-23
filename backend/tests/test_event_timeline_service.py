@@ -33,6 +33,7 @@ from backend.app.services.event_resolver import (
     ACTION_APPEND,
     ACTION_CREATE,
     ACTION_HOLD,
+    ACTION_WITHHELD,
     EventRoutingDecision,
 )
 
@@ -355,6 +356,19 @@ async def test_apply_routing_create_makes_event_and_maps_cluster():
     m_append.assert_awaited_once_with(session, event_id="evt-new", candidate=_cand_eq(), commit=False)
     m_hold.assert_not_awaited()
     session.commit.assert_awaited_once()  # 단일 원자 커밋.
+
+
+@pytest.mark.asyncio
+async def test_apply_routing_withheld_no_persistence():
+    # ADR#33 source-type gate: WITHHELD 는 DB 미접근·미커밋·미영속(execute/commit/rollback 0).
+    decision = EventRoutingDecision("cw", ACTION_WITHHELD, None, "non_publishable_source_type", ())
+    session = AsyncMock()
+    res = await svc.apply_routing(session, decision, candidate=_cand())
+    assert isinstance(res, ApplyResult)
+    assert res.action == ACTION_WITHHELD and res.event_id is None
+    session.execute.assert_not_awaited()
+    session.commit.assert_not_awaited()
+    session.rollback.assert_not_awaited()
 
 
 @pytest.mark.asyncio
