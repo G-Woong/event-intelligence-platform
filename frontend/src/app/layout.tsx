@@ -23,6 +23,9 @@ export default function RootLayout({
             <Link href="/events" className="text-sm text-gray-300 hover:text-white transition-colors">
               이벤트
             </Link>
+            <Link href="/events/timeline" className="text-sm text-gray-300 hover:text-white transition-colors">
+              타임라인
+            </Link>
             <Link href="/search" className="text-sm text-gray-300 hover:text-white transition-colors">
               검색
             </Link>

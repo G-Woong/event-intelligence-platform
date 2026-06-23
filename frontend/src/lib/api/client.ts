@@ -2,6 +2,8 @@ import { API_BASE_URL } from "@/lib/config";
 import type {
   FinalEventCard,
   EventSearchResponse,
+  Event,
+  EventTimelineResponse,
   Theme,
   Sector,
   HealthResponse,
@@ -33,12 +35,29 @@ export function buildSearchUrl(q: string): string {
   return `/api/events/search?${params.toString()}`;
 }
 
+export function buildTimelineUrl(limit = 20, offset = 0): string {
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return `/api/events/timeline?${params.toString()}`;
+}
+
 export const api = {
   health: () => request<HealthResponse>("/health"),
 
   listEvents: () => request<FinalEventCard[]>("/api/events"),
 
   getEvent: (id: string) => request<FinalEventCard>(`/api/events/${id}`),
+
+  // Event 타임라인 read API (D-2a backend / D-2b frontend). flag off → 404 (호출측이 graceful 처리).
+  listEventTimeline: (limit = 20, offset = 0) =>
+    request<Event[]>(buildTimelineUrl(limit, offset)),
+
+  getEventTimeline: (id: string) =>
+    request<EventTimelineResponse>(
+      `/api/events/timeline/${encodeURIComponent(id)}`,
+    ),
 
   search: (q: string) =>
     request<EventSearchResponse>(buildSearchUrl(q)),

@@ -4,49 +4,49 @@
 > 사실 원본(자동): `.harness/machine_status.json` · 완료 증거: `.harness/closeout_stamp.json` · 서술: 이 파일(에이전트).
 
 ## 🟢 한눈에 (비개발자용 3줄)
-- **지금 무엇을 했나:** ① D-1(운영 결선)을 커밋(`af012c3`)으로 안정화하고, ② **Event 타임라인을 웹 API로 처음 노출(D-2a)**했습니다. 그동안 DB·D-1로 "같은 사건을 하나의 타임라인으로 쌓을" 수 있었지만 **웹에서 조회할 API가 없었는데**, 이제 `/api/events/timeline`로 사건 목록과 사건별 업데이트(타임라인)를 읽을 수 있습니다(피처 플래그, 기본 꺼짐).
-- **이번 턴에 실제로 끝낸 것:** D-2a — `/api/events/timeline`(사건 목록)·`/api/events/timeline/{id}`(사건+업데이트) **additive read endpoint**(기존 event_cards API 무변경) + 매핑 안 된 저품질 잔재(held degenerate)를 목록·단건 양쪽에서 제외 + read 전용·LLM/네트워크 0. **측정 게이트 backend 241 + ingestion 1331 = 1572 green**(회귀 0). 7-감사단(적대·법무가 지적한 "단건 우회로 held degenerate 노출"을 매핑 게이트(get_public_event)로 차단, "페이지네이션 중복/누락"을 결정적 정렬로 수정).
-- **지금 막힌 것:** 없음(BLOCKED 0). 단 **frontend는 아직 Event 타임라인을 렌더하지 않습니다** — 화면은 여전히 기존 카드(event_cards)를 보여줍니다. 즉 "웹 API로 노출하는 능력"은 확보했으나 "사용자 화면에 타임라인 표시"는 D-2b(frontend), "Docker로 쌓이는 모습 데모"는 D-2c 이월. 데이터가 없으면 목록은 빈 배열(D-1 runner 실행/seed 필요). pre-existing embedding 환경 실패 1(아래, 무관).
+- **지금 무엇을 했나:** ① D-2a(Event 타임라인 read API)를 커밋(`fc0efb9`)으로 안정화하고, ② **그 API를 웹 화면(frontend)에서 소비하는 D-2b를 구현**했습니다. 이제 코드 상으론 `/events/timeline` 페이지가 사건 목록과 사건별 업데이트(타임라인)를 그릴 수 있고, 기존 카드 화면(`/events`)은 그대로입니다.
+- **이번 턴에 실제로 끝낸 것:** D-2b — Next.js `/events/timeline`(목록)·`/events/timeline/[id]`(상세) 페이지 + 컴포넌트 3종 + API 타입/호출 + nav "타임라인" 1줄. **안전 렌더**(출처 링크는 http/https만·`rel=noopener noreferrer nofollow`, 허용된 6개 메타키만 표시, 내부 식별자·본문 미노출) + flag 꺼짐(404)·데이터 없음·에러 상태를 graceful 처리. **기존 event_cards UI 무변경**(회귀 0). 측정: **tsc 0 · node:test 12 pass · next lint 0**. 4-감사단(code-review가 잡은 도메인·태그 중복 React key 2건 → `new Set` dedup 수정; adversarial가 "웹에서 본다" 과장 지적 → 아래처럼 정직 정정).
+- **지금 막힌 것:** 없음(BLOCKED 0). 단 **현재 사용자는 빈 화면을 봅니다** — backend flag `EVENT_TIMELINE_API_ENABLED`가 기본 꺼짐(404)이고 dev DB에 Event 데이터도 없기 때문입니다. 즉 "타임라인을 *그릴 수 있는 능력*"은 확보했으나 "사용자에게 실제로 보임"은 **(a) flag 켜기 + (b) D-2c 데이터 결선(매핑된 실 Event)** 두 전제가 필요합니다. 또한 현재 업데이트 본문(delta_summary)이 `"0.83:strong_clique"` 같은 내부 라벨이라, 데이터가 있어도 자연어 서술이 아닙니다(상류 결선 책임, 별도).
 
 ## 📋 자동 수집 사실 (machine_status.json)
-- HEAD `af012c3`(D-1 커밋) 위 **미커밋 D-2a 변경 = code 7(신규 1 + 수정 6) + docs 7**. (machine_status 스냅샷은 이전 턴이라 stale — Stop 훅이 재스캔.)
-- 신규: `backend/tests/test_event_timeline_api.py`. 수정: `backend/app/api/events.py`·`event_timeline_service.py`(list_events/get_public_event)·`schemas/events.py`(EventTimelineResponse)·`core/config.py`(EVENT_TIMELINE_API_ENABLED)·`.env.example`·`test_event_resolution_live_pg.py`(+live-PG 3).
-- 열린 RISK 28: **신규 R-EventTimelineApiScale**(read API 규모/페이지네이션, LOW·완화) · R-EventSinkDbTarget·R-EventTimelineS2Hardening·R-EventModelMigration·R-FalseMerge·R-ExpansionPartialFailure 유지(미종결).
+- HEAD `fc0efb9`(D-2a 커밋) 위 **미커밋 D-2b 변경 = frontend code 9 + docs 8**. (machine_status 스냅샷은 이전 턴 기준 stale — Stop 훅이 재스캔.)
+- 신규(frontend): `app/events/timeline/{page.tsx,[eventId]/page.tsx}` · `components/{EventTimelineCard,EventTimelineList,EventUpdateItem}.tsx` · `lib/api/__tests__/timeline.test.mjs`. 수정: `lib/api/{types.ts,client.ts}` · `app/layout.tsx` · `package.json`.
+- 열린 RISK 29: **신규 R-EventTimelineRenderHardening**(상세 에러표현·delta_summary 본문품질·source_refs wire 노출, LOW) · 기존 R-EventTimelineApiScale·R-EventSinkDbTarget·R-EventTimelineS2Hardening·R-EventModelMigration·R-FalseMerge·R-ExpansionPartialFailure 유지.
 
-## ✅ 이번 턴에 달성한 것 (D-1 커밋 + D-2a read API)
-- **D-1 커밋(`af012c3`):** code 6 + docs 8, secret PASS·docs_lifecycle green·closeout unresolved 0 확인 후 커밋. working tree clean(push 안 함).
-- **docs/2_ROADMAP 재판정 + 코드 실측:** Event 타임라인은 DB·Pydantic 스키마 준비됨·D-1로 영속가능했으나 **API endpoint 0**(기존 `/api/events`는 event_cards 서빙). docker-compose 풀스택(backend+frontend+scheduler, mock 기본)·주기 스케줄러 패턴(`recovery-scheduler`)은 이미 존재 → 갭은 "Event endpoint+렌더+데이터"이지 인프라 아님. **D-1.5 운영 보강(R-EventSinkDbTarget 가드·실 production-validation·test mock)은 Docker 데모(격리 DB·mock·synthetic seed)에서 blocker 아님** → 사용자가 D-2a(read API) 선택.
-- **불일치 보고:** ① `/api/events`가 event_cards라 "Event 경유"는 신규 additive endpoint로(기존 수정 시 frontend 깨짐). ② 로드맵 "Celery beat"는 미존재(실 패턴=interval scheduler). ③ docker 풀스택·mock 기본 이미 존재. ④ Event/EventUpdate Pydantic 스키마 이미 존재.
-- **D-2a read API(ADR#24):** `EVENT_TIMELINE_API_ENABLED`(config, 기본 false, write용과 분리) + `EventTimelineResponse`(event+updates) + `event_timeline_service.list_events`(매핑된 실 주제만, (last_update,id) desc 결정적 정렬)·`get_public_event`(단건도 매핑 게이트) + `/api/events/timeline`·`/timeline/{id}` endpoint(**`/{event_id}` 보다 먼저 선언**=라우트 우선순위, flag off→404). 기존 event_cards API/frontend **무변경**.
-- **공개 노출 안전:** held degenerate(canonical_title=raw member key, cluster_event_map 미매핑)를 **목록·단건 양쪽에서 제외**(get_public_event 매핑 게이트 — event_cards 단건 published 게이트와 대칭, R-MockCard). evidence/source_refs는 write 시 sanitize됨(read 안전). read-only·결정론(LLM/network 0).
-- **7-감사단:** architecture **CONDITIONAL**(0 blocking; 라우트 우선순위 SOUND·held 제외 정확·flag 분리 타당) · adversarial **0 blocking**(단건 우회→매핑 게이트로 해소·"웹에서 본다" 과장→"API 노출, UI 미배선" 정정) · evidence/legal **CONDITIONAL→APPROVED**(단건 매핑 게이트 추가로 R-MockCard 대칭 충족; 전문/PII 0·투자조언 0·재배포 아님) · code **3건→보강**(pagination 비결정성→(last_update,id) tie-breaker·dead status param 제거·3쿼리 유지) · pipeline/test/risk_closure 통과.
-- **검증:** backend **241**(+9 D-2a: API 6 + live-PG 3) · ingestion **1331**(무변경) = **1572 green**(회귀 0) · live-PG D-2a(매핑 노출·held 제외·단건 게이트) PASS · 1 pre-existing embedding 환경 실패(아래) · 4 skipped.
+## ✅ 이번 턴에 달성한 것 (D-2a 커밋 + D-2b frontend 렌더)
+- **D-2a 커밋(`fc0efb9`):** code 7 + docs 8, secret PASS·closeout EXACT MATCH(17 sig)·docs_lifecycle conflicts 0·unresolved 0 확인 후 커밋(15 files +326/−41). working tree clean(push 안 함).
+- **docs/2_ROADMAP 재판정 + frontend/docker 실측(병렬 Explore):** 로드맵 §4 임계경로 + _CANONICAL 모두 **D-2b 를 다음으로 지시**. D-2c(Docker 데모)는 frontend가 timeline UI를 안 그리므로 **D-2b 선행 필요**. D-1.5(운영 보강)는 compose 격리 컨테이너 DB(`event_intel`)·mock 기본·`_target_db_label`·APP_ENV 가드가 모두 존재해 **데모 blocker 아님**. **문서 불일치 0**(로드맵이 이미 D-2b 지시).
+- **D-2b frontend 렌더(ADR#25, additive):** 신규 라우트 `/events/timeline`(목록)·`/events/timeline/[eventId]`(상세) + `EventTimelineCard`/`EventTimelineList`/`EventUpdateItem` + `lib/api` 타입(Event/EventUpdate/EventUpdateEvidence/EventTimelineResponse, backend Pydantic 1:1)·메서드(`buildTimelineUrl`/`listEventTimeline`/`getEventTimeline`) + nav 1줄. 기존 `/events`(event_cards)·EventCard·EventList **무변경**.
+- **안전 렌더:** evidence url 은 `isSafeHttpUrl`(http/https 만 링크화 → javascript:/data: 스킴주입 차단) + `rel="noopener noreferrer nofollow"`·`target="_blank"`. allowlist 6키(url/source_type/role/confidence/relation/observed_at)만 렌더, **source_refs·heat·primary_entity_ids·snapshot_card_id 미렌더**(내부 식별자/본문/PII 미노출). web read path 에 **LLM/network 0**.
+- **graceful 상태:** flag off → 목록은 "아직 활성화되지 않았습니다" 빈상태(에러 아님), 상세는 `notFound()`. 데이터 없음 → 빈 목록 안내. updates 0 → "아직 업데이트가 없습니다".
+- **4-감사단:** architecture **SOUND**(0 blocking; 라우트 비충돌(정적 `timeline`>동적 `[id]`)·타입 1:1·flag-off 일관) · legal **APPROVED**(전문/PII 0·링크 안전·source_refs 미노출·정보제공 톤·held 게이트 의존 정합) · adversarial **코드 0 blocking**("웹에서 본다" 과장→"렌더 능력, 실 노출은 flag+데이터 전제"로 정정; delta_summary 디버그라벨·상세 에러표현 지적→R-EventTimelineRenderHardening) · code-review **2 CONFIRMED→수정**(`[...domains,...tags]` 를 `key={l}` 로 렌더 시 도메인·태그 교집합에서 React 중복 키 → `new Set` dedup, 목록·상세 양쪽).
+- **검증:** frontend **tsc --noEmit 0** · **node:test 12 pass**(buildTimelineUrl 기본/명시 페이지네이션 · isSafeHttpUrl http/https 허용·javascript:/data:/빈값 거부) · **next lint 0 warnings**. backend는 D-2b가 손대지 않음(frontend 전용) → backend 241 + ingestion 1331 = 1572 green 유지(회귀 0).
 
 ## ❌ 달성하지 못한 것 & 왜
-- **frontend Event 타임라인 미렌더(D-2b 이월):** 이번엔 backend read API endpoint만 — frontend(`frontend/src/app/events/`)는 아직 event_cards(FinalEventCard)를 렌더, timeline endpoint 미소비. "사용자 화면 표시"는 다음.
-- **Docker 데모 미실행(D-2c 이월):** 풀스택 compose는 있으나 Event 데이터 흐름(seed/scheduler 결선)+Event 렌더 미결선. "주기적으로 Event가 쌓이는 웹" 가시화는 다음.
-- **데이터 없으면 빈 목록:** dev DB에 Event가 없으면 `/timeline`은 []. D-1 runner(`--event-resolution`) 실행 또는 seed 필요(운영 자동 가동=주기 트리거는 Phase 2).
-- **주기 auto-trigger·실 production-validation·event_cards 자동연결·heat(S2.5)·LLM 보조:** 이월(deterministic 토대·웹 가시화 우선).
+- **현재 사용자는 빈 화면(정직):** `EVENT_TIMELINE_API_ENABLED` 기본 off(404) + dev DB Event 0 → `/events/timeline`은 빈 상태만 표시. 실제 노출은 flag on + D-2c 데이터 결선 전제. "렌더 *능력* 확보"이지 "사용자 노출 완료"가 아님.
+- **delta_summary 자연어화 미결(D-2c+ 상류):** 현재 결선(`event_ingest_pipeline`)이 `"{confidence}:{reason}"` 디버그 라벨을 delta_summary 에 넣음 → 데이터가 있어도 타임라인 본문이 사용자용 서술이 아님(상류 생성 책임).
+- **Docker 데모 미실행(D-2c 이월):** 풀스택 compose는 있으나 Event 데이터 흐름(seed/scheduler 결선)+flag on+브라우저 E2E 미실행. "주기적으로 Event가 쌓이는 웹" 가시화는 다음.
+- **상세 페이지 비-404 에러 표현(R-EventTimelineRenderHardening):** 기존 `/events/[eventId]` 패턴 답습(throw→error.tsx) — backend 장애 시 raw 메시지 노출 가능. 전역 `error.tsx` 영향이라 별도(이번 범위 밖).
+- **주기 auto-trigger·실 production-validation·event_cards 자동연결·heat(S2.5)·페이지네이션 UI:** 이월.
 
 ## 🚧 닫을 수 없는 문제 (BLOCKED/UNKNOWN)
-- BLOCKED 0. UNKNOWN: Event 타임라인 대규모 응답/IN-서브쿼리 plan(R-EventTimelineApiScale, live-PG EXPLAIN 후)·실 수집 데이터 Event 라우팅 정확도·주기 자동 가동 안정성.
-- **pre-existing embedding 실패(D-2a 무관):** `test_get_embedding_client_singleton` 1 FAIL — `monkeypatch` 없이 실 `.env`(EMBEDDING_PROVIDER=openai)로 실 provider 인스턴스화(테스트 격리 결함). D-2a read API는 deterministic·network 0. 차기: conftest LLM/EMBEDDING=mock 강제.
+- BLOCKED 0. UNKNOWN: 실 데이터 노출 시 타임라인 가독성(delta_summary 자연어화 후 재평가)·브라우저 E2E 실거동(compose 실행 전까지 미검증, tsc/lint/test 는 통과)·대규모 응답 plan(R-EventTimelineApiScale).
+- **pre-existing embedding 실패(D-2b 무관):** `test_get_embedding_client_singleton` 1 FAIL(실 `.env` provider 결합) — backend 테스트 격리 결함, Event/타임라인 경로와 무관. 차기: conftest LLM/EMBEDDING=mock 강제.
 
 ## ⚠️ 이번 턴 종결/갱신 RISK
-- **R-EventTimelineApiScale(신규, LOW):** read API 규모 잔여(단건 updates 무제한 로드·IN-서브쿼리 plan·deep offset). **완화:** (last_update,id) tie-breaker·limit le=100·flag off-by-default. **잔여:** 단건 updates 페이지네이션·IN-서브쿼리 EXPLAIN.
-- **R-EventSinkDbTarget·R-EventTimelineS2Hardening·R-EventModelMigration·R-FalseMerge·R-ExpansionPartialFailure:** D-2a가 손대지 않음 → 유지. (event_cards 자동연결·약신호 split·query_generator 별개.)
-- 신규 1(R-EventTimelineApiScale) · 완전 종결 0 · GDELT/DcToS/ContentTypeGate 무변경.
+- **R-EventTimelineRenderHardening(신규, LOW):** D-2b 렌더 잔여 — ① 상세 비-404 에러 표현(목록과 비대칭·기존 패턴 답습) ② delta_summary 디버그 라벨(상류) ③ source_refs read API 응답 wire 노출(화면 미렌더). **완화:** 링크 스킴 게이트·allowlist 6키·source_refs 미렌더·ApiError 마스킹. **잔여:** 상세 에러 통일·delta_summary 자연어화·public 스키마 source_refs 제외 결정.
+- **R-EventTimelineApiScale·R-EventSinkDbTarget·R-EventTimelineS2Hardening·R-EventModelMigration·R-FalseMerge·R-ExpansionPartialFailure:** D-2b가 손대지 않음 → 유지.
+- 신규 1(R-EventTimelineRenderHardening) · 완전 종결 0 · GDELT/DcToS/ContentTypeGate 무변경.
 
 ## 👉 다음 할 일
-1. **[D-2b frontend Event 타임라인]** `frontend` 에서 `/api/events/timeline` 소비 → Event 목록·사건별 업데이트(타임라인) 렌더. 기존 event_cards UI 병행. webapp-testing(Playwright) E2E.
-2. **[D-2c Docker 데모]** Event seed 또는 scheduler(interval) 결선 → `docker compose up` → 브라우저로 "Event가 쌓이고 업데이트되는 웹" 확인.
-3. **[보강]** 단건 updates 페이지네이션(R-EventTimelineApiScale) · 주기 auto-trigger(Phase 2 interval scheduler) · event_cards↔Event 자동연결 · R-EventSinkDbTarget 구조 가드.
-4. (이월) heat 4신호(S2.5) · merge_score(S4) · LLM 보조(S5/S6) · 3엔진 색인 정합.
+1. **[D-2c Docker 데모]** Event seed 또는 scheduler(interval) 결선 → `docker compose up`(+`EVENT_TIMELINE_API_ENABLED=true`·`EVENT_RESOLUTION_ENABLED=true`) → 브라우저로 "Event가 쌓이고 업데이트되는 웹" 확인(webapp-testing/Playwright E2E). **선행:** delta_summary 자연어 서술 결선(가독성).
+2. **[보강]** 상세 비-404 에러 표현 통일(R-EventTimelineRenderHardening) · 단건 updates 페이지네이션(R-EventTimelineApiScale) · 주기 auto-trigger(Phase 2 interval scheduler) · event_cards↔Event 자동연결.
+3. (이월) heat 4신호(S2.5) · merge_score(S4) · LLM 보조(S5/S6) · 3엔진 색인 정합.
 
 ## 📁 근거 (이번 턴 핵심)
-- 코드: `backend/app/api/events.py`(timeline endpoint) · `backend/app/services/event_timeline_service.py`(list_events/get_public_event) · `backend/app/schemas/events.py`(EventTimelineResponse) · `backend/app/core/config.py`(EVENT_TIMELINE_API_ENABLED).
-- 테스트: `backend/tests/test_event_timeline_api.py`(6: flag off 404·on 목록(라우트 우선순위)·단건 event+updates·없는 event 404·레거시 무영향) · `test_event_resolution_live_pg.py`(+3 live-PG: 매핑 노출·held degenerate 제외·단건 매핑 게이트).
-- 문서: `_DECISIONS/2026-06.md`(ADR#24) · `_RISK/RISK_REGISTER.md`(R-EventTimelineApiScale) · EVENT_SCHEMA·_CANONICAL/02·2_ROADMAP/{00,15,19}.
+- 코드(frontend): `app/events/timeline/{page.tsx,[eventId]/page.tsx}` · `components/{EventTimelineCard,EventTimelineList,EventUpdateItem}.tsx` · `lib/api/{types.ts,client.ts}`(Event/EventUpdate/EventTimelineResponse + listEventTimeline/getEventTimeline) · `app/layout.tsx`(nav).
+- 테스트: `lib/api/__tests__/timeline.test.mjs`(buildTimelineUrl·isSafeHttpUrl 순수검증, 4 case) + `package.json` test 등록.
+- 문서: `_DECISIONS/2026-06.md`(ADR#25) · `_RISK/RISK_REGISTER.md`(R-EventTimelineRenderHardening) · 2_ROADMAP/{00,15,19} · EVENT_SCHEMA · _CANONICAL/02.
 
 ---
-_as_of: 2026-06-23 · D-2a Event 타임라인 read API — `/api/events/timeline`(list[Event], 매핑된 실 주제만)·`/timeline/{id}`(EventTimelineResponse=event+updates) additive endpoint(`EVENT_TIMELINE_API_ENABLED` flag 기본 off→404, `/{event_id}` 앞 선언=라우트 우선순위, held degenerate 목록·단건 양쪽 제외=R-MockCard 대칭, read-only·결정론). 기존 event_cards API/frontend **무변경**. 측정 게이트 backend 241 + ingestion 1331 = **1572 green**(회귀 0). 7-감사단(legal CONDITIONAL: 단건 우회→get_public_event 매핑 게이트로 APPROVED; code: pagination 결정적 정렬·dead param 제거). **잔여: frontend Event 렌더(D-2b)·Docker 데모(D-2c)·주기 auto-trigger·단건 updates 페이지네이션·event_cards↔Event 자동연결.** D-1 커밋 `af012c3`. D-2a 미커밋(커밋 지시 대기). pre-existing embedding 실패 1(무관)_
+_as_of: 2026-06-23 · D-2b Event 타임라인 frontend 렌더 — Next.js `/events/timeline`(목록 list[Event])·`/events/timeline/[id]`(상세 event+updates) page+컴포넌트(EventTimelineCard/List/EventUpdateItem) + lib/api 타입·메서드 + nav 1줄. 안전 evidence 렌더(url http/https 게이트+rel, allowlist 6키, source_refs 미렌더). flag off→graceful 빈상태/notFound. 기존 event_cards UI **무변경**(회귀 0). 측정 tsc 0·node:test 12·next lint 0. 4-감사단(code-review: 도메인·태그 중복 React key→`new Set` dedup; adversarial: "웹에서 본다" 과장→"렌더 능력, 실 노출은 flag on+D-2c 데이터 전제"로 정정). **현재 빈 화면**(flag 기본 off+dev DB Event 0); delta_summary 자연어화는 상류 잔여. D-2a 커밋 `fc0efb9`. D-2b 미커밋(커밋 지시 대기). pre-existing embedding 실패 1(무관)_
