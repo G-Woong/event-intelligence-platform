@@ -487,6 +487,66 @@ def test_primary_authority_news_news_tie_keeps_first():
     assert cand.canonical_title == "AP headline"                 # tie → members[0](ap) 유지
 
 
+# ── held-publishable 이중등장 제거 (ADR#35) ────────────────────────────────────────
+@pytest.mark.asyncio
+async def test_held_dedup_authority_primary_excluded_from_held():
+    # authority primary(official)가 weak_only(held)인 cluster: community 2(강신호 core via official_id)
+    # + official 1(약신호 title-link). primary-authority 가 official 을 대표로 세우되, official 이
+    # held degenerate 로 **이중 등장하지 않는다**(데이터 정합).
+    acc = "0001193125-26-000555"
+    recs = [
+        _rec(record_type="community_signal", source_id="hn",
+             source_url_or_evidence=f"https://hn.example.com/{acc}",
+             title_or_label="Cloud outage hits region", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="community_signal", source_id="reddit",
+             source_url_or_evidence=f"https://reddit.example.com/{acc}",
+             title_or_label="Cloud outage hits region", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="official_record", source_id="sec",
+             source_url_or_evidence="https://sec.gov/unrelated-doc",
+             title_or_label="Cloud outage hits region", published_at_or_observed_at="2025-06-02"),
+    ]
+    s = _FakeSession()
+    summary = await ingest_records_to_events(s, recs, enabled=True)
+    assert summary.created == 1 and summary.withheld_source_type == 0
+    assert summary.held_member_links == 0          # official(대표)은 held 제외 → held degenerate 0
+    assert len(s.events) == 1                       # core Event 만(held degenerate 없음 — 이중등장 차단)
+    rel = {e["source_type"]: e["relation"] for e in s.updates[0].evidence}
+    assert rel.get("official") == "primary"         # 대표는 official(authority), evidence 보존
+
+
+@pytest.mark.asyncio
+async def test_held_dedup_keeps_legitimate_corroborator():
+    # 과도 제거 방지: news primary + community weak(다른 source) → community 는 held 유지(대표 아님).
+    recs = [
+        _rec(record_type="article_candidate", source_id="reuters",
+             canonical_url="https://reuters.com/outage",
+             title_or_label="Major outage hits cloud provider", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="community_signal", source_id="hn",
+             canonical_url="https://news.ycombinator.com/x",
+             title_or_label="Major outage hits cloud provider", published_at_or_observed_at="2025-06-02"),
+    ]
+    s = _FakeSession()
+    summary = await ingest_records_to_events(s, recs, enabled=True)
+    assert summary.created == 1
+    assert summary.held_member_links == 1          # community(대표 아님) held 유지(corroborator 보존)
+
+
+@pytest.mark.asyncio
+async def test_gate_unknown_record_type_fail_closed_withheld():
+    # ADR#35 fail-closed: 미지 record_type(→source_type "rss", non-publishable) 단독 cross-source → WITHHELD.
+    recs = [
+        _rec(record_type="weird_unknown_type", source_id="x", canonical_url="https://ex.com/u1",
+             title_or_label="Mystery event today", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="weird_unknown_type", source_id="y", canonical_url="https://ex.com/u2",
+             title_or_label="Mystery event today", published_at_or_observed_at="2025-06-02"),
+    ]
+    s = _FakeSession()
+    summary = await ingest_records_to_events(s, recs, enabled=True)
+    assert summary.clusters_total == 1                       # 약신호 클러스터는 형성
+    assert summary.created == 0 and summary.withheld_source_type == 1   # 미지 → 발행 차단
+    assert len(s.events) == 0
+
+
 # ── 4. 후보 단위 실패 격리 ────────────────────────────────────────────────────────
 @pytest.mark.asyncio
 async def test_failed_cluster_isolated_not_batch_abort():

@@ -79,6 +79,10 @@ class ResolvedCandidate:
     added_domains: tuple[str, ...] = ()
     source_refs: tuple[str, ...] = ()
     heat_delta: float = 0.0
+    # primary-authority 가 선정한 대표 멤버 키(ADR#35). apply_routing 이 held_members 에서 이 키를
+    # 제외해 **대표 record 가 held degenerate 로 이중 등장하는 것을 차단**(데이터 정합). None=미설정(레거시
+    # candidate; 제외 없음 — 하위호환).
+    primary_member_key: Optional[str] = None
 
 
 @dataclass
@@ -509,6 +513,11 @@ async def apply_routing(
     if decision.held_members and primary_id is not None:
         held_obs = _ensure_aware(held_observed_at or candidate.observed_at)
         for member_key in decision.held_members:
+            # primary-authority(ADR#35): candidate 대표로 선정된 멤버는 held degenerate 로 중복 영속하지
+            # 않는다 — 같은 record 가 대표 evidence ↔ held degenerate 로 DB 이중 등장하는 것을 차단(데이터
+            # 정합). 대표 외 약신호 corroborator 만 held(정당한 다른-출처 보류는 유지). 키 정확 일치만 제외.
+            if candidate.primary_member_key is not None and member_key == candidate.primary_member_key:
+                continue
             held_event_id = await create_event(
                 session,
                 candidate=ResolvedCandidate(

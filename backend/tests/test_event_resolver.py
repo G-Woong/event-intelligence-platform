@@ -46,6 +46,7 @@ def test_unmapped_strong_clique_creates():
     d = resolve_routing(
         cluster_id="c4", confidence="duplicate", clique_ok=True,
         member_keys=("a", "b"), mapped_event_id=None,
+        member_source_types=("article", "article"),
     )
     assert d.action == ACTION_CREATE
     assert d.event_id is None
@@ -56,6 +57,7 @@ def test_unmapped_strong_non_clique_creates_core_holds_weak():
     d = resolve_routing(
         cluster_id="c5", confidence="duplicate", clique_ok=False,
         member_keys=("a", "b", "c"), weak_only_members=("c",), mapped_event_id=None,
+        member_source_types=("official", "article", "community"),
     )
     assert d.action == ACTION_CREATE
     assert d.held_members == ("c",)
@@ -65,6 +67,7 @@ def test_unmapped_weak_creates_low_confidence():
     d = resolve_routing(
         cluster_id="c6", confidence="possible_duplicate", clique_ok=False,
         member_keys=("a", "b"), weak_only_members=("a", "b"), mapped_event_id=None,
+        member_source_types=("article", "article"),
     )
     assert d.action == ACTION_CREATE
     assert d.reason == "new_event_low_confidence"
@@ -167,11 +170,21 @@ def test_gate_news_plus_community_publishes_community_held():
     assert d.held_members == ("b",)
 
 
-def test_gate_inactive_when_source_types_empty():
-    # 레거시 호출(member_source_types 미제공) → 게이트 비활성(하위호환).
+def test_gate_fail_closed_when_source_types_empty():
+    # ADR#35 fail-closed: member_source_types 미제공/빈값 → publishable 0 → WITHHELD(조용한 발행 우회 차단).
     d = resolve_routing(
         cluster_id="g9", confidence="duplicate", clique_ok=True,
         member_keys=("a", "b"), mapped_event_id=None,
+    )
+    assert d.action == ACTION_WITHHELD
+
+
+def test_gate_mixed_official_unknown_publishes():
+    # mixed: official + 미지("rss") → official 이 publishable 이라 발행(unknown 은 supporting/낮은 authority).
+    d = resolve_routing(
+        cluster_id="g11", confidence="duplicate", clique_ok=True,
+        member_keys=("a", "b"), mapped_event_id=None,
+        member_source_types=("official", "rss"),
     )
     assert d.action == ACTION_CREATE
 

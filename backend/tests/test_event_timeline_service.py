@@ -372,6 +372,27 @@ async def test_apply_routing_withheld_no_persistence():
 
 
 @pytest.mark.asyncio
+async def test_apply_routing_excludes_primary_from_held():
+    # ADR#35: candidate.primary_member_key 가 held_members 에 있으면 held degenerate 로 만들지 않는다
+    # (대표 record 의 이중 등장 차단). 비-대표 held 멤버만 degenerate + possible_link.
+    decision = EventRoutingDecision(
+        "c", ACTION_CREATE, None, "new_event_strong_core_weak_hold", ("m-primary", "m-other")
+    )
+    cand = _cand(primary_member_key="m-primary")
+    with patch.object(svc, "get_cluster_event", new=AsyncMock(return_value=None)), \
+         patch.object(svc, "create_event", new=AsyncMock(side_effect=["evt-main", "held-other"])) as m_create, \
+         patch.object(svc, "map_cluster", new=AsyncMock(return_value="evt-main")), \
+         patch.object(svc, "append_update", new=AsyncMock()), \
+         patch.object(svc, "hold_link", new=AsyncMock(return_value="lnk")) as m_hold:
+        session = AsyncMock()
+        res = await svc.apply_routing(session, decision, candidate=cand)
+    # held_members=("m-primary","m-other") 중 primary(m-primary) 제외 → held degenerate 1개(m-other)만.
+    assert m_hold.await_count == 1
+    assert res.held_event_ids == ["held-other"]
+    assert m_create.await_count == 2          # main(evt-main) + held-other (m-primary 미생성)
+
+
+@pytest.mark.asyncio
 async def test_apply_routing_create_degrades_to_append_when_already_mapped():
     # A-4 orphan 가드: cluster 가 이미 매핑됐으면(재실행) 새 event 생성 안 하고 기존으로 append.
     decision = EventRoutingDecision("c1", ACTION_CREATE, None, "new_event_strong_clique", ())

@@ -134,7 +134,12 @@ _T3 = datetime(2026, 6, 18, 14, 0, tzinfo=timezone.utc)
 
 
 def _cand(title="호르무즈 해협 긴장", observed=_T2, **kw):
-    base = dict(canonical_title=title, observed_at=observed, delta_summary="update")
+    # ADR#35 fail-closed: source-type gate 가 publishable(official/article) 없으면 WITHHELD 이므로,
+    # 합성 candidate 도 **명시적으로** publishable source_type 을 둔다(source_type 누락 묵인 금지).
+    base = dict(
+        canonical_title=title, observed_at=observed, delta_summary="update",
+        evidence=({"source_type": "article", "relation": "primary"},),
+    )
     base.update(kw)
     return ResolvedCandidate(**base)
 

@@ -57,9 +57,10 @@ def resolve_routing(
 
     mapped_event_id = cluster_event_map.get(cluster_id) 결과(없으면 None = 미매핑).
     member_source_types = 멤버 source_type 목록(official/article/community/search/signal). **source-type
-    publish gate**(ADR#33): 미매핑 신규 발행(CREATE) 시 publishable primary(official/article)가 하나도
-    없으면 WITHHELD(미발행) — pure community/search/structured 단독 cross-source 직접 발행 차단. 미제공(())
-    이면 게이트 비활성(하위호환). 매핑된 event 의 APPEND/HOLD 는 게이트 미적용(community 는 corroborator).
+    publish gate**(ADR#33+#35): 미매핑 신규 발행(CREATE) 시 publishable(official/article)가 하나도 없으면
+    WITHHELD(미발행) — pure community/search/structured 단독 cross-source 직접 발행 차단. **미제공/미지/빈값도
+    fail-closed→WITHHELD**(ADR#35: source_type 모르면 발행 안전하지 않음 — 조용한 우회 금지). 매핑된 event 의
+    APPEND/HOLD 는 게이트 미적용(community 는 corroborator).
     결정적(같은 입력 → 같은 결정) — 재실행/감사 가능.
     """
     is_strong = confidence == _CONF_DUPLICATE
@@ -81,12 +82,13 @@ def resolve_routing(
             cluster_id, ACTION_HOLD, mapped_event_id, "weak_signal_possible_link", tuple(member_keys)
         )
 
-    # source-type publish gate(ADR#33, R-SourceTypeFidelityGate): 미매핑 신규 발행인데 publishable
-    # primary(official/article)가 하나도 없으면(pure community/search/structured) **직접 발행 금지** →
-    # WITHHELD(미영속·public timeline 미노출). 설계 never_direct_publish / signal_only_not_article_card.
-    # member_source_types 미제공(레거시 호출)이면 게이트 비활성(하위호환). 매핑된 event 의 APPEND 는
-    # 위에서 이미 처리(community 가 기존 발행 event 에 corroborator 로 append 하는 것은 허용).
-    if member_source_types and not _has_publishable(member_source_types):
+    # source-type publish gate(ADR#33+#35, R-SourceTypeFidelityGate): 미매핑 신규 발행인데 publishable
+    # (official/article)가 하나도 없으면(pure community/search/structured **또는 source_type 미제공/미지/빈값**)
+    # **직접 발행 금지** → WITHHELD(미영속·public timeline 미노출; fail-closed — 모르면 보류). 설계
+    # never_direct_publish / signal_only_not_article_card. 매핑된 event 의 APPEND 는 위에서 이미 처리
+    # (community 가 기존 발행 event 에 corroborator 로 append). 빈/미지 member_source_types → _has_publishable
+    # =False → WITHHELD(실 호출은 candidate.evidence 가 source_type 항상 제공; 누락 = 조용한 발행 차단, ADR#35).
+    if not _has_publishable(member_source_types):
         return EventRoutingDecision(
             cluster_id, ACTION_WITHHELD, None, "non_publishable_source_type", tuple(member_keys)
         )

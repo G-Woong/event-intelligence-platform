@@ -252,6 +252,9 @@ def candidate_from_cluster(
         added_domains=domains,
         source_refs=(cluster.cluster_id, *distinct_members),
         heat_delta=0.0,
+        # 대표 멤버 키(ADR#35): apply_routing 이 held_members 에서 제외(대표 record 의 held degenerate
+        # 이중 등장 차단). authority primary 가 weak_only(held)인 edge 에서만 실효.
+        primary_member_key=primary_key,
     )
 
 

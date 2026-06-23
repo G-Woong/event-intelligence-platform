@@ -74,7 +74,11 @@ def _rec(**kw):
 
 
 def _cand(title="호르무즈 해협 긴장", observed=_T2, **kw):
-    base = dict(canonical_title=title, observed_at=observed, delta_summary="update")
+    # ADR#35 fail-closed: source-type gate 가 publishable 없으면 WITHHELD → 합성 candidate 도 명시 source_type.
+    base = dict(
+        canonical_title=title, observed_at=observed, delta_summary="update",
+        evidence=({"source_type": "article", "relation": "primary"},),
+    )
     base.update(kw)
     return ResolvedCandidate(**base)
 
@@ -209,8 +213,8 @@ async def test_live_evidence_source_refs_sanitized(session):
         source_refs=("raw-001", "C" * 5000),
     ))
     _, updates = await svc.get_event(session, await _first_event_id(session))
-    # updates[0]=genesis(@T2, _cand 기본 evidence 없음), updates[1]=APPEND(@T3, dirty→sanitize 대상).
-    assert updates[0].evidence == []                                                   # genesis: evidence 없음
+    # updates[0]=genesis(@T2, _cand 기본 evidence=article primary), updates[1]=APPEND(@T3, dirty→sanitize).
+    assert updates[0].evidence == [{"source_type": "article", "relation": "primary"}]   # genesis 기본
     assert updates[1].evidence == [{"url": "https://reuters/x", "relation": "supports"}]
     assert updates[1].source_refs == ["raw-001"]
 
