@@ -799,3 +799,468 @@ def generate_labeling_protocol_report(
         },
         "auto_merged": 0,
     }
+
+
+# ════════════════════════════════════════════════════════════════════════════════════
+# ADR#46 — live-derived labeling packet + sampling operationalization
+# ════════════════════════════════════════════════════════════════════════════════════
+# ADR#43 export 는 adjudication → **워크시트 JSONL**(predicted_status/score/reason 포함·label='unlabeled')까지만
+# 만들고, ADR#45 `resolve_gold_from_reviewers` 는 **이미 손으로 작성된 ReviewerLabel** 만 받는다. 그 사이의 운영
+# 단계 — live-derived 후보를 **bucket 별로 샘플링**하고, **reviewer 에게 배정**하고, **model 판정(predicted_status)을
+# 차폐**(bias 0)한 labeling packet 으로 변환하고, **sampling deficit/표본 floor 를 report** 하는 단계 — 가 비어 있었다.
+# 이 계층이 그 다리다(옵션 A=JSONL packet generator; B=DB queue future·schema migratable 유지; C=synthetic-only 금지).
+#
+# **불변(상속):** DB/migration 0·결정론·자동 병합 0·raw body/PII 차단. **추가 불변:** packet 에 model 판정
+# (predicted_status/score/reason/label) **구조적 미포함**(bias 차단) — labeler 는 정답/모델 추정을 보지 못한다.
+# packet 은 **internal-only ops artifact**(public API 미노출). 실 reviewer/충원/대표성은 여전히 0(R-ReviewerAgreement
+# ·R-GoldSamplingBias 부분진전·완전종결 금지) — packet 은 그 운영을 가능케 하는 scaffold 일 뿐 실 gold 가 아니다.
+
+# predicted_status 도메인 — ADR#42 adjudicator(`ADJUDICATION_STATUSES`)와 동기. packet **입력**(워크시트)에만 있고
+# packet **출력**에는 미포함(bias 차단). 여기에 두는 건 bucket 라우팅 입력 검증용(import 결합 회피·기존 모듈 패턴).
+PRED_LIKELY_SAME = "likely_same_event"
+PRED_AMBIGUOUS = "ambiguous"
+PRED_LIKELY_DIFFERENT = "likely_different_event"
+PRED_INSUFFICIENT = "insufficient_features"
+PREDICTED_STATUSES = frozenset({PRED_LIKELY_SAME, PRED_AMBIGUOUS, PRED_LIKELY_DIFFERENT, PRED_INSUFFICIENT})
+
+# ── candidate bucket(라벨 **전** — predicted_status/reason/lang/source_type/risk_tags 기반). ADR#45 SAMPLING_BUCKETS
+# (라벨 **후** — 정답 label 기반)와 **별개**. *_predicted=모델 추정 stratum(내부 ops 전용)·*_guard=source role 가드. ──
+CANDIDATE_BUCKETS = (
+    "likely_same_predicted",        # predicted likely_same(영어/일반 positive)
+    "ambiguous_predicted",          # predicted ambiguous(eval 가장 중요 — oversample)
+    "hard_negative",                # predicted different / templated(FP 유발 — 음성 floor 충당)
+    "ko_same_event_candidate",
+    "ko_different_event_candidate",
+    "mixed_translation",            # 혼합 언어/번역(한국어 캘리브레이션)
+    "paraphrase",
+    "template_collision",
+    "far_date_same_title",          # 같은 제목·먼 시점(reason=far_date_distance)
+    "generic_title",                # 신호 부족(reason=generic_title / predicted insufficient)
+    "community_guard",              # community-only — merge anchor 아님(역할 가드)
+    "market_guard",                 # market/signal-only — signal 역할 가드
+    "catalog_guard",                # catalog-only — entity enrichment 가드
+    "unknown_guard",                # 미지/빈 source_type — fail-closed 가드
+    "official_news_positive",       # predicted likely_same + official/article core
+)
+_CANDIDATE_BUCKET_OTHER = "other_candidate"   # 미분류(>0 이면 경고로 표면화 — 조용한 누락 금지)
+
+# bucket 별 sampling target(draft) — **oversample**: hard_negative/ambiguous/KO/mixed > easy positive. min target
+# 통계 근거는 estimate_sample_floor_* 로 재유도 대상(placeholder·R-GoldSamplingBias). guard 는 역할 검증용 소량.
+CANDIDATE_BUCKET_TARGETS = {
+    "likely_same_predicted": 20,
+    "ambiguous_predicted": 30,
+    "hard_negative": 40,            # 음성(FPR) floor 381 충당 위해 최대 oversample
+    "ko_same_event_candidate": 30,
+    "ko_different_event_candidate": 30,
+    "mixed_translation": 25,
+    "paraphrase": 25,
+    "template_collision": 25,
+    "far_date_same_title": 20,
+    "generic_title": 15,
+    "community_guard": 15,
+    "market_guard": 15,
+    "catalog_guard": 15,
+    "unknown_guard": 15,
+    "official_news_positive": 20,
+}
+
+# packet assignment 상태.
+ASSIGN_ASSIGNED = "assigned"
+ASSIGN_IN_REVIEW = "in_review"
+ASSIGN_COMPLETED = "completed"
+ASSIGNMENT_STATUSES = frozenset({ASSIGN_ASSIGNED, ASSIGN_IN_REVIEW, ASSIGN_COMPLETED})
+DEFAULT_REVIEWERS_PER_PAIR = 2     # 동일 pair 를 최소 2명에 배정(single=insufficient·gold 아님)
+
+# packet 허용 키 = pair content + assignment metadata. predicted_status/score/reason/label 은 **미포함**(bias 차단).
+_PACKET_ASSIGNMENT_KEYS = frozenset({
+    "packet_id", "candidate_link_id", "reviewer_id", "review_round", "assignment_status",
+    "sampling_bucket", "instructions",
+})
+PACKET_ALLOWED_KEYS = (
+    frozenset({"pair_id", "language", "source_type_left", "source_type_right",
+               "title_left", "title_right", "observed_at_left", "observed_at_right",
+               "canonical_url_left", "canonical_url_right", "risk_tags"})
+    | _PACKET_ASSIGNMENT_KEYS
+)
+_PACKET_REQUIRED_KEYS = frozenset({
+    "packet_id", "pair_id", "reviewer_id", "review_round", "assignment_status", "sampling_bucket",
+    "language", "source_type_left", "source_type_right",
+    "title_left", "title_right", "observed_at_left", "observed_at_right",
+})
+# packet 에 들어오면 안 되는 model 판정 누출 키(bias) — allowlist 로도 막히지만 명시 fail-loud(진단 메시지).
+_PACKET_FORBIDDEN_VERDICT_KEYS = frozenset({"predicted_status", "score", "reason", "label"})
+
+# labeler 에게 보이는 지시(model 판정 withheld 명시).
+_PACKET_INSTRUCTIONS = (
+    "label same_event/different_event/ambiguous/insufficient using titles/metadata only; "
+    "do not use raw body; model prediction withheld (no bias)"
+)
+
+
+@dataclass(frozen=True)
+class LabelingPacketItem:
+    packet_id: str
+    pair_id: str
+    reviewer_id: str
+    review_round: int
+    assignment_status: str
+    sampling_bucket: str
+    language: str
+    source_type_left: str
+    source_type_right: str
+    title_left: str
+    title_right: str
+    observed_at_left: str
+    observed_at_right: str
+    candidate_link_id: Optional[str] = None
+    canonical_url_left: Optional[str] = None
+    canonical_url_right: Optional[str] = None
+    risk_tags: tuple[str, ...] = ()
+    instructions: str = _PACKET_INSTRUCTIONS
+
+
+def assign_candidate_bucket(
+    *, predicted_status: str, reason: str, language: str,
+    source_type_left: str, source_type_right: str, risk_tags: tuple[str, ...]
+) -> str:
+    """라벨 **전** 후보 → candidate bucket(결정론·우선순위). source role 가드/fail-closed 우선, 그다음 risk tag,
+    그다음 reason(far_date/generic), 마지막 predicted_status. 미분류는 _CANDIDATE_BUCKET_OTHER(경고)."""
+    tags = set(risk_tags)
+    pair_types = {source_type_left, source_type_right}
+    # 1) fail-closed / source role 가드(merge anchor 아님). 빈/미지 source_type 또는 단일-역할.
+    if (reason == "unknown_source_type_fail_closed" or "unknown" in pair_types
+            or not source_type_left or not source_type_right):
+        return "unknown_guard"
+    if pair_types == {"community"}:
+        return "community_guard"
+    if ({"market", "signal"} & pair_types) and not ({"official", "article"} & pair_types):
+        return "market_guard"   # market/signal-only(evidence layer 는 'signal'·eval enum 은 'market')
+    if pair_types == {"catalog"}:
+        return "catalog_guard"
+    # 2) 명시 risk tag(synthetic fixture 가 줄 수 있음; live 워크시트는 보통 empty).
+    if "hard_negative" in tags:
+        return "hard_negative"
+    if "translation" in tags or language == "mixed":
+        return "mixed_translation"
+    if "paraphrase" in tags:
+        return "paraphrase"
+    if "template" in tags:
+        return "template_collision"
+    # 3) reason 파생(adjudicator classify reason).
+    if reason == "far_date_distance":
+        return "far_date_same_title"
+    if reason == "generic_title":
+        return "generic_title"
+    # 4) predicted_status 기반.
+    if predicted_status == PRED_AMBIGUOUS:
+        return "ambiguous_predicted"
+    if predicted_status == PRED_INSUFFICIENT:
+        return "generic_title"
+    if predicted_status == PRED_LIKELY_DIFFERENT:
+        return "ko_different_event_candidate" if language == "ko" else "hard_negative"
+    if predicted_status == PRED_LIKELY_SAME:
+        if language == "ko":
+            return "ko_same_event_candidate"
+        if {"official", "article"} & pair_types:
+            return "official_news_positive"
+        return "likely_same_predicted"
+    return _CANDIDATE_BUCKET_OTHER
+
+
+def _bucket_of_row(r: dict) -> str:
+    return assign_candidate_bucket(
+        predicted_status=str(r.get("predicted_status", "")),
+        reason=str(r.get("reason", "")),
+        language=str(r.get("language", "unknown")),
+        source_type_left=str(r.get("source_type_left", "")),
+        source_type_right=str(r.get("source_type_right", "")),
+        risk_tags=tuple(r.get("risk_tags", [])),
+    )
+
+
+def _sample_candidate_pairs(
+    worksheet_rows: list[dict], *, targets: Optional[dict[str, int]] = None
+) -> list[tuple[str, dict]]:
+    """worksheet rows → 선택된 [(bucket, row)](결정론·pair_id 정렬·bucket target 까지 cap·초과분 drop)."""
+    tgt = targets or CANDIDATE_BUCKET_TARGETS
+    per_bucket: dict[str, int] = {}
+    out: list[tuple[str, dict]] = []
+    for r in sorted(worksheet_rows, key=lambda x: str(x.get("pair_id", ""))):
+        bucket = _bucket_of_row(r)
+        cap = tgt.get(bucket, SAMPLING_MIN_TARGET_DRAFT)
+        if per_bucket.get(bucket, 0) >= cap:
+            continue   # over-target — 본 round 미포함(drop 은 summarize 의 over/under 로 가시화)
+        per_bucket[bucket] = per_bucket.get(bucket, 0) + 1
+        out.append((bucket, r))
+    return out
+
+
+def _packet_item(
+    packet_id: str, r: dict, bucket: str, reviewer_id: str, *,
+    review_round: int = 1, assignment_status: str = ASSIGN_ASSIGNED,
+) -> LabelingPacketItem:
+    """worksheet row → LabelingPacketItem(predicted_status/score/reason **제거**·assignment 부여)."""
+    return LabelingPacketItem(
+        packet_id=packet_id, pair_id=str(r["pair_id"]), reviewer_id=reviewer_id,
+        review_round=review_round, assignment_status=assignment_status, sampling_bucket=bucket,
+        language=str(r.get("language", "unknown")),
+        source_type_left=r["source_type_left"], source_type_right=r["source_type_right"],
+        title_left=r["title_left"], title_right=r["title_right"],
+        observed_at_left=r["observed_at_left"], observed_at_right=r["observed_at_right"],
+        candidate_link_id=str(r["pair_id"]),   # pair_id == link_id(ADR#43 export) — 명시 보존
+        canonical_url_left=r.get("canonical_url_left"), canonical_url_right=r.get("canonical_url_right"),
+        risk_tags=tuple(r.get("risk_tags", [])),
+    )
+
+
+def assign_reviewer_packet(
+    selected: list[tuple[str, dict]], *, packet_id: str, reviewers: list[str],
+    reviewers_per_pair: int = DEFAULT_REVIEWERS_PER_PAIR,
+) -> list[LabelingPacketItem]:
+    """선택 [(bucket, row)] → reviewer 배정 packet items(결정론 round-robin·동일 pair 를 distinct reviewers_per_pair 명에).
+
+    single(reviewers_per_pair=1)도 허용하나 resolve 단계에서 insufficient(gold 아님)로 처리됨. reviewer 는 human
+    allowlist(distinct ≥ reviewers_per_pair) — reviewer_kind 는 ReviewerLabel 단계에서 human 강제(self/model 금지)."""
+    if reviewers_per_pair < 1:
+        raise ValueError("reviewers_per_pair must be >= 1")
+    distinct = list(dict.fromkeys(reviewers))   # 순서 보존 dedup
+    if len(distinct) < reviewers_per_pair:
+        raise ValueError(
+            f"need >= {reviewers_per_pair} distinct reviewers for assignment, got {len(distinct)}")
+    items: list[LabelingPacketItem] = []
+    for idx, (bucket, r) in enumerate(selected):
+        for k in range(reviewers_per_pair):
+            rid = distinct[(idx + k) % len(distinct)]
+            items.append(_packet_item(packet_id, r, bucket, rid))
+    return items
+
+
+def build_labeling_packet(
+    worksheet_rows: list[dict], *, packet_id: str, reviewers: list[str],
+    reviewers_per_pair: int = DEFAULT_REVIEWERS_PER_PAIR,
+    targets: Optional[dict[str, int]] = None,
+) -> list[LabelingPacketItem]:
+    """live-derived 워크시트(adjudication export) → reviewer labeling packet items.
+
+    bucket 샘플링(target cap·oversample) → reviewer ≥N 배정 → predicted_status/score/reason **차폐**(bias 0).
+    결정론(pair_id 정렬). internal-only artifact(public 미노출). 자동 병합 0(read-only 변환)."""
+    selected = _sample_candidate_pairs(worksheet_rows, targets=targets)
+    return assign_reviewer_packet(
+        selected, packet_id=packet_id, reviewers=reviewers, reviewers_per_pair=reviewers_per_pair)
+
+
+def packet_item_to_dict(item: LabelingPacketItem) -> dict:
+    """LabelingPacketItem → dict(None/빈 optional 생략·결정론). model 판정 키 부재(구조적 bias 차단)."""
+    d = {
+        "packet_id": item.packet_id, "pair_id": item.pair_id, "reviewer_id": item.reviewer_id,
+        "review_round": item.review_round, "assignment_status": item.assignment_status,
+        "sampling_bucket": item.sampling_bucket, "language": item.language,
+        "source_type_left": item.source_type_left, "source_type_right": item.source_type_right,
+        "title_left": item.title_left, "title_right": item.title_right,
+        "observed_at_left": item.observed_at_left, "observed_at_right": item.observed_at_right,
+        "instructions": item.instructions,
+    }
+    if item.candidate_link_id is not None:
+        d["candidate_link_id"] = item.candidate_link_id
+    if item.canonical_url_left is not None:
+        d["canonical_url_left"] = item.canonical_url_left
+    if item.canonical_url_right is not None:
+        d["canonical_url_right"] = item.canonical_url_right
+    if item.risk_tags:
+        d["risk_tags"] = list(item.risk_tags)
+    return d
+
+
+def labeler_facing_view(item: LabelingPacketItem) -> dict:
+    """reviewer 에게 실제 제시하는 view — **sampling_bucket·model 판정·assignment 내부값 전부 제외**(bias 0).
+
+    pair content(title/source_type/observed/url/language) + 지시 + reviewer_id/round 만. sampling_bucket(예측
+    파생 stratum)은 labeler 가 정답을 추론하지 못하도록 제거 — predicted_status 미포함과 동일 원칙."""
+    return {
+        "pair_id": item.pair_id, "reviewer_id": item.reviewer_id, "review_round": item.review_round,
+        "language": item.language,
+        "source_type_left": item.source_type_left, "source_type_right": item.source_type_right,
+        "title_left": item.title_left, "title_right": item.title_right,
+        "observed_at_left": item.observed_at_left, "observed_at_right": item.observed_at_right,
+        "canonical_url_left": item.canonical_url_left, "canonical_url_right": item.canonical_url_right,
+        "instructions": item.instructions,
+    }
+
+
+def validate_labeling_packet(rows: list[dict]) -> None:
+    """packet 행 검증(fail-loud) — model 판정 누출(predicted_status/score/reason/label) 차단·allowlist(raw body/PII)
+    ·enum(assignment_status/bucket/language/source_type)·title 길이·(packet_id,pair_id,reviewer_id,round) 중복 거부."""
+    seen: set[tuple] = set()
+    for r in rows:
+        keys = set(r)
+        verdict = keys & _PACKET_FORBIDDEN_VERDICT_KEYS
+        if verdict:
+            raise ValueError(f"packet row leaks model verdict (bias 차단): {sorted(verdict)}")
+        extra = keys - PACKET_ALLOWED_KEYS
+        if extra:
+            raise ValueError(f"packet row has disallowed keys (raw body/PII 차단): {sorted(extra)}")
+        missing = _PACKET_REQUIRED_KEYS - keys
+        if missing:
+            raise ValueError(f"packet row missing required keys: {sorted(missing)}")
+        if r["assignment_status"] not in ASSIGNMENT_STATUSES:
+            raise ValueError(f"invalid assignment_status {r['assignment_status']!r}")
+        if r["sampling_bucket"] not in CANDIDATE_BUCKETS and r["sampling_bucket"] != _CANDIDATE_BUCKET_OTHER:
+            raise ValueError(f"invalid sampling_bucket {r['sampling_bucket']!r}")
+        if r["language"] not in LANGUAGES:
+            raise ValueError(f"invalid language {r['language']!r}")
+        for side in ("source_type_left", "source_type_right"):
+            if r[side] not in SOURCE_TYPES:
+                raise ValueError(f"invalid {side} {r[side]!r}")
+        for side in ("title_left", "title_right"):
+            if not isinstance(r[side], str) or len(r[side]) > _MAX_TITLE_LEN:
+                raise ValueError(f"{side} must be str ≤ {_MAX_TITLE_LEN} chars (전문 위장 차단)")
+        if not isinstance(r["reviewer_id"], str) or not r["reviewer_id"].strip():
+            raise ValueError("reviewer_id required (non-empty str)")
+        rnd = r["review_round"]
+        if not isinstance(rnd, int) or isinstance(rnd, bool) or rnd < 1:
+            raise ValueError(f"review_round must be int ≥ 1, got {rnd!r}")
+        rt = r.get("risk_tags", [])
+        if not isinstance(rt, list) or any(not isinstance(t, str) for t in rt):
+            raise ValueError("risk_tags must be a list of str")
+        key = (r["packet_id"], r["pair_id"], r["reviewer_id"], rnd)
+        if key in seen:
+            raise ValueError(f"duplicate packet assignment (packet_id,pair_id,reviewer_id,round): {key}")
+        seen.add(key)
+
+
+def write_labeling_packet_jsonl(items: list[LabelingPacketItem], path: Any) -> int:
+    """packet items → JSONL(**internal ops artifact**·결정론·sort_keys). 기록 전 validate(verdict/allowlist/enum).
+
+    ⚠ 이 JSONL 은 sampling_bucket 을 포함한다(ops 추적용). **labeler 에게 직접 주지 마라** — labeler-facing 은
+    `labeler_facing_view`(bucket·model 판정 제거)다. bucket 미노출은 코드 불변이 아니라 **운영 약속**이다."""
+    rows = [packet_item_to_dict(it) for it in items]
+    validate_labeling_packet(rows)
+    lines = [json.dumps(r, ensure_ascii=False, sort_keys=True) for r in rows]
+    Path(path).write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    return len(rows)
+
+
+# floor_check 의 positive/negative/KO bucket 그룹(표본 floor 대조용).
+_FLOOR_POSITIVE_BUCKETS = ("likely_same_predicted", "ko_same_event_candidate", "official_news_positive")
+_FLOOR_NEGATIVE_BUCKETS = ("hard_negative", "ko_different_event_candidate", "far_date_same_title")
+_FLOOR_KO_BUCKETS = ("ko_same_event_candidate", "ko_different_event_candidate")
+
+
+def summarize_packet_sampling(
+    worksheet_rows: list[dict], *, targets: Optional[dict[str, int]] = None,
+    packet_items: Optional[list[LabelingPacketItem]] = None,
+) -> dict:
+    """worksheet 후보 → sampling 대표성 report(bucket 충원/부족·언어/source_type/risk_tag 분포·표본 floor 대조).
+
+    selected = build 와 **동일** _sample_candidate_pairs(결정론 일치). deficit/underfilled 를 숨기지 않는다(평균
+    뒤에 한국어/hard-negative 숨기기 금지). synthetic 은 live count 를 부풀리지 않는다(live_vs_synthetic 분리)."""
+    tgt = targets or CANDIDATE_BUCKET_TARGETS
+    total_by_bucket: dict[str, int] = {b: 0 for b in CANDIDATE_BUCKETS}
+    total_by_bucket[_CANDIDATE_BUCKET_OTHER] = 0
+    by_language: dict[str, int] = {}
+    by_source_type: dict[str, int] = {}
+    by_risk_tag: dict[str, int] = {}
+    live_vs_synthetic = {SOURCE_LIVE: 0, SOURCE_SYNTHETIC: 0}
+    for r in worksheet_rows:
+        total_by_bucket[_bucket_of_row(r)] = total_by_bucket.get(_bucket_of_row(r), 0) + 1
+        lang = str(r.get("language", "unknown"))
+        by_language[lang] = by_language.get(lang, 0) + 1
+        st = "|".join(sorted((str(r.get("source_type_left", "")), str(r.get("source_type_right", "")))))
+        by_source_type[st] = by_source_type.get(st, 0) + 1
+        for t in r.get("risk_tags", []):
+            by_risk_tag[t] = by_risk_tag.get(t, 0) + 1
+        ds = r.get("dataset_source", SOURCE_LIVE)
+        live_vs_synthetic[ds] = live_vs_synthetic.get(ds, 0) + 1
+
+    selected = _sample_candidate_pairs(worksheet_rows, targets=targets)
+    selected_by_bucket: dict[str, int] = {b: 0 for b in CANDIDATE_BUCKETS}
+    selected_live = 0
+    for bucket, r in selected:
+        selected_by_bucket[bucket] = selected_by_bucket.get(bucket, 0) + 1
+        if r.get("dataset_source", SOURCE_LIVE) == SOURCE_LIVE:
+            selected_live += 1
+    target_by_bucket = {b: tgt.get(b, SAMPLING_MIN_TARGET_DRAFT) for b in CANDIDATE_BUCKETS}
+    deficit_by_bucket = {b: max(0, target_by_bucket[b] - selected_by_bucket[b]) for b in CANDIDATE_BUCKETS}
+    oversampled = sorted(b for b in CANDIDATE_BUCKETS if total_by_bucket.get(b, 0) > target_by_bucket[b])
+    underfilled = sorted(b for b in CANDIDATE_BUCKETS if selected_by_bucket[b] < target_by_bucket[b])
+    selected_count = sum(selected_by_bucket.values())
+
+    floors = recommended_sample_floors()
+    pos_sel = sum(selected_by_bucket[b] for b in _FLOOR_POSITIVE_BUCKETS)
+    neg_sel = sum(selected_by_bucket[b] for b in _FLOOR_NEGATIVE_BUCKETS)
+    ko_sel = sum(selected_by_bucket[b] for b in _FLOOR_KO_BUCKETS)
+    return {
+        "total_candidates": len(worksheet_rows),
+        "selected_count": selected_count,
+        # selection 은 **무작위 표집 아님** — pair_id 정렬 후 bucket cap 까지 앞쪽을 취하는 결정론 cut-off.
+        # 대표성은 미입증(R-GoldSamplingBias). "sampling" 이 random 을 함의하지 않도록 명시.
+        "selection_method": "deterministic_pair_id_order_cap",
+        "target_by_bucket": target_by_bucket,
+        "selected_by_bucket": selected_by_bucket,
+        "total_by_bucket": total_by_bucket,
+        "deficit_by_bucket": deficit_by_bucket,
+        "oversampled_buckets": oversampled,
+        "underfilled_buckets": underfilled,
+        "unclassified": total_by_bucket.get(_CANDIDATE_BUCKET_OTHER, 0),   # >0 이면 bucket 규칙 보강(조용한 누락 금지)
+        "by_language": by_language,
+        "by_source_type": by_source_type,
+        "by_risk_tag": by_risk_tag,
+        "live_vs_synthetic": live_vs_synthetic,
+        "reviewer_assignment_count": len(packet_items) if packet_items is not None else 0,
+        # 표본 floor(189/381/draft KO/live) 대조 — selected count 가 floor 에 얼마나 못 미치는지 deficit 로 정직 노출.
+        "floor_check": {
+            "positive_selected": pos_sel, "positive_floor": floors["recommended_positive_floor"],
+            "positive_deficit": max(0, floors["recommended_positive_floor"] - pos_sel),
+            "negative_selected": neg_sel, "negative_floor": floors["recommended_negative_floor"],
+            "negative_deficit": max(0, floors["recommended_negative_floor"] - neg_sel),
+            "ko_selected": ko_sel, "ko_floor": floors["draft_korean_gold_floor"],
+            "ko_deficit": max(0, floors["draft_korean_gold_floor"] - ko_sel),
+            "live_selected": selected_live, "live_floor": floors["draft_live_gold_floor"],
+            "live_deficit": max(0, floors["draft_live_gold_floor"] - selected_live),
+        },
+        "auto_merged": 0,
+    }
+
+
+def adjudication_queue_from_resolved(resolved: list[ResolvedGold]) -> list[dict]:
+    """resolved gold 중 **conflict** pair → adjudication queue(사람 lead 배정 후보). **자동 다수결 gold 금지**.
+
+    conflict 만(insufficient/agreed/adjudicated 제외). raw body/PII 미포함(pair_id·content·합의 메타만). 이 queue 의
+    label 은 비어있고 — `_validate_adjudication`(human adjudicator only)을 통과한 사람 판정으로만 gold 가 된다."""
+    out: list[dict] = []
+    for r in resolved:
+        if r.agreement_status != AGREE_CONFLICT:
+            continue
+        out.append({
+            "pair_id": r.pair_id, "language": r.language,
+            "source_type_left": r.source_type_left, "source_type_right": r.source_type_right,
+            "title_left": r.title_left, "title_right": r.title_right,
+            "reviewer_count": r.reviewer_count, "agreement_rate": r.agreement_rate,
+            "needs_human_adjudication": True, "adjudicator_kind": REVIEWER_HUMAN,
+        })
+    return out
+
+
+def generate_packet_ops_report(
+    worksheet_rows: list[dict], *, packet_id: str, reviewers: list[str],
+    reviewers_per_pair: int = DEFAULT_REVIEWERS_PER_PAIR,
+    targets: Optional[dict[str, int]] = None,
+) -> dict:
+    """live-derived 워크시트 → packet ops report(packet 생성·sampling 대표성·표본 floor·reviewer 배정). 자동 병합 0.
+
+    **gold 산출 아님** — packet 은 reviewer 배정 scaffold 일 뿐, gold 는 reviewer 가 라벨한 뒤 ADR#45 resolve 로만 생긴다."""
+    items = build_labeling_packet(
+        worksheet_rows, packet_id=packet_id, reviewers=reviewers,
+        reviewers_per_pair=reviewers_per_pair, targets=targets)
+    sampling = summarize_packet_sampling(worksheet_rows, targets=targets, packet_items=items)
+    return {
+        "packet_id": packet_id,
+        "candidates_in": len(worksheet_rows),
+        "selected_pairs": sampling["selected_count"],
+        "packet_items": len(items),               # = selected_pairs × reviewers_per_pair
+        "reviewers_per_pair": reviewers_per_pair,
+        "distinct_reviewers": len(dict.fromkeys(reviewers)),
+        "sampling": sampling,
+        "gold_resolved": 0,                        # packet 단계는 gold 0(라벨 전) — 명시
+        "auto_merged": 0,
+    }

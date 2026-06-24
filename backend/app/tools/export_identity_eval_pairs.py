@@ -23,6 +23,7 @@ from backend.app.models.event_resolution import (
     EventLinkORM,
 )
 from backend.app.models.event_timeline import EventORM, EventUpdateORM
+from backend.app.services.identity_eval_dataset import SOURCE_TYPES
 from backend.app.services.semantic_identity_adjudicator import SEMANTIC_LINK_REASON, _language_hint
 
 # worksheet 행 허용 키 — body/raw_text/content/author 등은 구조적으로 제외(raw≠eval, PII 차단).
@@ -35,6 +36,17 @@ _WORKSHEET_KEYS = frozenset({
 # **언어**(en/ko/mixed/unknown)다. 워크시트가 gold(identity_eval_pairs.jsonl)로 승격될 때 enum 검증을
 # 통과하도록 script→language 정규화(latin→en). 이게 없으면 영어 워크시트가 `invalid language 'latin'`로 거부됨.
 _SCRIPT_TO_EVAL_LANGUAGE = {"latin": "en"}
+
+# evidence 레이어 source_type → identity eval enum(SOURCE_TYPES) 정규화. evidence/adjudicator 는 market 신호를
+# 'signal' 로 저장하나 eval enum 은 'market' 을 쓴다(언어 정규화와 동형 경계 변환). 이게 없으면 라이브 market/혼합
+# 후보가 gold/reviewer/packet 승격 시 `invalid source_type 'signal'` 로 **전량 거부**(market_guard bucket 라이브 0).
+_EVIDENCE_TO_EVAL_SOURCE_TYPE = {"signal": "market"}
+
+
+def _to_eval_source_type(raw: str) -> str:
+    """evidence source_type → eval enum(SOURCE_TYPES) 보장값. 미지/미매핑은 'unknown'(fail-closed·enum 위반 0)."""
+    st = _EVIDENCE_TO_EVAL_SOURCE_TYPE.get(raw, raw)
+    return st if st in SOURCE_TYPES else "unknown"
 
 
 async def _event_brief(session: AsyncSession, event_id) -> Optional[dict]:
@@ -96,8 +108,8 @@ async def collect_adjudication_eval_pairs(session: AsyncSession) -> list[dict]:
             "pair_id": str(link_id),
             "label": "unlabeled",
             "language": _SCRIPT_TO_EVAL_LANGUAGE.get(_lang, _lang),   # script→eval language(latin→en)
-            "source_type_left": left["source_type"],
-            "source_type_right": right["source_type"],
+            "source_type_left": _to_eval_source_type(left["source_type"]),    # signal→market(enum 보장)
+            "source_type_right": _to_eval_source_type(right["source_type"]),
             "title_left": left["title"],
             "title_right": right["title"],
             "observed_at_left": left["observed_at"],

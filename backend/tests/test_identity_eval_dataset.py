@@ -175,6 +175,23 @@ def test_export_language_normalized_to_eval_enum():
         assert v in LANGUAGES
 
 
+def test_export_source_type_normalized_to_eval_enum():
+    # BUG 회귀(ADR#46 adversarial HIGH): evidence 레이어는 market 을 'signal' 로 저장하나 eval enum 은 'market'.
+    # export 가 정규화하지 않으면 라이브 market 후보가 gold/reviewer/packet 승격 시 'invalid source_type signal'
+    # 로 전량 거부(market_guard bucket 라이브 0). signal→market 정규화 + 미지값 fail-closed(unknown) 회귀 방어.
+    from backend.app.tools.export_identity_eval_pairs import (
+        _EVIDENCE_TO_EVAL_SOURCE_TYPE,
+        _to_eval_source_type,
+    )
+    from backend.app.services.identity_eval_dataset import SOURCE_TYPES
+    assert _EVIDENCE_TO_EVAL_SOURCE_TYPE.get("signal") == "market"
+    assert _to_eval_source_type("signal") == "market"          # evidence market → eval enum
+    # evidence codomain(official/article/signal/search/community/catalog) + unknown 정규화 후 전부 enum 안.
+    for raw in ("official", "article", "signal", "search", "community", "catalog", "unknown"):
+        assert _to_eval_source_type(raw) in SOURCE_TYPES
+    assert _to_eval_source_type("totally-bogus") == "unknown"   # 미매핑 → fail-closed(enum 위반 0)
+
+
 @pytest.mark.parametrize("lang", ["en", "ko", "mixed"])
 def test_worksheet_to_gold_roundtrip(tmp_path, lang):
     # export 워크시트(label=unlabeled)를 사람이 gold 로 승격(label 채움·보조 키 제거)하면 load_eval_pairs 통과.

@@ -1020,6 +1020,103 @@ async def test_live_reviewer_resolution_idempotent(session):
     assert await _count(session, "events") == after_link_e
 
 
+# ── live-derived labeling packet + sampling report (ADR#46) ──────────────────────────
+async def _live_worksheet(session):
+    # ADR#46 라이브 경로: semantic link → adjudication → 워크시트 export(소비처). packet 입력.
+    await _make_semantic_link(session)
+    await adjmod.adjudicate_semantic_links(session)
+    return await exmod.collect_adjudication_eval_pairs(session)
+
+
+async def test_live_packet_build_validate_no_verdict(session):
+    # ADR#46(scenario 47·48): live 워크시트 → packet build·validate. predicted_status 차폐·Event 불변.
+    rows = await _live_worksheet(session)
+    after_link_e = await _count(session, "events")
+    assert len(rows) == 1
+    items = hlmod.build_labeling_packet(rows, packet_id="pkt-live", reviewers=["reviewer-a", "reviewer-b"])
+    assert len(items) == 2                                   # 1 pair × 2 reviewer
+    dicts = [hlmod.packet_item_to_dict(it) for it in items]
+    hlmod.validate_labeling_packet(dicts)                    # allowlist/verdict/enum 통과
+    for d in dicts:
+        assert "predicted_status" not in d and "score" not in d and "reason" not in d and "label" not in d
+        assert d["pair_id"] == str(rows[0]["pair_id"])
+    assert await _count(session, "events") == after_link_e   # packet 생성은 Event 불변(자동 병합 0)
+
+
+async def test_live_packet_sampling_report(session):
+    # ADR#46(scenario 49): live 워크시트 sampling report — selected/deficit/floor·Event 불변.
+    rows = await _live_worksheet(session)
+    after_link_e = await _count(session, "events")
+    items = hlmod.build_labeling_packet(rows, packet_id="pkt-live", reviewers=["reviewer-a", "reviewer-b"])
+    rep = hlmod.summarize_packet_sampling(rows, packet_items=items)
+    assert rep["total_candidates"] == 1 and rep["selected_count"] == 1
+    assert rep["reviewer_assignment_count"] == 2
+    assert rep["auto_merged"] == 0
+    # live 후보 1개 << floor → deficit 정직 노출(평균에 숨기지 않음).
+    assert rep["floor_check"]["positive_deficit"] > 0 or rep["floor_check"]["negative_deficit"] > 0
+    assert rep["unclassified"] == 0
+    assert await _count(session, "events") == after_link_e
+
+
+async def test_live_packet_reviewer_roundtrip_no_auto_merge(session):
+    # ADR#46(scenario 50): packet → reviewer label(2명 합의) → resolved gold·merge readiness False·Event 불변.
+    rows = await _live_worksheet(session)
+    after_link_e = await _count(session, "events")
+    items = hlmod.build_labeling_packet(rows, packet_id="pkt-live", reviewers=["reviewer-a", "reviewer-b"])
+    labels = [
+        hlmod.ReviewerLabel(
+            pair_id=it.pair_id, reviewer_id=it.reviewer_id, review_round=it.review_round,
+            label="same_event", label_confidence="high", reviewed_at="2026-06-24T18:00:00Z",
+            language=it.language, source_type_left=it.source_type_left, source_type_right=it.source_type_right,
+            title_left=it.title_left, title_right=it.title_right,
+            observed_at_left=it.observed_at_left, observed_at_right=it.observed_at_right,
+            dataset_source=hlmod.SOURCE_LIVE,
+        )
+        for it in items
+    ]
+    rep = hlmod.generate_labeling_protocol_report(labels)
+    assert rep["resolved_gold_count"] == 1 and rep["conflict_count"] == 0
+    assert rep["gold_metrics"]["merge_readiness"]["merge_ready"] is False
+    assert rep["gold_metrics"]["merge_readiness"]["auto_merge_enabled"] is False
+    assert rep["auto_merged"] == 0
+    assert await _count(session, "events") == after_link_e
+
+
+async def test_live_packet_conflict_to_adjudication_queue(session):
+    # ADR#46(scenario 51): packet → reviewer 불일치 → conflict → adjudication queue(자동 gold 금지)·Event 불변.
+    rows = await _live_worksheet(session)
+    after_link_e = await _count(session, "events")
+    items = hlmod.build_labeling_packet(rows, packet_id="pkt-live", reviewers=["reviewer-a", "reviewer-b"])
+    labels = []
+    for it, lab in zip(items, ("same_event", "different_event")):
+        labels.append(hlmod.ReviewerLabel(
+            pair_id=it.pair_id, reviewer_id=it.reviewer_id, review_round=it.review_round,
+            label=lab, label_confidence="high", reviewed_at="2026-06-24T18:00:00Z",
+            language=it.language, source_type_left=it.source_type_left, source_type_right=it.source_type_right,
+            title_left=it.title_left, title_right=it.title_right,
+            observed_at_left=it.observed_at_left, observed_at_right=it.observed_at_right,
+            dataset_source=hlmod.SOURCE_LIVE,
+        ))
+    resolved = hlmod.resolve_gold_from_reviewers(labels)
+    assert resolved[0].agreement_status == hlmod.AGREE_CONFLICT
+    q = hlmod.adjudication_queue_from_resolved(resolved)
+    assert len(q) == 1 and q[0]["needs_human_adjudication"] is True
+    assert hlmod.resolved_to_gold_pairs(resolved) == []      # conflict → gold 0
+    assert await _count(session, "events") == after_link_e
+
+
+async def test_live_packet_idempotent_and_event_unchanged(session):
+    # ADR#46(scenario 52·53): 같은 워크시트 재build → 같은 packet(결정론)·Event 불변.
+    rows = await _live_worksheet(session)
+    after_link_e = await _count(session, "events")
+    a = [hlmod.packet_item_to_dict(it)
+         for it in hlmod.build_labeling_packet(rows, packet_id="pkt-live", reviewers=["reviewer-a", "reviewer-b"])]
+    b = [hlmod.packet_item_to_dict(it)
+         for it in hlmod.build_labeling_packet(rows, packet_id="pkt-live", reviewers=["reviewer-a", "reviewer-b"])]
+    assert a == b
+    assert await _count(session, "events") == after_link_e
+
+
 async def test_live_failed_cluster_isolated_other_persists(session):
     # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
     # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).
