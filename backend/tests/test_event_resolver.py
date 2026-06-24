@@ -159,15 +159,56 @@ def test_gate_official_plus_news_publishes():
     assert d.action == ACTION_CREATE
 
 
-def test_gate_news_plus_community_publishes_community_held():
-    # community 가 섞여도 article(news) 가 있으면 발행(community 는 corroborator/weak HOLD).
+def test_gate_weak_news_plus_community_withheld():
+    # ADR#37 weak-cluster gate: possible_duplicate 에 비-publishable(community)이 섞이면 WITHHELD.
     d = resolve_routing(
         cluster_id="g8", confidence="possible_duplicate", clique_ok=False,
         member_keys=("a", "b"), weak_only_members=("b",), mapped_event_id=None,
         member_source_types=("article", "community"),
     )
+    assert d.action == ACTION_WITHHELD
+    assert d.reason == "weak_cluster_not_homogeneous_publishable"
+
+
+def test_gate_weak_news_plus_news_publishes():
+    # ADR#37: 약신호라도 **동일 publishable type**(news+news)이면 저신뢰 발행 — ADR#29 흐름 보존.
+    d = resolve_routing(
+        cluster_id="g8b", confidence="possible_duplicate", clique_ok=False,
+        member_keys=("a", "b"), weak_only_members=("b",), mapped_event_id=None,
+        member_source_types=("article", "article"),
+    )
     assert d.action == ACTION_CREATE
-    assert d.held_members == ("b",)
+
+
+def test_gate_weak_official_plus_news_withheld():
+    # ADR#37: 약신호 official+news 는 **혼합 type** → WITHHELD(authority 높은 official 이 약신호 결합으로
+    # Event 대표가 되는 weak-primary 차단; directive 금지조건 "official/news weak-only 강한 대표 금지").
+    d = resolve_routing(
+        cluster_id="g8c", confidence="possible_duplicate", clique_ok=False,
+        member_keys=("a", "b"), weak_only_members=("b",), mapped_event_id=None,
+        member_source_types=("official", "article"),
+    )
+    assert d.action == ACTION_WITHHELD
+
+
+def test_gate_weak_official_plus_official_publishes():
+    # ADR#37: 약신호 official+official(동일 type)은 authority 상향 없이 저신뢰 발행.
+    d = resolve_routing(
+        cluster_id="g8e", confidence="possible_duplicate", clique_ok=False,
+        member_keys=("a", "b"), weak_only_members=("b",), mapped_event_id=None,
+        member_source_types=("official", "official"),
+    )
+    assert d.action == ACTION_CREATE
+
+
+def test_gate_weak_market_plus_news_withheld():
+    # ADR#37: 약신호 market(signal)+news → WITHHELD(혼합 + 투자조언 경계).
+    d = resolve_routing(
+        cluster_id="g8d", confidence="possible_duplicate", clique_ok=False,
+        member_keys=("a", "b"), weak_only_members=("b",), mapped_event_id=None,
+        member_source_types=("signal", "article"),
+    )
+    assert d.action == ACTION_WITHHELD
 
 
 def test_gate_fail_closed_when_source_types_empty():

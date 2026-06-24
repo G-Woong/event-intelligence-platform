@@ -36,6 +36,11 @@ _STOPWORDS = frozenset({
 CONF_DUPLICATE = "duplicate"
 CONF_POSSIBLE = "possible_duplicate"
 
+# core 강성분 선택 시 **발행 가능 출처를 가진 성분을 우선**(ADR#37, P2-2): 두-강성분 약신호 브릿지에서
+# publishable 성분이 record_key 사전순 패배로 통째로 WITHHELD 되는 것 차단. 값 계약: event_ingest_pipeline.
+# _RECORD_TYPE_TO_SOURCE_TYPE + event_resolver._PUBLISHABLE_SOURCE_TYPES(official/article)와 동기 — drift 테스트로 잠금.
+_PUBLISHABLE_RECORD_TYPES = frozenset({"official_record", "article_candidate"})
+
 
 @dataclass(frozen=True)
 class CrossSourceDedupResult:
@@ -169,7 +174,10 @@ def cluster_records(records) -> list[CrossSourceDedupResult]:
     for root, members in sorted(groups.items()):
         if len(members) < 2:
             continue
-        members = sorted(members)
+        # 멤버를 **레코드 키**로 정렬(ADR#37 입력순서 불변): members[0]=최저 인덱스(입력 의존)를 폐기 →
+        # cluster_id/primary_record_key/duplicate_group/primary tie-break 가 입력 순서와 무관하게 동일.
+        # (R-FalseMerge 약신호 cluster_id split 도 해소.) 동일 키(collapse)는 안정 정렬로 보존.
+        members = sorted(members, key=lambda m: keys[m])
         member_set = set(members)
         # 클러스터 내 강신호/약신호 edge(provenance).
         strong_in = [(a, b) for (a, b) in strong_pairs if a in member_set and b in member_set]
@@ -185,7 +193,23 @@ def cluster_records(records) -> list[CrossSourceDedupResult]:
         suf = _UnionFind(len(members))
         for a, b in strong_in:
             suf.union(pos[a], pos[b])
-        primary_root = suf.find(pos[members[0]])
+        # core 강성분 선택(R-FalseMerge fragility 차단, ADR#37): members[0](입력 최저 인덱스)에 고정하면
+        # ① 두-강성분 약신호 브릿지에서 어느 성분이 core 인지, ② 단일 강성분+약신호 주변부에서 members[0]이
+        # 주변부면 core 가 약신호 singleton 이 되는지가 **입력순서에 의존**한다. 대신 **최대 크기 → (동률 시)
+        # publishable 성분 → 멤버 키 최소**(전수 키/타입 기반·입력순서 비의존)로 core 강성분 선정. 크기 우선이라
+        # 약하게 붙은 publishable singleton 이 더 큰 강성분을 가로채지 않고(ADR#36 보존), **동률 강성분 사이에서만**
+        # publishable 우선 → publishable 성분이 키 사전순 패배로 통째로 WITHHELD 되는 것(P2-2) 차단.
+        comp: dict[int, list[int]] = {}
+        for p in range(len(members)):
+            comp.setdefault(suf.find(p), []).append(p)
+
+        def _comp_has_publishable(poss: list[int]) -> bool:
+            return any(records[members[p]].get("record_type") in _PUBLISHABLE_RECORD_TYPES for p in poss)
+
+        primary_root = min(
+            comp.items(),
+            key=lambda it: (-len(it[1]), not _comp_has_publishable(it[1]), min(keys[members[p]] for p in it[1])),
+        )[0]
         weak_only = [m for m in members if suf.find(pos[m]) != primary_root]
         clique_ok = len(weak_only) == 0
         # signal_strength(orchestrator #2): 1비트 양자화 폐기 — 강신호=1.0, 아니면 약신호 Jaccard 연속값.

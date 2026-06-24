@@ -288,9 +288,21 @@ async def test_flag_default_follows_settings(monkeypatch):
 # ── 3. CREATE / APPEND / HOLD live wiring ─────────────────────────────────────────
 def test_strong_cluster_id_stable_across_input_order():
     # 강신호(canonical_url 동일) cluster_id 는 입력 순서 불변 → 배치 간 APPEND 누적 안정.
-    # (약신호 meta: 키 cluster_id 의 순서 안정성은 미보장 — RISK R-FalseMerge 잔여로 기재.)
     import itertools
     recs = _strong_records()
+    ids = {cluster_records(list(p))[0].cluster_id for p in itertools.permutations(recs)}
+    assert len(ids) == 1
+
+
+def test_weak_cluster_id_stable_across_input_order():
+    # ADR#37: 약신호(title-link) cluster_id 도 입력 순서 불변(멤버 키 정렬) → R-FalseMerge 약신호 split 해소.
+    import itertools
+    recs = [
+        _rec(source_id="a", canonical_url="https://a/1",
+             title_or_label="mars rover finds water ice deposit today", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="b", canonical_url="https://b/2",
+             title_or_label="mars rover finds water ice deposit", published_at_or_observed_at="2025-06-02"),
+    ]
     ids = {cluster_records(list(p))[0].cluster_id for p in itertools.permutations(recs)}
     assert len(ids) == 1
 
@@ -557,8 +569,10 @@ async def test_weak_primary_strong_news_core_weak_community_publishes():
 
 
 @pytest.mark.asyncio
-async def test_held_dedup_keeps_legitimate_corroborator():
-    # 과도 제거 방지: news primary + community weak(다른 source) → community 는 held 유지(대표 아님).
+async def test_weak_news_plus_community_withheld():
+    # ADR#37 weak-cluster gate: news + community 가 **약신호(possible_duplicate, 다른 canonical·유사 제목)**로만
+    # 묶이면 WITHHELD — 비-publishable(community) 섞인 약신호 cluster 는 발행 안 함(weak-link 로 news 를 Event
+    # 대표화하지 않음). cf. 강신호 core+weak community held 보존은 test_weak_primary_strong_news_core_weak_community.
     recs = [
         _rec(record_type="article_candidate", source_id="reuters",
              canonical_url="https://reuters.com/outage",
@@ -569,8 +583,80 @@ async def test_held_dedup_keeps_legitimate_corroborator():
     ]
     s = _FakeSession()
     summary = await ingest_records_to_events(s, recs, enabled=True)
-    assert summary.created == 1
-    assert summary.held_member_links == 1          # community(대표 아님) held 유지(corroborator 보존)
+    assert summary.created == 0 and summary.withheld_source_type == 1
+    assert len(s.events) == 0
+
+
+@pytest.mark.asyncio
+async def test_weak_news_plus_news_publishes_low_confidence():
+    # ADR#37: 약신호(possible_duplicate) news+news(다른 canonical·유사 제목) → 발행(전원 publishable, ADR#29 보존).
+    recs = [
+        _rec(record_type="article_candidate", source_id="ap", canonical_url="https://ap.com/a",
+             title_or_label="Coastal refinery fire forces evacuation", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="article_candidate", source_id="reuters", canonical_url="https://reuters.com/b",
+             title_or_label="Coastal refinery fire forces evacuation nearby", published_at_or_observed_at="2025-06-02"),
+    ]
+    s = _FakeSession()
+    summary = await ingest_records_to_events(s, recs, enabled=True)
+    assert summary.clusters_total == 1
+    assert summary.created == 1 and summary.withheld_source_type == 0
+
+
+# ── 입력순서 불변 core/gate (ADR#37 fragility 수정) ────────────────────────────────
+@pytest.mark.asyncio
+async def test_order_invariant_strong_core_with_weak_periphery_first():
+    # fragility 회귀: 단일 강신호 core(news 2 via accession) + community 약신호 주변부. community 를 입력
+    # 첫(members[0])에 둬도 core 는 최대 강성분(news)이라 발행 유지(약신호 주변부가 core 가 되어 WITHHELD 되지 않음).
+    acc = "0001193125-26-000777"
+    news1 = _rec(record_type="article_candidate", source_id="ap",
+                 source_url_or_evidence=f"https://ap.example.com/{acc}",
+                 title_or_label="Reactor scram at coastal plant", published_at_or_observed_at="2025-06-02")
+    news2 = _rec(record_type="article_candidate", source_id="reuters",
+                 source_url_or_evidence=f"https://reuters.example.com/{acc}",
+                 title_or_label="Reactor scram at coastal plant", published_at_or_observed_at="2025-06-02")
+    community = _rec(record_type="community_signal", source_id="hn",
+                     canonical_url="https://news.ycombinator.com/r",
+                     title_or_label="Reactor scram at coastal plant", published_at_or_observed_at="2025-06-02")
+    for recs in ([community, news1, news2], [news1, news2, community]):
+        s = _FakeSession()
+        summary = await ingest_records_to_events(s, recs, enabled=True)
+        assert summary.created == 1 and summary.withheld_source_type == 0   # 강신호 news core → 발행
+        prims = [e for e in s.updates[0].evidence if e.get("relation") == "primary"]
+        assert len(prims) == 1 and prims[0]["source_type"] == "article"     # 대표 news(community 아님)
+
+
+@pytest.mark.asyncio
+async def test_order_invariant_two_strong_components_publishable_wins():
+    # ADR#37 P2-2: 두 강성분(community×2 via accA / official×2 via accB, 동률 크기)이 약신호 title 로만 브릿지.
+    # core = 최대 크기 → **동률이면 publishable 성분 우선**(키 사전순 무관) → official 성분이 core → 발행,
+    # community 성분은 held. 입력순서 A/B 무관하게 **동일하게 official 발행**(키-자의성 제거). community 대표 0.
+    accA = "0001193125-26-000111"
+    accB = "0001193125-26-000222"
+    title = "Grid operator declares regional emergency"
+    cA1 = _rec(record_type="community_signal", source_id="hn",
+               source_url_or_evidence=f"https://hn.example.com/{accA}", title_or_label=title, published_at_or_observed_at="2025-06-02")
+    cA2 = _rec(record_type="community_signal", source_id="reddit",
+               source_url_or_evidence=f"https://reddit.example.com/{accA}", title_or_label=title, published_at_or_observed_at="2025-06-02")
+    oB1 = _rec(record_type="official_record", source_id="sec1",
+               source_url_or_evidence=f"https://sec.gov/Archives/{accB}", title_or_label=title, published_at_or_observed_at="2025-06-02")
+    oB2 = _rec(record_type="official_record", source_id="sec2",
+               source_url_or_evidence=f"https://sec.gov/data/{accB}", title_or_label=title, published_at_or_observed_at="2025-06-02")
+    for recs in ([cA1, cA2, oB1, oB2], [oB2, oB1, cA2, cA1]):
+        s = _FakeSession()
+        summary = await ingest_records_to_events(s, recs, enabled=True)
+        assert summary.created == 1 and summary.withheld_source_type == 0   # publishable(official) 성분 발행
+        prims = [e for e in s.updates[0].evidence if e.get("relation") == "primary"]
+        assert len(prims) == 1 and prims[0]["source_type"] == "official"    # 대표 official(community 아님)
+
+
+def test_publishable_record_types_contract_matches_source_type_mapping():
+    # drift 잠금: cross_source_dedup._PUBLISHABLE_RECORD_TYPES 가 record_type→source_type 매핑 + resolver
+    # publishable source_type 와 동기. core 강성분 publishable 판정과 발행 gate 가 어긋나지 않도록.
+    from ingestion.orchestration.cross_source_dedup import _PUBLISHABLE_RECORD_TYPES
+    from backend.app.services.event_ingest_pipeline import _RECORD_TYPE_TO_SOURCE_TYPE
+    from backend.app.services.event_resolver import _PUBLISHABLE_SOURCE_TYPES
+    derived = {rt for rt, st in _RECORD_TYPE_TO_SOURCE_TYPE.items() if st in _PUBLISHABLE_SOURCE_TYPES}
+    assert _PUBLISHABLE_RECORD_TYPES == derived
 
 
 @pytest.mark.asyncio

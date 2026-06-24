@@ -460,6 +460,38 @@ async def test_live_weak_primary_community_core_weak_official_withheld(session):
     assert await _count(session, "event_updates") == 0
 
 
+async def test_live_weak_cluster_news_community_withheld(session):
+    # ADR#37 weak-cluster gate: 약신호 news+community(다른 canonical·유사 제목) → WITHHELD(실 DB 영속 0).
+    from backend.app.services.event_ingest_pipeline import ingest_records_to_events
+
+    recs = [
+        _rec(record_type="article_candidate", source_id="reuters", canonical_url="https://reuters.com/q1",
+             title_or_label="Port strike halts container traffic", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="community_signal", source_id="hn", canonical_url="https://news.ycombinator.com/q",
+             title_or_label="Port strike halts container traffic", published_at_or_observed_at="2025-06-02"),
+    ]
+    summary = await ingest_records_to_events(session, recs, enabled=True)
+    assert summary.created == 0 and summary.withheld_source_type == 1
+    assert await _count(session, "events") == 0
+
+
+async def test_live_weak_cluster_news_news_publishes(session):
+    # ADR#37: 약신호 news+news(전원 publishable) → 발행(실 DB 1 Event). ADR#29 검증 흐름 보존.
+    from backend.app.services.event_ingest_pipeline import ingest_records_to_events
+
+    recs = [
+        _rec(record_type="article_candidate", source_id="ap", canonical_url="https://ap.com/r1",
+             title_or_label="Coastal refinery fire forces evacuation", published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="article_candidate", source_id="reuters", canonical_url="https://reuters.com/r2",
+             title_or_label="Coastal refinery fire forces evacuation nearby", published_at_or_observed_at="2025-06-02"),
+    ]
+    summary = await ingest_records_to_events(session, recs, enabled=True)
+    assert summary.created == 1 and summary.withheld_source_type == 0
+    # 약신호라 weak_only news 1건은 held degenerate(possible_link)로 분리 보류 → events=1 primary + 1 held.
+    assert summary.held_member_links == 1
+    assert await _count(session, "events") == 2
+
+
 async def test_live_failed_cluster_isolated_other_persists(session):
     # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
     # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).

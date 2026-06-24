@@ -34,6 +34,14 @@ def _has_publishable(member_source_types: tuple[str, ...]) -> bool:
     return any(st in _PUBLISHABLE_SOURCE_TYPES for st in member_source_types)
 
 
+def _homogeneous_publishable(member_source_types: tuple[str, ...]) -> bool:
+    """약신호 cluster 발행 자격(ADR#37): 모든 멤버가 **동일한** publishable type(전부 official 또는 전부
+    article)일 때만 True. 혼합(official+article·community 섞임)이나 비-publishable 단일 타입은 False.
+    → 약신호 title-link 로만 묶인 cluster 에서 더 권위 높은 출처(예 official)가 다른 type 을 끌어와 Event
+    대표로 발행되는 weak-primary 차단. 동일 타입 약신호(news+news)는 authority 상향 없이 저신뢰 발행."""
+    return len(set(member_source_types)) == 1 and member_source_types[0] in _PUBLISHABLE_SOURCE_TYPES
+
+
 @dataclass(frozen=True)
 class EventRoutingDecision:
     cluster_id: str
@@ -91,6 +99,17 @@ def resolve_routing(
     if not _has_publishable(member_source_types):
         return EventRoutingDecision(
             cluster_id, ACTION_WITHHELD, None, "non_publishable_source_type", tuple(member_keys)
+        )
+
+    # 약신호(possible_duplicate) 추가 게이트(ADR#37, weak-primary 차단): 강신호 core 가 없는 약신호 cluster 는
+    # **모든 멤버가 동일한 publishable type 일 때만**(news+news, official+official) 발행한다. 혼합(official+news)
+    # 이나 비-publishable(community/search/market) 섞임은 WITHHELD — 약신호 title-link 로만 묶인 cluster 에서
+    # 더 권위 높은 출처(예 official)가 다른 type 을 끌어와 Event 대표로 발행되는 weak-primary 차단(검증 안 된
+    # 약신호 결합이 강한 Event 얼굴이 되지 않음). 동일 타입 약신호(news+news)는 authority 상향 없이 저신뢰 발행
+    # (delta_summary "…같은 사건으로 추정됩니다" — ADR#29 흐름 보존). 강신호 cluster 는 core-policy(ADR#36) 처리.
+    if not is_strong and not _homogeneous_publishable(member_source_types):
+        return EventRoutingDecision(
+            cluster_id, ACTION_WITHHELD, None, "weak_cluster_not_homogeneous_publishable", tuple(member_keys)
         )
 
     # 미매핑 → 신규 Event 생성(FSD origin). clique 미달이면 약신호-only 멤버는 HOLD.
