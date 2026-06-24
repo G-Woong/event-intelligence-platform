@@ -838,6 +838,55 @@ async def test_live_adjudicator_ambiguous_multiple_candidates(session):
     assert await _count(session, "events") == before_e                   # 자동 병합 0
 
 
+# ── identity eval pair export — adjudication 소비처 (ADR#43) ──────────────────────
+from backend.app.tools import export_identity_eval_pairs as exmod
+
+
+async def test_live_export_adjudication_pairs_no_pii(session):
+    # ADR#43(scenario 43·27·29): adjudication 행 → human-labeling 워크시트(소비처). raw body/PII 0·Event 불변.
+    await _make_semantic_link(session)
+    await adjmod.adjudicate_semantic_links(session)
+    before_e = await _count(session, "events")
+    rows = await exmod.collect_adjudication_eval_pairs(session)
+    assert len(rows) == 1
+    exmod._assert_no_pii(rows)                              # allowlist 키만(body/PII 차단)
+    r = rows[0]
+    assert set(r) <= exmod._WORKSHEET_KEYS
+    assert "body" not in r and "content" not in r and "author" not in r
+    assert r["label"] == "unlabeled"                       # 사람이 gold 채움(워크시트≠gold)
+    assert r["predicted_status"] in (
+        "likely_same_event", "ambiguous", "likely_different_event", "insufficient_features")
+    assert r["title_left"] and r["title_right"]
+    assert await _count(session, "events") == before_e     # read-only(자동 병합 0)
+
+
+async def test_live_export_backlog_summary(session):
+    # ADR#43(scenario 44·25): backlog 분포 report(internal 소비처).
+    await _make_semantic_link(session)
+    await adjmod.adjudicate_semantic_links(session)
+    rows = await exmod.collect_adjudication_eval_pairs(session)
+    summary = exmod.summarize_adjudication_backlog(rows)
+    assert summary["total"] == 1 and summary["auto_merged"] == 0
+    assert sum(summary["by_status"].values()) == 1
+
+
+async def test_live_export_no_links_empty(session):
+    # adjudication 0 → 워크시트 0(빈 입력 안전).
+    rows = await exmod.collect_adjudication_eval_pairs(session)
+    assert rows == []
+
+
+async def test_live_export_roundtrip_to_jsonl(session, tmp_path):
+    # ADR#43(scenario 26·28): 워크시트 JSONL 기록(deterministic·no-PII 검증 통과)·Event 불변.
+    await _make_semantic_link(session)
+    await adjmod.adjudicate_semantic_links(session)
+    before_e = await _count(session, "events")
+    rows = await exmod.collect_adjudication_eval_pairs(session)
+    n = exmod.write_worksheet_jsonl(rows, tmp_path / "worksheet.jsonl")
+    assert n == 1 and (tmp_path / "worksheet.jsonl").exists()
+    assert await _count(session, "events") == before_e     # export 는 Event 불변
+
+
 async def test_live_failed_cluster_isolated_other_persists(session):
     # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
     # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).
