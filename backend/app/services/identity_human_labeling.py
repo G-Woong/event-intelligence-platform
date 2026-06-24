@@ -18,6 +18,7 @@ DB/migration 없음·결정론(LLM/network 0)·stdlib + ADR#43 harness pure 재�
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from dataclasses import dataclass
@@ -978,14 +979,37 @@ def _bucket_of_row(r: dict) -> str:
     )
 
 
+# ── selection method(ADR#47 옵션 D) — bucket cap 내 선택 **순서**. 둘 다 결정론·재현 가능(무작위 아님). ──
+# pair_id_order(ADR#46 기본): pair_id 오름차순 — bucket 이 cap 초과 시 **낮은 pair_id 가 항상 당첨**(정렬 편향).
+# bucket_hash(ADR#47): sha256(pair_id) 순 — bucket 내 균일 분산 결정론 표집(정렬 편향 제거·재현 가능).
+# cap 미만 bucket(현 데이터 규모)에서는 두 방법의 **선택 집합이 동일**(효과는 over-cap 에서만 발생).
+SELECTION_PAIR_ID_ORDER = "deterministic_pair_id_order_cap"
+SELECTION_BUCKET_HASH = "deterministic_bucket_hash_cap"
+SELECTION_METHODS = frozenset({SELECTION_PAIR_ID_ORDER, SELECTION_BUCKET_HASH})
+
+
+def _selection_sort_key(r: dict, method: str) -> str:
+    """선택 정렬 키(결정론). bucket_hash 는 pair_id 의 sha256 hexdigest(정렬 편향 제거·재현 가능)."""
+    pid = str(r.get("pair_id", ""))
+    if method == SELECTION_BUCKET_HASH:
+        return hashlib.sha256(pid.encode("utf-8")).hexdigest()
+    return pid
+
+
 def _sample_candidate_pairs(
-    worksheet_rows: list[dict], *, targets: Optional[dict[str, int]] = None
+    worksheet_rows: list[dict], *, targets: Optional[dict[str, int]] = None,
+    selection_method: str = SELECTION_PAIR_ID_ORDER,
 ) -> list[tuple[str, dict]]:
-    """worksheet rows → 선택된 [(bucket, row)](결정론·pair_id 정렬·bucket target 까지 cap·초과분 drop)."""
+    """worksheet rows → 선택된 [(bucket, row)](결정론·bucket target 까지 cap·초과분 drop).
+
+    selection_method=pair_id_order(ADR#46 기본·pair_id 정렬) | bucket_hash(ADR#47·sha256(pair_id) 정렬·정렬
+    편향 제거). 둘 다 재현 가능(무작위 아님). cut-off 초과분은 summarize 의 over/under 로 가시화."""
+    if selection_method not in SELECTION_METHODS:
+        raise ValueError(f"unknown selection_method {selection_method!r}")
     tgt = targets or CANDIDATE_BUCKET_TARGETS
     per_bucket: dict[str, int] = {}
     out: list[tuple[str, dict]] = []
-    for r in sorted(worksheet_rows, key=lambda x: str(x.get("pair_id", ""))):
+    for r in sorted(worksheet_rows, key=lambda x: _selection_sort_key(x, selection_method)):
         bucket = _bucket_of_row(r)
         cap = tgt.get(bucket, SAMPLING_MIN_TARGET_DRAFT)
         if per_bucket.get(bucket, 0) >= cap:
@@ -1039,12 +1063,14 @@ def build_labeling_packet(
     worksheet_rows: list[dict], *, packet_id: str, reviewers: list[str],
     reviewers_per_pair: int = DEFAULT_REVIEWERS_PER_PAIR,
     targets: Optional[dict[str, int]] = None,
+    selection_method: str = SELECTION_PAIR_ID_ORDER,
 ) -> list[LabelingPacketItem]:
     """live-derived 워크시트(adjudication export) → reviewer labeling packet items.
 
-    bucket 샘플링(target cap·oversample) → reviewer ≥N 배정 → predicted_status/score/reason **차폐**(bias 0).
-    결정론(pair_id 정렬). internal-only artifact(public 미노출). 자동 병합 0(read-only 변환)."""
-    selected = _sample_candidate_pairs(worksheet_rows, targets=targets)
+    bucket 샘플링(target cap·oversample·selection_method) → reviewer ≥N 배정 → predicted_status/score/reason
+    **차폐**(bias 0). 결정론(재현 가능). internal-only artifact(public 미노출). 자동 병합 0(read-only 변환)."""
+    selected = _sample_candidate_pairs(
+        worksheet_rows, targets=targets, selection_method=selection_method)
     return assign_reviewer_packet(
         selected, packet_id=packet_id, reviewers=reviewers, reviewers_per_pair=reviewers_per_pair)
 
@@ -1149,11 +1175,12 @@ _FLOOR_KO_BUCKETS = ("ko_same_event_candidate", "ko_different_event_candidate")
 def summarize_packet_sampling(
     worksheet_rows: list[dict], *, targets: Optional[dict[str, int]] = None,
     packet_items: Optional[list[LabelingPacketItem]] = None,
+    selection_method: str = SELECTION_PAIR_ID_ORDER,
 ) -> dict:
     """worksheet 후보 → sampling 대표성 report(bucket 충원/부족·언어/source_type/risk_tag 분포·표본 floor 대조).
 
-    selected = build 와 **동일** _sample_candidate_pairs(결정론 일치). deficit/underfilled 를 숨기지 않는다(평균
-    뒤에 한국어/hard-negative 숨기기 금지). synthetic 은 live count 를 부풀리지 않는다(live_vs_synthetic 분리)."""
+    selected = build 와 **동일** _sample_candidate_pairs(같은 selection_method·결정론 일치). deficit/underfilled 를
+    숨기지 않는다(평균 뒤에 한국어/hard-negative 숨기기 금지). synthetic 은 live count 를 부풀리지 않는다(live_vs_synthetic)."""
     tgt = targets or CANDIDATE_BUCKET_TARGETS
     total_by_bucket: dict[str, int] = {b: 0 for b in CANDIDATE_BUCKETS}
     total_by_bucket[_CANDIDATE_BUCKET_OTHER] = 0
@@ -1172,7 +1199,8 @@ def summarize_packet_sampling(
         ds = r.get("dataset_source", SOURCE_LIVE)
         live_vs_synthetic[ds] = live_vs_synthetic.get(ds, 0) + 1
 
-    selected = _sample_candidate_pairs(worksheet_rows, targets=targets)
+    selected = _sample_candidate_pairs(
+        worksheet_rows, targets=targets, selection_method=selection_method)
     selected_by_bucket: dict[str, int] = {b: 0 for b in CANDIDATE_BUCKETS}
     selected_live = 0
     for bucket, r in selected:
@@ -1192,9 +1220,9 @@ def summarize_packet_sampling(
     return {
         "total_candidates": len(worksheet_rows),
         "selected_count": selected_count,
-        # selection 은 **무작위 표집 아님** — pair_id 정렬 후 bucket cap 까지 앞쪽을 취하는 결정론 cut-off.
-        # 대표성은 미입증(R-GoldSamplingBias). "sampling" 이 random 을 함의하지 않도록 명시.
-        "selection_method": "deterministic_pair_id_order_cap",
+        # selection 은 **무작위 표집 아님** — bucket cap 까지 결정론 cut-off(pair_id 정렬 또는 sha256 hash 정렬).
+        # 대표성은 미입증(R-GoldSamplingBias). "sampling" 이 random 을 함의하지 않도록 method 를 명시.
+        "selection_method": selection_method,
         "target_by_bucket": target_by_bucket,
         "selected_by_bucket": selected_by_bucket,
         "total_by_bucket": total_by_bucket,

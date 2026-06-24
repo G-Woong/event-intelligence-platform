@@ -1117,6 +1117,94 @@ async def test_live_packet_idempotent_and_event_unchanged(session):
     assert await _count(session, "events") == after_link_e
 
 
+# ── live-derived labeling packet pilot tool (ADR#47) ─────────────────────────────────
+import tempfile
+
+from backend.app.tools import build_live_identity_labeling_packet as livemod
+
+
+async def test_live_tool_no_candidates_empty_report(session):
+    # ADR#47(scenario 1·7): semantic link 0 → report 전부 0·exclusion 0·Event 불변(정직한 빈 백로그).
+    before_e = await _count(session, "events")
+    rep = await livemod.generate_live_packet_report(
+        session, packet_id="pkt-live", reviewers=["reviewer-a", "reviewer-b"])
+    assert rep["total_candidate_links"] == 0 and rep["total_adjudications"] == 0
+    assert rep["eligible_for_packet"] == 0 and rep["selected_count"] == 0
+    assert rep["live_selected_count"] == 0 and rep["reviewer_assignment_count"] == 0
+    assert rep["exclusion_reasons"][livemod.EXCL_LINK_NO_ADJUDICATION] == 0
+    assert rep["auto_merge_enabled"] is False
+    assert rep["event_count_before"] == rep["event_count_after"] == before_e
+
+
+async def test_live_tool_backlog_probe_link_without_adjudication(session):
+    # ADR#47(scenario 1·4): semantic link 1 있으나 adjudication 미실행(stage ③ 미배선) →
+    # eligible 0·exclusion semantic_link_without_adjudication=1(왜 0 인지 표면화). Event 불변.
+    await _make_semantic_link(session)
+    before_e = await _count(session, "events")
+    rows, backlog = await livemod.collect_live_identity_candidates(session)
+    assert rows == []
+    assert backlog["total_candidate_links"] == 1
+    assert backlog["total_adjudications"] == 0
+    assert backlog["eligible_for_packet"] == 0
+    assert backlog["exclusion_reasons"][livemod.EXCL_LINK_NO_ADJUDICATION] == 1
+    assert await _count(session, "events") == before_e          # read-only
+
+
+async def test_live_tool_packet_report_eligible_live_selected(session):
+    # ADR#47(scenario 2·3·8·9): semantic link + adjudication → eligible 1·live_selected 1(실 파이프라인 유래·
+    # synthetic 아님)·selected 1·Event 불변·자동 병합 0.
+    await _make_semantic_link(session)
+    await adjmod.adjudicate_semantic_links(session)
+    before_e = await _count(session, "events")
+    rep = await livemod.generate_live_packet_report(
+        session, packet_id="pkt-live", reviewers=["reviewer-a", "reviewer-b"])
+    assert rep["total_candidate_links"] == 1 and rep["total_adjudications"] == 1
+    assert rep["eligible_for_packet"] == 1
+    assert rep["selected_count"] == 1
+    assert rep["live_selected_count"] == 1                       # live-derived(synthetic 0)
+    assert rep["live_vs_synthetic"][hlmod.SOURCE_LIVE] == 1
+    assert rep["reviewer_assignment_count"] == 2                 # 1 pair × 2 reviewer
+    assert rep["unclassified_count"] == 0
+    assert rep["selection_method"] == hlmod.SELECTION_BUCKET_HASH
+    assert rep["auto_merge_enabled"] is False
+    assert rep["event_count_before"] == rep["event_count_after"] == before_e
+    # live 후보 1 << floor → deficit 정직 노출.
+    assert rep["floor_check"]["live_deficit"] > 0
+
+
+async def test_live_tool_write_jsonl_roundtrip_event_unchanged(session):
+    # ADR#47(scenario 17): live packet → JSONL(internal artifact·validate 통과)·Event 불변.
+    await _make_semantic_link(session)
+    await adjmod.adjudicate_semantic_links(session)
+    before_e = await _count(session, "events")
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "live_packet.jsonl")
+        n = await livemod.write_live_labeling_packet_jsonl(
+            session, path, packet_id="pkt-live", reviewers=["reviewer-a", "reviewer-b"])
+        assert n == 2                                            # 1 pair × 2 reviewer
+        import json as _json
+        lines = [l for l in open(path, encoding="utf-8").read().splitlines() if l]
+        assert len(lines) == 2
+        dicts = [_json.loads(l) for l in lines]
+        hlmod.validate_labeling_packet(dicts)                   # verdict/allowlist/enum 통과
+        for dct in dicts:
+            assert "predicted_status" not in dct and "score" not in dct
+    assert await _count(session, "events") == before_e
+
+
+async def test_live_tool_report_idempotent_event_unchanged(session):
+    # ADR#47(scenario 18): 같은 백로그 재실행 → 같은 report(결정론)·Event 불변.
+    await _make_semantic_link(session)
+    await adjmod.adjudicate_semantic_links(session)
+    before_e = await _count(session, "events")
+    a = await livemod.generate_live_packet_report(
+        session, packet_id="pkt-live", reviewers=["reviewer-a", "reviewer-b"])
+    b = await livemod.generate_live_packet_report(
+        session, packet_id="pkt-live", reviewers=["reviewer-a", "reviewer-b"])
+    assert a == b
+    assert await _count(session, "events") == before_e
+
+
 async def test_live_failed_cluster_isolated_other_persists(session):
     # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
     # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).
