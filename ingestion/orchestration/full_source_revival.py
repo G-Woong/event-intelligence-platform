@@ -420,6 +420,9 @@ def to_structured_signal_candidates(
 _VALID_RECORD_TYPES = frozenset({
     "article_candidate", "official_record", "structured_signal",
     "community_signal", "search_result",
+    # catalog 메타데이터(영화/도서/공연/관광/박스오피스/게임 API) — 비-publishable, KG/entity
+    # enrichment 역할(R-SourceCatalogFidelity, ADR#40). official_record 로 발행되지 않는다.
+    "catalog_metadata",
 })
 
 

@@ -131,6 +131,18 @@ def test_gate_pure_search_withheld():
     assert d.action == ACTION_WITHHELD
 
 
+def test_gate_pure_catalog_withheld():
+    # R-SourceCatalogFidelity(ADR#40): catalog 메타(영화/도서/박스오피스)는 publishable 아님 →
+    # 단독 cross-source 직접 발행 금지(official Event 로 새지 않음).
+    d = resolve_routing(
+        cluster_id="g_cat", confidence="duplicate", clique_ok=True,
+        member_keys=("a", "b"), mapped_event_id=None,
+        member_source_types=("catalog", "catalog"),
+    )
+    assert d.action == ACTION_WITHHELD
+    assert d.reason == "non_publishable_source_type"
+
+
 def test_gate_unknown_source_type_fail_closed():
     # 미지 source_type(publishable allowlist 밖)은 fail-closed → 발행 금지.
     d = resolve_routing(

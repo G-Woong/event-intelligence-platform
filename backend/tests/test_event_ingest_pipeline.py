@@ -96,6 +96,12 @@ def _params(stmt):
     return stmt.compile(dialect=postgresql.dialect()).params
 
 
+class _ScalarList(list):
+    """list + .all()(SQLAlchemy ScalarResult 호환 — find_events_by_identity 의 .scalars().all())."""
+    def all(self):
+        return list(self)
+
+
 class _Result:
     def __init__(self, scalar=None, rows=None):
         self._scalar = scalar
@@ -105,7 +111,7 @@ class _Result:
         return self._scalar
 
     def scalars(self):
-        return list(self._rows)
+        return _ScalarList(self._rows)
 
     def all(self):
         return list(self._rows)
@@ -120,6 +126,7 @@ class _FakeSession:
         self.cmap: dict[str, uuid.UUID] = {}
         self.links: list[SimpleNamespace] = []
         self.cards: dict[str, SimpleNamespace] = {}   # event_cards 무변경 입증용(쓰기 0 기대)
+        self.identity: dict[str, uuid.UUID] = {}      # event_identity_map(ADR#40): identity_key→event_id
         self.commits = 0
         self.rollbacks = 0
 
@@ -152,6 +159,10 @@ class _FakeSession:
             self.links.append(SimpleNamespace(**p))
         elif table == "event_cards":
             self.cards[str(p["id"])] = SimpleNamespace(**p)
+        elif table == "event_identity_map":
+            # on_conflict_do_nothing(identity_key) = 첫 매핑 보존(ADR#40).
+            if p["identity_key"] not in self.identity:
+                self.identity[p["identity_key"]] = p["event_id"]
         else:
             raise NotImplementedError(f"insert {table}")
         return _Result()
@@ -191,6 +202,17 @@ class _FakeSession:
                 parent = self.events.get(pid)
                 out.append((ln.linked_event_id, parent.canonical_title if parent else None))
             return _Result(rows=out)
+        if table == "event_identity_map":
+            # find_events_by_identity(ADR#40) 시뮬: identity_key.in_(keys) 매핑 event_id distinct(정렬).
+            keys = self._extract_in_values(stmt)
+            eids: list = []
+            seen: set[str] = set()
+            for k, eid in self.identity.items():
+                if k in keys and str(eid) not in seen:
+                    seen.add(str(eid))
+                    eids.append(eid)
+            eids.sort(key=str)   # order_by event_id asc(결정적)
+            return _Result(rows=eids)
         where_val = stmt.whereclause.right.value if stmt.whereclause is not None else None
         if table == "cluster_event_map":
             return _Result(scalar=self.cmap.get(where_val))
@@ -299,6 +321,68 @@ def test_mapper_fallback_title_when_primary_missing():
     )
     cand = candidate_from_cluster(fake_cluster, {})
     assert cand.canonical_title == "event:xcluster:canon:deadbeef"
+
+
+# ── cross-batch identity anchor 생성 정책(ADR#40) ────────────────────────────────
+def test_identity_keys_only_publishable_strong_key_core_members():
+    # 강신호 cluster: ap(article,canonical)+sec(official,canonical/accession) 강신호 + blog(community) 약신호.
+    # identity_keys = publishable(article/official) **강신호 core** strong-key 멤버 only.
+    recs = [
+        _rec(source_id="ap", record_type="article_candidate", canonical_url="https://ap/x",
+             source_url_or_evidence="https://ap/Archives/0001193125-26-000111",
+             title_or_label="Reactor scram", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="sec", record_type="official_record", canonical_url="https://sec/o",
+             source_url_or_evidence="https://sec/Archives/0001193125-26-000111",
+             title_or_label="Reactor scram", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="blog", record_type="community_signal", canonical_url="https://blog/z",
+             title_or_label="Reactor scram", published_at_or_observed_at="2025-06-02"),
+    ]
+    clusters = cluster_records(recs)
+    idx = build_record_index(recs)
+    cand = candidate_from_cluster(clusters[0], idx)
+    from ingestion.orchestration.eventqueue_dedup import compute_record_key
+    key_ap = compute_record_key(recs[0])[0]
+    key_sec = compute_record_key(recs[1])[0]
+    key_blog = compute_record_key(recs[2])[0]
+    # ap(article)·sec(official) 는 publishable+canonical → anchor. blog(community) 는 제외.
+    assert key_ap in cand.identity_keys
+    assert key_sec in cand.identity_keys
+    assert key_blog not in cand.identity_keys            # community 는 identity anchor 금지
+
+
+def test_identity_keys_exclude_weak_only_held_members():
+    # 강신호 news core(ap+reuters via accession) + blog 약신호-only(held) → blog 는 core 아님 → anchor 제외.
+    recs = [
+        _rec(source_id="ap", canonical_url="https://ap/x",
+             source_url_or_evidence="https://ap/Archives/0001193125-26-000111",
+             title_or_label="Hormuz tanker seized navy", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="reuters", canonical_url="https://reuters/y",
+             source_url_or_evidence="https://reuters/Archives/0001193125-26-000111",
+             title_or_label="Hormuz tanker seized navy", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="blog", canonical_url="https://blog/z",
+             title_or_label="Hormuz tanker seized navy", published_at_or_observed_at="2025-06-02"),
+    ]
+    clusters = cluster_records(recs)
+    c = clusters[0]
+    assert c.clique_ok is False and len(c.weak_only_members) == 1   # blog 약신호-only
+    cand = candidate_from_cluster(c, build_record_index(recs))
+    from ingestion.orchestration.eventqueue_dedup import compute_record_key
+    key_blog = compute_record_key(recs[2])[0]
+    assert key_blog not in cand.identity_keys            # weak_only(held) 는 anchor 금지(false-merge 방어)
+
+
+def test_identity_keys_empty_for_catalog_cluster():
+    # catalog 메타(비-publishable)만의 cluster → identity anchor 0(catalog 는 anchor 금지).
+    recs = [
+        _rec(source_id="tmdb", record_type="catalog_metadata", canonical_url="https://tmdb/1",
+             title_or_label="Some Movie", published_at_or_observed_at="2025-06-02"),
+        _rec(source_id="aladin", record_type="catalog_metadata", canonical_url="https://aladin/2",
+             title_or_label="Some Movie", published_at_or_observed_at="2025-06-02"),
+    ]
+    clusters = cluster_records(recs)
+    if clusters:                                          # 같은 제목/날짜로 약신호 cluster 형성 시
+        cand = candidate_from_cluster(clusters[0], build_record_index(recs))
+        assert cand.identity_keys == ()                  # catalog 는 identity anchor 0
 
 
 # ── 2. flag 게이트 ────────────────────────────────────────────────────────────────

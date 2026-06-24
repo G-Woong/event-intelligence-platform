@@ -32,6 +32,8 @@ _RECORD_TYPE_TO_SOURCE_TYPE = {
     "structured_signal": "signal",
     "search_result": "search",
     "community_signal": "community",
+    # catalog 메타데이터(R-SourceCatalogFidelity, ADR#40): 비-publishable 'catalog' source_type.
+    "catalog_metadata": "catalog",
 }
 
 BRIDGE_STATUS_WRITTEN = "written"

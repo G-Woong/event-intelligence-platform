@@ -32,7 +32,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from backend.app.models.event import EventCardORM
-from backend.app.models.event_resolution import ClusterEventMapORM, EventLinkORM
+from backend.app.models.event_resolution import (
+    ClusterEventMapORM,
+    EventIdentityMapORM,
+    EventLinkORM,
+)
 from backend.app.models.event_timeline import (
     EventORM,
     EventUpdateORM,
@@ -88,6 +92,11 @@ class ResolvedCandidate:
     # cluster 가 이걸로 gate 판정 — 강신호 core 에 publishable 없으면 WITHHELD(weak_only publishable 로 발행 금지).
     # ()=미설정(레거시 candidate; resolution_pipeline 이 candidate.evidence 로 fallback — 하위호환).
     core_source_types: tuple[str, ...] = ()
+    # cross-batch Event identity anchor(ADR#40, R-CrossBatchEventIdentity): 이 사건의 **강한 identity 키**
+    # (publishable 멤버의 canonical_url/official_id 기반 record_key). CREATE/APPEND 시 event_identity_map 에
+    # event_id 로 영속되고, 다음 배치의 미매핑 cluster 가 같은 anchor 를 가지면 그 Event 로 APPEND(분열 방지).
+    # ()=미설정(레거시 candidate; cross-batch 승격 비활성 — 하위호환). community/market/catalog/약신호 제외(보수).
+    identity_keys: tuple[str, ...] = ()
 
 
 @dataclass
@@ -448,6 +457,49 @@ async def find_held_parents(
     return out
 
 
+async def find_events_by_identity(
+    session: AsyncSession, *, identity_keys: tuple[str, ...]
+) -> list[str]:
+    """identity anchor 들이 가리키는 **기존 매핑 Event** 목록(cross-batch 동일성; ADR#40).
+
+    event_identity_map(identity_key→event_id)에서 주어진 anchor 중 하나라도 매핑된 event_id 를 distinct 로
+    반환(결정적 정렬 event_id asc). 보통 0 또는 1개 — 1개면 같은 사건 재등장(→APPEND), 0개면 신규(→CREATE).
+    2개 이상이면 cluster 가 서로 다른 기존 Event 두 개의 anchor 를 동시에 가짐(모호) → 호출자가 보수적으로
+    승격하지 않는다(잘못된 병합 금지). 빈 입력 → []."""
+    keys = [str(k) for k in identity_keys if k]
+    if not keys:
+        return []
+    stmt = (
+        select(EventIdentityMapORM.event_id)
+        .where(EventIdentityMapORM.identity_key.in_(keys))
+        .distinct()
+        .order_by(EventIdentityMapORM.event_id.asc())
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    return [str(r) for r in rows]
+
+
+async def map_event_identities(
+    session: AsyncSession, *, identity_keys: tuple[str, ...], event_id: Any, commit: bool = True
+) -> None:
+    """identity anchor 들 → event_id 영속(cross-batch 동일성 단일 출처; ADR#40).
+
+    각 anchor 를 on_conflict_do_nothing(identity_key) 로 INSERT — **첫 매핑 보존**(안정 identity; 같은 anchor
+    가 이미 다른 Event 에 있으면 덮어쓰지 않는다). CREATE/APPEND 시 호출돼 Event 가 자신의 strong anchor 를
+    claim → 다음 배치의 같은 anchor cluster 가 이 Event 로 수렴. 빈 입력은 no-op. commit=False 면 미종료."""
+    eid = _coerce_uuid(event_id)
+    keys = [str(k) for k in identity_keys if k]
+    for key in keys:
+        stmt = (
+            pg_insert(EventIdentityMapORM)
+            .values(identity_key=key, event_id=eid)
+            .on_conflict_do_nothing(index_elements=["identity_key"])
+        )
+        await session.execute(stmt)
+    if commit:
+        await session.commit()
+
+
 async def hold_link(
     session: AsyncSession,
     *,
@@ -577,6 +629,18 @@ async def apply_routing(
             )
             result.held_event_ids.append(held_event_id)
             result.link_ids.append(link_id)
+
+    # cross-batch identity anchor 영속(ADR#40): 발행(CREATE/APPEND)된 Event 가 자신의 strong identity
+    # anchor(candidate.identity_keys)를 claim → 다음 배치의 같은 anchor cluster 가 이 Event 로 수렴(분열 방지).
+    # WITHHELD/HOLD(미발행)는 anchor 를 claim 하지 않는다(발행 안 된 사건에 identity 부여 금지). 첫 매핑 보존.
+    if (
+        candidate.identity_keys
+        and primary_id is not None
+        and decision.action in (ACTION_CREATE, ACTION_APPEND)
+    ):
+        await map_event_identities(
+            session, identity_keys=candidate.identity_keys, event_id=primary_id, commit=False
+        )
 
     await session.commit()  # 단일 원자 커밋(부분 실패 orphan 차단).
     return result

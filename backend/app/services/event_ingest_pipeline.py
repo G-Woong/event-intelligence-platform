@@ -36,7 +36,7 @@ from urllib.parse import urlparse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ingestion.orchestration.cross_source_dedup import CONF_DUPLICATE, cluster_records, titles_similar
-from ingestion.orchestration.eventqueue_dedup import _external_url, compute_record_key
+from ingestion.orchestration.eventqueue_dedup import _external_url, _official_id, compute_record_key
 
 from backend.app.core.config import settings
 from backend.app.services.event_resolution_pipeline import resolve_and_apply_cluster
@@ -57,8 +57,17 @@ _RECORD_TYPE_TO_SOURCE_TYPE = {
     "structured_signal": "signal",
     "search_result": "search",
     "community_signal": "community",
+    # catalog 메타데이터(R-SourceCatalogFidelity, ADR#40): 비-publishable 'catalog' source_type
+    # (_PUBLISHABLE_SOURCE_TYPES={official,article} 밖·authority 0 fail-closed) → catalog 메타가
+    # publishable "official" Event 로 발행되는 누수 차단. 역할(KG/entity enrichment)은 라벨로 보존.
+    "catalog_metadata": "catalog",
 }
 _MAX_TITLE_LEN = 512   # 헤드라인 라벨 상한(전문 본문 위장 차단).
+
+# cross-batch identity anchor(ADR#40, R-CrossBatchEventIdentity)로 쓸 수 있는 source_type: publishable
+# (official/article)만. community/market/catalog/search/약신호는 단독 identity anchor 금지(보수 —
+# 같은 사건 판정의 강한 신호는 canonical_url/official_id 보유 publishable 출처로 한정).
+_IDENTITY_ANCHOR_SOURCE_TYPES = frozenset({"official", "article"})
 
 # record_type → 사용자용 출처 종류 라벨(delta_summary 자연어화). allowlist 밖은 라벨 생략.
 _SOURCE_KIND_KO = {
@@ -67,6 +76,7 @@ _SOURCE_KIND_KO = {
     "structured_signal": "구조화 지표",
     "search_result": "검색",
     "community_signal": "커뮤니티",
+    "catalog_metadata": "카탈로그",
 }
 
 # source_type → primary-authority 순위(ADR#34): mixed cluster 에서 Event 대표(primary)를 고를 때
@@ -248,6 +258,18 @@ def candidate_from_cluster(
             ev["url"] = url
         evidence.append(ev)
 
+    # cross-batch identity anchor(ADR#40): **강신호 core 멤버**(weak_only/held 제외) 중 publishable
+    # (official/article)이고 strong key(canonical_url 또는 official_id 보유)인 멤버의 record_key. 이게
+    # event_identity_map 에 영속돼 배치를 넘어 같은 사건을 잇는다. **held(weak_only) 멤버 제외가 핵심** —
+    # held 는 이 Event 에 '확정'되지 않은 possible 보류라 그 anchor 를 claim 하면 다른-제목 재등장을 잘못
+    # 병합한다(ADR#38 false-merge 방어와 충돌). community/market/catalog/약신호도 anchor 금지(보수).
+    identity_keys = tuple(
+        m for m in core_members
+        if (r := index.get(m)) is not None
+        and _RECORD_TYPE_TO_SOURCE_TYPE.get(r.get("record_type")) in _IDENTITY_ANCHOR_SOURCE_TYPES
+        and (r.get("canonical_url") or _official_id(_external_url(r)))
+    )
+
     return ResolvedCandidate(
         canonical_title=canonical_title,
         observed_at=observed_at,
@@ -270,6 +292,8 @@ def candidate_from_cluster(
         # source-type gate 입력(ADR#36): 강신호 core 멤버 source_type(weak_only 제외) → resolver 가
         # core publishable 0이면 WITHHELD. 약신호 cluster 는 전체.
         core_source_types=core_source_types,
+        # cross-batch identity anchor(ADR#40): publishable strong-key 멤버 record_key → 배치 넘어 동일성 유지.
+        identity_keys=identity_keys,
     )
 
 

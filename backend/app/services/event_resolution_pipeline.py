@@ -26,6 +26,7 @@ from backend.app.services.event_timeline_service import (
     ApplyResult,
     ResolvedCandidate,
     apply_routing,
+    find_events_by_identity,
     find_held_parents,
     get_cluster_event,
     map_cluster,
@@ -73,6 +74,18 @@ async def resolve_and_apply_cluster(
                 mapped = parent_id
                 promoted = True
                 break
+    # cross-batch identity 승격(ADR#40): held lineage 로 안 잡힌 미매핑 cluster 라도, 멤버의 strong identity
+    # anchor(canonical_url/official_id 기반 record_key, candidate.identity_keys)가 **이미 기존 Event 에 속하면**
+    # 그 Event 로 라우팅 → 같은 사건이 배치마다 새 Event 로 분열(UNDER-merge)되는 것을 막는다. anchor 가 정확히
+    # 한 Event 를 가리킬 때만 승격(2개 이상=모호→승격 안 함, 잘못된 병합 금지). canonical_url/official_id 정확
+    # 일치라 title-우연일치 false-merge 위험 없음(강한 identity). community/market/catalog/약신호는 anchor 제외.
+    if mapped is None and candidate.identity_keys:
+        existing = await find_events_by_identity(
+            session, identity_keys=tuple(candidate.identity_keys)
+        )
+        if len(existing) == 1:
+            mapped = existing[0]
+            promoted = True
     # source-type publish gate 입력(ADR#33/#36): 우선 candidate.core_source_types(강신호 core 멤버 source_type,
     # weak_only 제외 — candidate_from_cluster 가 채움)로 판정해 **weak_only publishable 로 발행되는 것을 차단**.
     # 미설정(레거시 candidate)이면 candidate.evidence 의 source_type 으로 fallback(하위호환).

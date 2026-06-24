@@ -215,6 +215,15 @@ Analyzer: standard (기본). 한국어 nori는 STEP 010+ TODO.
 | status | VARCHAR(12) | possible / confirmed / rejected / merged |
 | reason | VARCHAR | 약신호 보류 사유(자동병합 금지) |
 
+### event_identity_map (cross-batch Event identity — ✅ **alembic 0007, ADR#40 / R-CrossBatchEventIdentity**)
+
+> cluster_id(=`xcluster:{min(member record_key)}`)가 cluster 멤버십 의존이라 배치마다 바뀌어 같은 사건이 분열(UNDER-merge)되는 것을 막는 **결정론 Event identity 층**. cluster_event_map 과 분리. **publishable 강신호 core 멤버**(weak_only/held 제외)의 **canonical_url/official_id 기반 record_key**를 identity anchor 로, CREATE/APPEND 시 event_id 로 claim(on_conflict_do_nothing=첫 매핑 보존). 미매핑 cluster 가 CREATE 되기 전 anchor 가 정확히 1개 기존 Event 를 가리키면 그 Event 로 APPEND(cross-batch 수렴), 2개 이상(모호)이면 승격 안 함. **부분종결**: 동일 anchor(canonical_url/official_id) 재등장(syndicated wire)은 닫힘; 공유 anchor 없는 독립 보도 cross-batch 분열은 semantic identity(미구현) 잔여.
+
+| event_identity_map | 타입 | 설명 |
+|---|---|---|
+| identity_key | VARCHAR(256) | PK (publishable core 멤버 record_key; 첫 매핑 보존) |
+| event_id | UUID | FK → events.id (**RESTRICT**, 감사 보호) |
+
 ## Entity (entities 테이블 — 1급 객체, SPEC §3.1)
 
 | 컬럼 | 타입 | 설명 |

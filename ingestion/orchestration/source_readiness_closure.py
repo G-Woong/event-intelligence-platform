@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Optional
 
+from ingestion.orchestration.source_content_type import content_type
 from ingestion.orchestration.source_value_policy import decide_source_value
 from ingestion.orchestration.vendor_api_routes import has_vendor_route
 
@@ -131,9 +132,17 @@ def build_readiness_gap(state, profile) -> SourceReadinessGap:
         rescue_plan = ["manual_review"]
 
     root_cause = tuple(c for c in [reason] if c) or ("non_ready",)
+    # catalog 메타데이터 소스는 source_group(domain) 매핑보다 content_type(단일 출처) 우선 →
+    # catalog_metadata(비-publishable). run_production_orchestration._record_type_for 와 동일 규칙으로
+    # readiness expected_record_type 의 drift 제거(R-SourceCatalogFidelity, ADR#40).
+    expected_rt = (
+        "catalog_metadata"
+        if content_type(sid, grp) == "catalog_metadata"
+        else _GROUP_RECORD_TYPE.get(grp, "article_candidate")
+    )
     return SourceReadinessGap(
         source_id=sid, previous_status=state.current_status, source_group=grp,
-        expected_record_type=_GROUP_RECORD_TYPE.get(grp, "article_candidate"),
+        expected_record_type=expected_rt,
         root_cause=root_cause, blocking_layer=layer, rescue_possible=rescue_possible,
         rescue_plan=tuple(rescue_plan), required_code_change=tuple(code_change),
         final_required_status=final,

@@ -469,10 +469,10 @@ def _cand_eq():
     return _cand()
 
 
-# ── alembic revision chain 무결성 (0001→0006, 텍스트 — 실DB 검증과 별개의 정적 체인 잠금) ──
+# ── alembic revision chain 무결성 (0001→0007, 텍스트 — 실DB 검증과 별개의 정적 체인 잠금) ──
 # import 하지 않는다: pytest sys.path 에서 backend/alembic 가 설치 alembic 을 가려
 # `from alembic import op` 가 깨진다. revision/down_revision 만 텍스트로 읽어 체인을 잇는다.
-def test_migration_revision_chain_is_contiguous_0001_to_0006():
+def test_migration_revision_chain_is_contiguous_0001_to_0007():
     versions = Path(__file__).resolve().parents[1] / "alembic" / "versions"
     files = sorted(p for p in versions.glob("000*.py") if p.name != "__init__.py")
     assert [p.name for p in files] == [
@@ -482,6 +482,7 @@ def test_migration_revision_chain_is_contiguous_0001_to_0006():
         "0004_event_timeline.py",
         "0005_event_resolution.py",
         "0006_fk_restrict_audit.py",
+        "0007_event_identity_map.py",
     ]
 
     rev_re = re.compile(r'^revision:\s*str\s*=\s*"([^"]+)"', re.M)

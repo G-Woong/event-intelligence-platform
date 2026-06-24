@@ -98,7 +98,16 @@ def _infer_fmt(path, text: str) -> str:
 def _record_type_for(profile, candidate) -> str:
     if getattr(candidate, "numeric_payload_exempt", False):
         return "structured_signal"
+    sid = getattr(profile, "source_id", None)
     grp = getattr(profile, "source_group", None) or "news"
+    # catalog 메타데이터(aladin/tmdb/kofic/kopis/tour/igdb)는 official_record 로 발행되면 안 됨
+    # (R-SourceCatalogFidelity, ADR#40). source_content_type(콘텐츠 분류 단일 출처)이 catalog_metadata 로
+    # 분류하는 소스는 source_group 매핑(domain→official_record)보다 **우선**해 비-publishable
+    # catalog_metadata record_type 으로 둔다 → domain→official_record 누수 차단. source_group 하나로
+    # publishability 를 추정하지 않는다(소스별 콘텐츠 성격 반영). non-catalog domain 소스는 group 매핑 유지(회귀 0).
+    from ingestion.orchestration.source_content_type import content_type
+    if sid and content_type(sid, grp) == "catalog_metadata":
+        return "catalog_metadata"
     return _GROUP_TO_RECORD_TYPE.get(grp, "article_candidate")
 
 

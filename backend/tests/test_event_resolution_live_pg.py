@@ -38,7 +38,7 @@ _LIVE_PG_URL = os.environ.get(
     "LIVE_PG_TEST_URL",
     "postgresql+asyncpg://event_user:event_pass@localhost:5432/event_intel_test",
 )
-_EVENT_TABLES = "events, event_updates, cluster_event_map, event_links, event_cards"
+_EVENT_TABLES = "events, event_updates, cluster_event_map, event_links, event_identity_map, event_cards"
 
 
 def _pg_reachable() -> bool:
@@ -562,6 +562,131 @@ async def test_live_held_promotion_idempotent_on_reprocess(session):
     assert await _count(session, "events") == n_events          # Event 수 불변(멱등)
     # 같은 cluster_id 가 mapped → APPEND(append-only 관측은 1행 늘 수 있으나 새 Event/held 중복 0)
     assert await _count(session, "event_updates") >= n_updates
+
+
+# ── cross-batch event identity (ADR#40, R-CrossBatchEventIdentity) ──────────────
+from dataclasses import dataclass as _dataclass
+
+
+@_dataclass(frozen=True)
+class _IdCluster:
+    """cluster_id 를 명시 제어해 identity 층을 격리 검증하는 cluster-like(duck-typed)."""
+    cluster_id: str
+    duplicate_group: tuple = ()
+    confidence: str = "duplicate"
+    clique_ok: bool = True
+    weak_only_members: tuple = ()
+
+
+def _id_cand(observed, identity_keys, title="호르무즈 해협 긴장"):
+    return ResolvedCandidate(
+        canonical_title=title, observed_at=observed, delta_summary="update",
+        evidence=({"source_type": "article", "relation": "primary"},),
+        core_source_types=("article",), identity_keys=identity_keys,
+    )
+
+
+async def test_live_cross_batch_same_identity_appends_not_new_event(session):
+    # ADR#40: batch1 이 identity anchor K 를 claim → batch2 가 **다른 cluster_id** 지만 같은 anchor K 를
+    # 가지면 새 Event 가 아니라 기존 Event 로 APPEND(같은 사건 분열 0 = UNDER-merge 방지).
+    c1 = _IdCluster(cluster_id="xcluster:b1", duplicate_group=("canon:K", "canon:o1"))
+    r1 = await pipe.resolve_and_apply_cluster(session, c1, candidate=_id_cand(_T2, ("canon:K",)))
+    assert r1.action == ACTION_CREATE
+    assert await _count(session, "events") == 1
+    assert await _count(session, "event_identity_map") == 1     # anchor K claimed by E1
+
+    c2 = _IdCluster(cluster_id="xcluster:b2", duplicate_group=("canon:K", "canon:o2"))
+    r2 = await pipe.resolve_and_apply_cluster(session, c2, candidate=_id_cand(_T3, ("canon:K",)))
+    assert r2.action == ACTION_APPEND
+    assert r2.event_id == r1.event_id                           # 같은 Event 로 수렴
+    assert await _count(session, "events") == 1                 # 분열 0
+
+
+async def test_live_cross_batch_different_identity_creates_new(session):
+    # ADR#40 false-merge 방어: 공유 anchor 없으면(다른 사건) 독립 CREATE — 무차별 병합 금지.
+    c1 = _IdCluster(cluster_id="xcluster:b1", duplicate_group=("canon:K1",))
+    await pipe.resolve_and_apply_cluster(session, c1, candidate=_id_cand(_T2, ("canon:K1",)))
+    c2 = _IdCluster(cluster_id="xcluster:b2", duplicate_group=("canon:K2",))
+    r2 = await pipe.resolve_and_apply_cluster(
+        session, c2, candidate=_id_cand(_T3, ("canon:K2",), title="전혀 다른 사건")
+    )
+    assert r2.action == ACTION_CREATE
+    assert await _count(session, "events") == 2                 # 서로 다른 사건 분리 유지
+
+
+async def test_live_cross_batch_ambiguous_identity_does_not_merge(session):
+    # ADR#40 보수: 한 cluster 가 서로 다른 두 기존 Event 의 anchor 를 동시에 가지면(모호) 자동 병합 안 함
+    # (둘을 잘못 합치지 않는다 — CREATE; 향후 HOLD_REVIEW 는 이월).
+    c1 = _IdCluster(cluster_id="xcluster:b1", duplicate_group=("canon:A",))
+    await pipe.resolve_and_apply_cluster(session, c1, candidate=_id_cand(_T2, ("canon:A",), title="사건 A"))
+    c2 = _IdCluster(cluster_id="xcluster:b2", duplicate_group=("canon:B",))
+    await pipe.resolve_and_apply_cluster(session, c2, candidate=_id_cand(_T2, ("canon:B",), title="사건 B"))
+    assert await _count(session, "events") == 2
+    c3 = _IdCluster(cluster_id="xcluster:b3", duplicate_group=("canon:A", "canon:B"))
+    r3 = await pipe.resolve_and_apply_cluster(
+        session, c3, candidate=_id_cand(_T3, ("canon:A", "canon:B"), title="A·B 브릿지")
+    )
+    assert r3.action == ACTION_CREATE                           # 모호 → 자동 병합 안 함
+    assert await _count(session, "events") == 3
+
+
+async def test_live_cross_batch_identity_idempotent(session):
+    # 같은 batch2 재처리 → cluster_id 매핑·identity 모두 멱등(새 Event 0).
+    c1 = _IdCluster(cluster_id="xcluster:b1", duplicate_group=("canon:K",))
+    await pipe.resolve_and_apply_cluster(session, c1, candidate=_id_cand(_T2, ("canon:K",)))
+    c2 = _IdCluster(cluster_id="xcluster:b2", duplicate_group=("canon:K",))
+    await pipe.resolve_and_apply_cluster(session, c2, candidate=_id_cand(_T3, ("canon:K",)))
+    n = await _count(session, "events")
+    await pipe.resolve_and_apply_cluster(session, c2, candidate=_id_cand(_T3, ("canon:K",)))
+    assert await _count(session, "events") == n                 # 멱등(분열/중복 0)
+
+
+def _xb_batch1():
+    # 강신호 news cluster(ap+reuters via ACC_A), 둘 다 canonical → core identity anchor 2개 claim.
+    return [
+        _rec(record_type="article_candidate", source_id="ap", canonical_url="https://ap.com/x1",
+             source_url_or_evidence=f"https://ap.com/Archives/{_ACC_A}", title_or_label="Reactor event",
+             published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="article_candidate", source_id="reuters", canonical_url="https://reuters.com/x2",
+             source_url_or_evidence=f"https://reuters.com/Archives/{_ACC_A}", title_or_label="Reactor event",
+             published_at_or_observed_at="2025-06-02"),
+    ]
+
+
+def _xb_batch2():
+    # ap 재등장(같은 canonical=같은 anchor) + 새 cnn(다른 canonical) via ACC_B → 다른 cluster.
+    return [
+        _rec(record_type="article_candidate", source_id="ap", canonical_url="https://ap.com/x1",
+             source_url_or_evidence=f"https://ap.com/data/{_ACC_B}", title_or_label="Reactor event",
+             published_at_or_observed_at="2025-06-03"),
+        _rec(record_type="article_candidate", source_id="cnn", canonical_url="https://cnn.com/x3",
+             source_url_or_evidence=f"https://cnn.com/data/{_ACC_B}", title_or_label="Reactor event",
+             published_at_or_observed_at="2025-06-03"),
+    ]
+
+
+async def test_live_cross_batch_ingest_shared_article_no_split(session):
+    # ADR#40 E2E: 같은 기사(ap, 동일 canonical)가 다음 배치에서 새 기사(cnn)와 다른 cluster 로 묶여도
+    # identity anchor 로 기존 Event 에 APPEND → 같은 사건이 배치마다 분열되지 않음.
+    from backend.app.services.event_ingest_pipeline import ingest_records_to_events
+    s1 = await ingest_records_to_events(session, _xb_batch1(), enabled=True)
+    assert s1.created == 1 and await _count(session, "events") == 1
+    s2 = await ingest_records_to_events(session, _xb_batch2(), enabled=True)
+    assert s2.created == 0 and s2.appended == 1                 # 새 Event 0·기존 APPEND(분열 방지)
+    assert await _count(session, "events") == 1
+
+
+async def test_live_catalog_source_type_withheld(session):
+    # R-SourceCatalogFidelity(ADR#40): catalog source_type 은 비-publishable → 단독 cross-source WITHHELD.
+    c = _IdCluster(cluster_id="xcluster:cat", duplicate_group=("canon:cat1", "canon:cat2"))
+    cand = ResolvedCandidate(
+        canonical_title="어떤 영화 메타", observed_at=_T2, delta_summary="x",
+        evidence=({"source_type": "catalog", "relation": "primary"},),
+        core_source_types=("catalog", "catalog"),
+    )
+    res = await pipe.resolve_and_apply_cluster(session, c, candidate=cand)
+    assert res.action == "WITHHELD"                            # catalog 메타는 official Event 로 발행 안 됨
+    assert await _count(session, "events") == 0
 
 
 async def test_live_failed_cluster_isolated_other_persists(session):

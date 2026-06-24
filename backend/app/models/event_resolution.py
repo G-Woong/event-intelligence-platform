@@ -41,6 +41,29 @@ class ClusterEventMapORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class EventIdentityMapORM(Base):
+    """strong identity anchor(record_key) → event_id (cross-batch 동일성 단일 출처; ADR#40, 0007).
+
+    cluster_event_map(cluster_id→event)이 cluster 멤버십 의존이라 배치마다 바뀌는 것과 달리, identity_key
+    (publishable 멤버의 canonical_url/official_id 기반 record_key)는 배치를 넘어 안정적이다. 미매핑 cluster
+    가 CREATE 되기 전 identity anchor 가 이미 어떤 Event 에 속하면 그 Event 로 APPEND(같은 사건 분열 방지).
+    on_conflict_do_nothing(identity_key) = 첫 매핑 보존(안정 identity)."""
+
+    __tablename__ = "event_identity_map"
+    __table_args__ = (
+        Index("ix_event_identity_map_event_id", "event_id"),
+    )
+
+    identity_key: Mapped[str] = mapped_column(String(256), primary_key=True)
+    # RESTRICT(ADR#20 일관): identity 매핑이 가리키는 Event 는 DB 레벨에서 삭제 차단(감사 보호).
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class EventLinkORM(Base):
     """event ↔ event 링크. EVENT_SCHEMA Part 2 §event_links. 약신호 자동병합 금지(possible 보류)."""
 
