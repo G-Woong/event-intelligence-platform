@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from backend.app.tools.identity_backlog_readiness import (
     STAGE3_REQUIRED_TABLES,
+    build_operational_deploy_checklist,
     compute_migration_gap,
     load_migration_chain,
     pending_destructive,
@@ -74,3 +75,46 @@ def test_stage3_required_tables_cover_backlog():
     assert "event_links" in STAGE3_REQUIRED_TABLES
     assert "event_identity_adjudication" in STAGE3_REQUIRED_TABLES
     assert "event_identity_candidate" in STAGE3_REQUIRED_TABLES
+
+
+# ── operational deploy checklist (ADR#50; 순수 함수 — 명령 문자열·executed=False) ─────────────
+def _readiness(current):
+    """compute_migration_gap → operational_db_readiness 형 dict(destructive/ready 보강)."""
+    gap = compute_migration_gap(current, load_migration_chain())
+    return {**gap, "destructive_risk": pending_destructive(gap["missing_revisions"]),
+            "ready_for_stage3": current == _HEAD}
+
+
+def test_deploy_checklist_operational_0003_pending_and_backup():
+    # ADR#50(scenario 13·14·17): 운영 0003 → behind 6·pending revisions·backup 필수·executed False·ready False.
+    c = build_operational_deploy_checklist(_readiness(_OPERATIONAL_0003))
+    assert c["current_revision"] == _OPERATIONAL_0003
+    assert c["target_revision"] == _HEAD
+    assert c["behind_count"] == 6 and len(c["pending_revisions"]) == 6
+    assert c["backup_required"] is True            # 무조건(운영 DB 변경 전)
+    assert c["ready_for_stage3"] is False
+    assert c["executed"] is False                  # 이 함수는 절대 실행 안 함(배포는 운영자 수동)
+
+
+def test_deploy_checklist_commands_documented():
+    # ADR#50(scenario 14~19·§6): upgrade/readiness/dry-run/persist/flag/backup/rollback 명령이 전부 문서화.
+    c = build_operational_deploy_checklist(_readiness(_OPERATIONAL_0003))
+    by_name = {s["name"]: s["cmd"] for s in c["steps"]}
+    assert "alembic upgrade head" in by_name["upgrade"]
+    assert "identity_backlog_readiness" in by_name["post_upgrade_readiness"]
+    assert "--dry-run" in by_name["backfill_dry_run"]
+    assert "--limit" in by_name["backfill_limited_persist"]
+    assert "pg_dump" in by_name["backup"]
+    assert "downgrade" in by_name["rollback_if_needed"]
+    assert "EVENT_SEMANTIC_ADJUDICATION_ENABLED" in c["flags_to_enable"]
+    assert "EVENT_RESOLUTION_ENABLED" in c["flags_to_enable"]
+    assert c["rollback_guidance"]                  # 비어있지 않음
+
+
+def test_deploy_checklist_on_head_still_backup_and_not_executed():
+    # ADR#50(scenario 15·18): head 도달 시 pending 0 이어도 backup_required True·executed False(미실행 불변).
+    c = build_operational_deploy_checklist(_readiness(_HEAD))
+    assert c["behind_count"] == 0 and c["pending_revisions"] == []
+    assert c["ready_for_stage3"] is True
+    assert c["backup_required"] is True
+    assert c["executed"] is False                  # upgrade 명령은 문서화만·실행 0

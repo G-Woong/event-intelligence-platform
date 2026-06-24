@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import distinct, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -225,23 +225,58 @@ async def _load_event_view(session: AsyncSession, event_id) -> Optional[EventVie
     )
 
 
-async def _semantic_links(session: AsyncSession) -> list[tuple[str, object, object]]:
-    """semantic 후보 possible-link 목록 [(link_id, candidate_event_id, existing_event_id)]. 결정론 정렬(link id)."""
-    rows = (
-        await session.execute(
-            select(EventLinkORM.id, EventLinkORM.event_id, EventLinkORM.linked_event_id)
-            .where(EventLinkORM.status == "possible")
-            .where(EventLinkORM.reason == SEMANTIC_LINK_REASON)
-            .order_by(EventLinkORM.id.asc())
-        )
-    ).all()
+async def _semantic_links(
+    session: AsyncSession, *,
+    after_link_id: Optional[str] = None, only_unadjudicated: bool = False,
+    limit: Optional[int] = None,
+) -> list[tuple[str, object, object]]:
+    """semantic 후보 possible-link 페이지 [(link_id, candidate_event_id, existing_event_id)]. 결정론 정렬(link id asc).
+
+    **keyset(ADR#50, R-LiveIdentityBacklog·O(전체) scan 완화):** after_link_id/only_unadjudicated/limit 를
+    **SQL 로 push**(WHERE id > cursor·NOT IN adjudication·LIMIT n) — 전 link 적재 후 메모리 slice 회피(페이지만 반환).
+    인자 무지정(default)이면 기존과 동일하게 전체 link 반환(하위호환).
+
+    **정직 경계(cursor 의미):** `event_links.id` 는 **UUIDv4(랜덤)** 라 `id` 순서는 **사전식(byte) 순서이지 시간순이
+    아니다**. 따라서 after_link_id 는 한 스냅샷을 **재현 가능한 페이지로 분할**하는 경계일 뿐 "오래된 백로그부터"를 보장하지
+    않는다. 진행 중 INSERT 된 link 는 cursor 아래로 떨어질 수 있어 그 keyset 패스에선 누락될 수 있다 — **백로그 완전성
+    보장은 cursor 가 아니라 `only_unadjudicated`**(판정된 link 가 빠지며 다음 full/page 스캔에서 미판정 link 가 결국 처리)."""
+    stmt = (
+        select(EventLinkORM.id, EventLinkORM.event_id, EventLinkORM.linked_event_id)
+        .where(EventLinkORM.status == "possible")
+        .where(EventLinkORM.reason == SEMANTIC_LINK_REASON)
+    )
+    if after_link_id is not None:
+        stmt = stmt.where(EventLinkORM.id > after_link_id)   # keyset cursor(UUIDv4 byte 순서·시간순 아님·재현 경계)
+    if only_unadjudicated:
+        # 미판정 link 만 — NOT IN 을 SQL 로(adjudication.link_id PK·non-null → NOT IN 안전·전체 id 적재 회피).
+        stmt = stmt.where(~EventLinkORM.id.in_(select(EventIdentityAdjudicationORM.link_id)))
+    stmt = stmt.order_by(EventLinkORM.id.asc())
+    if limit is not None:
+        stmt = stmt.limit(limit)
+    rows = (await session.execute(stmt)).all()
     return [(str(r[0]), r[1], r[2]) for r in rows]
 
 
-async def _adjudicated_link_ids(session: AsyncSession) -> set[str]:
-    """이미 adjudication 이 존재하는 link_id 집합(incremental 필터용·id-only·싸다)."""
-    rows = (await session.execute(select(EventIdentityAdjudicationORM.link_id))).scalars().all()
-    return {str(r) for r in rows}
+async def _candidate_target_counts(
+    session: AsyncSession, candidate_ids: set[str]
+) -> dict[str, int]:
+    """candidate_event_id → 그 candidate 의 **전체** possible-semantic link distinct target 수(ambiguity 판정용).
+
+    **page/cursor/only_unadjudicated 와 무관하게 각 candidate 의 전 target 을 집계**(GROUP BY) — 모호성 정확성
+    불변(ADR#49 'cand_targets 는 필터 전 전체' 속성을 candidate-scoped 쿼리로 보존). page candidate 로 한정해
+    bounded(전체 link 적재 안 함)."""
+    if not candidate_ids:
+        return {}
+    rows = (
+        await session.execute(
+            select(EventLinkORM.event_id, func.count(distinct(EventLinkORM.linked_event_id)))
+            .where(EventLinkORM.status == "possible")
+            .where(EventLinkORM.reason == SEMANTIC_LINK_REASON)
+            .where(EventLinkORM.event_id.in_(candidate_ids))
+            .group_by(EventLinkORM.event_id)
+        )
+    ).all()
+    return {str(r[0]): int(r[1]) for r in rows}
 
 
 async def _persist_adjudication(session: AsyncSession, result: AdjudicationResult, *, commit: bool) -> None:
@@ -261,6 +296,7 @@ async def _persist_adjudication(session: AsyncSession, result: AdjudicationResul
 async def adjudicate_semantic_links(
     session: AsyncSession, *, persist: bool = True,
     only_unadjudicated: bool = False, limit: Optional[int] = None,
+    after_link_id: Optional[str] = None,
 ) -> list[AdjudicationResult]:
     """semantic 후보 link 를 shadow adjudication(소비처 #1). **Event 불변**(read + adjudication write only).
 
@@ -268,21 +304,20 @@ async def adjudicate_semantic_links(
     upsert. 자동 병합/APPEND 0. candidate Event 가 서로 다른 기존 Event 다수와 link 면 multiple_candidates=True
     (모호). Event 가 없는 link(삭제 등)는 skip(결과 제외).
 
-    **incremental(ADR#49, R-LiveIdentityBacklog·O(N) 비용 완화):** only_unadjudicated=True 면 아직 adjudication
-    이 없는 link 만 처리(비싼 per-link Event view load + persist 를 pending 에 한정 — 매 배치 전수 재판정 회피).
-    limit 이면 link id 정렬 순 상위 N 개만(결정론 chunk·backfill 주기 job 용). **multiple_candidates(모호성)는
-    전체 possible-link 로 산출**(incremental 에서도 ambiguity 정확 — id-only scan 은 싸다)."""
-    links = await _semantic_links(session)
-    # multiple_candidates: candidate_event_id → {linked_event_id} 다수면 모호. **전체** link 로 산출(정확).
-    cand_targets: dict[str, set[str]] = {}
-    for _lid, cand, existing in links:
-        cand_targets.setdefault(str(cand), set()).add(str(existing))
-    # incremental: 아직 adjudication 없는 link 만(O(전체) 비싼 work 회피·ambiguity 는 위에서 전체로 이미 산출).
-    if only_unadjudicated:
-        done = await _adjudicated_link_ids(session)
-        links = [lk for lk in links if lk[0] not in done]
-    if limit is not None:
-        links = links[:limit]   # link id 정렬 순 — 결정론 chunk(backfill bounded run)
+    **incremental(ADR#49):** only_unadjudicated=True 면 아직 adjudication 이 없는 link 만(비싼 per-link Event view
+    load + persist 를 pending 에 한정 — 전수 재판정 회피). limit 이면 link id 정렬 순 상위 N(결정론 chunk).
+
+    **keyset(ADR#50, O(전체) scan 완화):** after_link_id 면 그 cursor **초과** link 만(페이지네이션·UUIDv4 byte 순서·
+    시간순 아님·진행 보장은 only_unadjudicated — `_semantic_links` 정직 경계 참조). 위 세 인자는 `_semantic_links` 에서
+    SQL 로 push(WHERE id>cursor·NOT IN adjudication·LIMIT) — 전 link 적재 회피. **모호성은 page candidate 한정 GROUP BY**
+    (`_candidate_target_counts`)로 각 candidate 의 **전** target 을 집계(cursor/필터/limit 무관) → page 분할이 ambiguity 를
+    오염하지 않음. **각 link 의 status 는 page/cursor 분할과 무관하게 default 전체 경로와 동일**(ADR#49 정확성 속성 보존·
+    bounded; candidate 가 여러 page 에 흩어지면 GROUP BY 가 page 마다 재실행되는 비용은 있음)."""
+    links = await _semantic_links(
+        session, after_link_id=after_link_id,
+        only_unadjudicated=only_unadjudicated, limit=limit)
+    # 모호성: page 의 candidate 들에 대해서만 각자의 **전체** distinct target 수를 집계(정확·bounded).
+    cand_counts = await _candidate_target_counts(session, {str(c) for _l, c, _e in links})
     results: list[AdjudicationResult] = []
     views: dict[str, Optional[EventView]] = {}
 
@@ -297,7 +332,7 @@ async def adjudicate_semantic_links(
         ev = await _view(existing)
         if cv is None or ev is None:
             continue  # Event 소실 link → shadow 산출 제외(영속 안 함)
-        multiple = len(cand_targets.get(str(cand), set())) > 1
+        multiple = cand_counts.get(str(cand), 0) > 1
         result = adjudicate(cv, ev, link_id=link_id, multiple_candidates=multiple)
         if persist:
             await _persist_adjudication(session, result, commit=False)

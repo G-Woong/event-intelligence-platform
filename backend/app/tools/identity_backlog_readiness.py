@@ -9,12 +9,19 @@ migration chain 은 alembic 파일(revision/down_revision)에서 결정론으로
 """
 from __future__ import annotations
 
+import argparse
+import asyncio
 import re
+import sys
 from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
+
+from backend.app.core.config import settings
+from backend.app.tools.db_target import target_db_label
 
 # stage③(semantic shadow adjudication)이 운영에서 백로그를 누적하려면 존재해야 하는 테이블.
 STAGE3_REQUIRED_TABLES = (
@@ -139,3 +146,97 @@ async def operational_db_readiness(
         "destructive_risk": pending_destructive(gap["missing_revisions"], versions_dir),
         "ready_for_stage3": ready,
     }
+
+
+# 운영 DB 배포 명령 템플릿(문자열만 — 이 모듈은 절대 upgrade/DDL 을 실행하지 않는다; 배포는 운영자 수동·승인).
+_BACKFILL_MOD = "backend.app.tools.backfill_semantic_adjudications"
+_READINESS_MOD = "backend.app.tools.identity_backlog_readiness"
+
+
+def build_operational_deploy_checklist(readiness: dict) -> dict:
+    """operational_db_readiness() report → 운영 DB 0003→head 배포 체크리스트(명령 문자열·executed=False·ADR#50).
+
+    **이 함수는 어떤 upgrade/DDL 도 실행하지 않는다**(read-only readiness 를 받아 배포 절차를 구조화만). 실제
+    upgrade 는 운영자가 **백업 후 수동** — 무단 destructive migration 금지(option C). backup_required 는 항상 True
+    (운영 DB 변경 전 백업은 destructive_risk 와 무관하게 필수). flag 는 off-by-default(빈 값=기본) — 명시 enable 필요."""
+    missing = list(readiness.get("missing_revisions", []))
+    current = readiness.get("current_revision")
+    target = readiness.get("expected_head")
+    flags = ["EVENT_RESOLUTION_ENABLED", "EVENT_SEMANTIC_ADJUDICATION_ENABLED"]
+    steps = [
+        {"order": 1, "name": "backup", "required": True,
+         "cmd": "pg_dump <OPERATIONAL_DATABASE_URL> > backup_pre_upgrade.sql"},
+        {"order": 2, "name": "verify_current_revision", "required": True,
+         "cmd": "cd backend && alembic current"},
+        {"order": 3, "name": "upgrade", "required": True,
+         "cmd": "cd backend && alembic upgrade head"},
+        {"order": 4, "name": "post_upgrade_readiness", "required": True,
+         "cmd": f"python -m {_READINESS_MOD} --db-name event_intel"},
+        {"order": 5, "name": "enable_flags", "required": True,
+         "cmd": "set EVENT_RESOLUTION_ENABLED=1 / EVENT_SEMANTIC_ADJUDICATION_ENABLED=1 (.env)"},
+        {"order": 6, "name": "backfill_dry_run", "required": True,
+         "cmd": f"python -m {_BACKFILL_MOD} --dry-run"},
+        {"order": 7, "name": "backfill_limited_persist", "required": True,
+         "cmd": f"python -m {_BACKFILL_MOD} --limit 100"},
+        {"order": 8, "name": "rollback_if_needed", "required": False,
+         "cmd": f"cd backend && alembic downgrade {current or '<current_revision>'}  # 또는 backup 복원"},
+    ]
+    return {
+        "current_revision": current,
+        "target_revision": target,
+        "pending_revisions": missing,
+        "behind_count": readiness.get("behind_count", len(missing)),
+        "destructive_risk": bool(readiness.get("destructive_risk", False)),
+        "backup_required": True,                 # 운영 DB 변경 전 백업 필수(destructive_risk 와 무관·무조건).
+        "ready_for_stage3": bool(readiness.get("ready_for_stage3", False)),
+        "flags_to_enable": flags,
+        "steps": steps,
+        "rollback_guidance": (
+            "alembic downgrade <current_revision> 또는 backup_pre_upgrade.sql 복원(백업 우선). "
+            "0004~0009 는 additive(non-destructive)라 downgrade 가능하나 운영 데이터 안전 위해 백업 복원 권장."
+        ),
+        "executed": False,                       # 이 모듈은 절대 실행 안 함(배포는 운영자 수동·승인 필요).
+    }
+
+
+# ── read-only CLI(ADR#50; runbook 의 "post-upgrade readiness command" 실명령화 — DDL/upgrade 0) ──
+async def _run_readiness(db_name: str) -> dict:
+    engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
+    factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    try:
+        async with factory() as session:
+            r = await operational_db_readiness(session, db_name=db_name)
+            return {"readiness": r, "deploy_checklist": build_operational_deploy_checklist(r)}
+    finally:
+        await engine.dispose()
+
+
+def main(argv: Optional[list[str]] = None) -> int:
+    try:  # Windows cp949 콘솔이 한국어/em-dash 에 죽지 않도록 utf-8(closeout_sig 선례).
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    parser = argparse.ArgumentParser(
+        description="operational DB migration readiness probe + deploy checklist (read-only·DDL/upgrade 0).",
+    )
+    parser.add_argument("--db-name", default="", help="report 라벨용 DB 이름(예: event_intel).")
+    ns = parser.parse_args(sys.argv[1:] if argv is None else argv)
+
+    # read-only 이지만 어떤 DB 를 probe 하는지 운영자 확인(자격증명 제외 라벨).
+    print(f"- readiness target DB: {target_db_label(settings.DATABASE_URL)} (APP_ENV={settings.APP_ENV})")
+    out = asyncio.run(_run_readiness(ns.db_name))
+    r, c = out["readiness"], out["deploy_checklist"]
+    print(
+        f"- readiness: current={r['current_revision']} head={r['expected_head']} "
+        f"behind={r['behind_count']} on_head={r['on_head']} "
+        f"ready_for_stage3={r['ready_for_stage3']} destructive_risk={r['destructive_risk']}"
+    )
+    print(
+        f"- deploy_checklist: backup_required={c['backup_required']} pending={c['behind_count']} "
+        f"steps={len(c['steps'])} flags={c['flags_to_enable']} executed={c['executed']}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

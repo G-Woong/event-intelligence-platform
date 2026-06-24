@@ -1400,6 +1400,62 @@ async def test_live_incremental_ambiguity_preserved_partial_preadjudicated(sessi
     assert await _count(session, "event_identity_adjudication") == 2
 
 
+# ── keyset cursor / concurrency / deploy checklist (ADR#50) ─────────────────────────
+async def test_live_keyset_after_link_id_cursor_skips(session):
+    # ADR#50(scenario 5): after_link_id keyset → cursor **초과** link 만 처리(페이지네이션). 모호성도 정확.
+    await _make_two_semantic_links(session)
+    ordered = await adjmod.adjudicate_semantic_links(session, persist=False)   # id asc·영속 0
+    assert len(ordered) == 2
+    r = await adjmod.adjudicate_semantic_links(session, after_link_id=ordered[0].link_id)
+    assert len(r) == 1 and r[0].link_id == ordered[1].link_id    # 첫 link 는 cursor 로 skip
+    assert await _count(session, "event_identity_adjudication") == 1
+
+
+async def test_live_backfill_cursor_report_and_no_lock_overclaim(session):
+    # ADR#50(scenario 12·13): report 통일(after_link_id·next_cursor·full_scan·idempotent_persist)·lock 과대주장 0.
+    await _make_two_semantic_links(session)
+    bounded = await bfmod.backfill_semantic_adjudications(session, limit=1, dry_run=True)
+    assert bounded["full_scan"] is False                  # limit → bounded run
+    assert bounded["after_link_id"] is None and bounded["idempotent_persist"] is True
+    assert "lock" not in bounded and "locked" not in bounded   # lock 안전 과대주장 안 함(멱등만 주장)
+    full = await bfmod.backfill_semantic_adjudications(session, dry_run=True)
+    assert full["full_scan"] is True                      # limit/cursor 없음 → 전체 scan 경고 플래그
+    assert full["processed"] == 2 and full["pending_after"] == full["pending_before"]  # dry-run
+    assert full["next_cursor"] is not None                # 다음 페이지 진행 cursor
+
+
+async def test_live_backfill_interleaved_sessions_duplicate_persist_safe(engine):
+    # ADR#50(scenario 11·adversarial HIGH③ 정직화): 2 link·서로 다른 세션의 backfill 을 교차 실행 → link_id PK
+    # upsert 로 **중복행 0**(데이터 안전)·자동 병합 0. **정직 경계**: asyncio.gather 는 협조적 교차(OS-병렬 race
+    # 아님)라 이 테스트는 "중복-persist 멱등(PK upsert) + 양쪽 ORDER BY id asc 동일 잠금순서"를 입증할 뿐,
+    # OS-병렬 race/deadlock 을 stress-test 하지 않는다(중복 work 회피=단일 runner/disjoint cursor 권고·미구현).
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as s0:
+        await _make_two_semantic_links(s0)               # 2 link(다중 row upsert 교차)
+        before_e = await _count(s0, "events")
+
+    async def _bf():
+        async with maker() as s:
+            return await bfmod.backfill_semantic_adjudications(s, dry_run=False)
+
+    await asyncio.gather(_bf(), _bf())                    # 교차 — 같은 2 pending link
+    async with maker() as s2:
+        assert await _count(s2, "event_identity_adjudication") == 2   # 중복행 0(link 당 1·PK upsert)
+        assert await _count(s2, "events") == before_e                 # 자동 병합 0
+
+
+async def test_live_deploy_checklist_from_real_readiness(session):
+    # ADR#50(scenario 14·15): 실 readiness probe(test DB=head) → deploy checklist(backup 필수·executed False·실명령).
+    r = await rdymod.operational_db_readiness(session, db_name="event_intel_test")
+    c = rdymod.build_operational_deploy_checklist(r)
+    assert c["target_revision"] == "c9d0e1f2a3b4"
+    assert c["backup_required"] is True and c["executed"] is False
+    assert c["ready_for_stage3"] is True                  # test DB head
+    names = {s["name"] for s in c["steps"]}
+    assert {"backup", "upgrade", "post_upgrade_readiness", "backfill_dry_run",
+            "backfill_limited_persist", "rollback_if_needed"} <= names
+
+
 async def test_live_failed_cluster_isolated_other_persists(session):
     # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
     # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).
