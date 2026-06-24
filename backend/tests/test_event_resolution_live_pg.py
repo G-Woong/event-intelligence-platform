@@ -953,6 +953,73 @@ async def test_live_gold_roundtrip_idempotent(session, tmp_path):
     assert await _count(session, "events") == after_link_e
 
 
+# ── reviewer agreement protocol — worksheet→multi-reviewer→resolved gold (ADR#45) ────
+async def _export_and_build_reviewer_labels(session, *, second_label=None):
+    # ADR#45 라이브 경로: 워크시트 → 2 reviewer 가 라벨(동일=agreed; 다르면 conflict 시뮬).
+    await _make_semantic_link(session)
+    await adjmod.adjudicate_semantic_links(session)
+    rows = await exmod.collect_adjudication_eval_pairs(session)
+    labels = []
+    for r in rows:
+        for rid, lab, at in (("reviewer-a", "same_event", "2026-06-24T18:00:00Z"),
+                             ("reviewer-b", second_label or "same_event", "2026-06-24T18:05:00Z")):
+            labels.append(hlmod.ReviewerLabel(
+                pair_id=r["pair_id"], reviewer_id=rid, review_round=1, label=lab,
+                label_confidence="high", reviewed_at=at, language=r["language"],
+                source_type_left=r["source_type_left"], source_type_right=r["source_type_right"],
+                title_left=r["title_left"], title_right=r["title_right"],
+                observed_at_left=r["observed_at_left"], observed_at_right=r["observed_at_right"],
+                dataset_source=hlmod.SOURCE_LIVE,
+            ))
+    return labels
+
+
+async def test_live_reviewer_agreement_resolves_gold(session):
+    # ADR#45(scenario 48·49): 2 reviewer 합의 → resolved gold·agreement report. Event 불변.
+    labels = await _export_and_build_reviewer_labels(session)
+    after_link_e = await _count(session, "events")
+    res = hlmod.resolve_gold_from_reviewers(labels)
+    assert len(res) == 1 and res[0].agreement_status == hlmod.AGREE_AGREED
+    assert res[0].review_status == hlmod.REVIEW_GOLD
+    rep = hlmod.generate_labeling_protocol_report(labels)
+    assert rep["resolved_gold_count"] == 1 and rep["conflict_count"] == 0
+    assert rep["auto_merged"] == 0
+    assert await _count(session, "events") == after_link_e
+
+
+async def test_live_reviewer_conflict_no_auto_gold(session):
+    # ADR#45(scenario 51): reviewer 불일치 → conflict(자동 gold 금지)·Event 불변.
+    labels = await _export_and_build_reviewer_labels(session, second_label="different_event")
+    after_link_e = await _count(session, "events")
+    res = hlmod.resolve_gold_from_reviewers(labels)
+    assert res[0].agreement_status == hlmod.AGREE_CONFLICT
+    assert res[0].review_status == hlmod.REVIEW_NEEDS    # 자동 gold 금지
+    assert hlmod.resolved_to_gold_pairs(res) == []        # gold 0
+    assert await _count(session, "events") == after_link_e
+
+
+async def test_live_reviewer_protocol_merge_readiness_false(session):
+    # ADR#45(scenario 50): protocol report merge readiness False·auto-merge OFF·Event 불변.
+    labels = await _export_and_build_reviewer_labels(session)
+    after_link_e = await _count(session, "events")
+    rep = hlmod.generate_labeling_protocol_report(labels)
+    gm = rep["gold_metrics"]
+    assert gm is not None
+    assert gm["merge_readiness"]["merge_ready"] is False
+    assert gm["merge_readiness"]["auto_merge_enabled"] is False
+    assert await _count(session, "events") == after_link_e
+
+
+async def test_live_reviewer_resolution_idempotent(session):
+    # ADR#45(scenario 52): 같은 label 재resolve → 같은 결과(결정론)·Event 불변.
+    labels = await _export_and_build_reviewer_labels(session)
+    after_link_e = await _count(session, "events")
+    a = hlmod.generate_labeling_protocol_report(labels)
+    b = hlmod.generate_labeling_protocol_report(labels)
+    assert a == b
+    assert await _count(session, "events") == after_link_e
+
+
 async def test_live_failed_cluster_isolated_other_persists(session):
     # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
     # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).
