@@ -45,6 +45,7 @@ from ingestion.orchestration.eventqueue_dedup import _external_url, _official_id
 
 from backend.app.core.config import settings
 from backend.app.services.event_resolution_pipeline import resolve_and_apply_cluster
+from backend.app.services.semantic_identity_adjudicator import adjudicate_semantic_links
 from backend.app.services.event_resolver import (
     ACTION_APPEND,
     ACTION_CREATE,
@@ -150,6 +151,7 @@ class EventIngestSummary:
     failed: int = 0
     skipped_no_primary: int = 0
     singletons_dropped: int = 0   # 단일 소스 record(클러스터 미형성, cross_source_dedup 단일멤버 제외) 수
+    adjudications: int = 0        # 배치 후 shadow adjudication(③) upsert 한 semantic link 수(ADR#48; 자동 병합 0)
     event_ids: list[str] = field(default_factory=list)
     failures: list[dict] = field(default_factory=list)
 
@@ -165,6 +167,7 @@ class EventIngestSummary:
             "failed": self.failed,
             "skipped_no_primary": self.skipped_no_primary,
             "singletons_dropped": self.singletons_dropped,
+            "adjudications": self.adjudications,
             "event_ids": list(self.event_ids),
             "failures": list(self.failures),
         }
@@ -339,6 +342,7 @@ async def ingest_records_to_events(
     records: Iterable[dict],
     *,
     enabled: Optional[bool] = None,
+    adjudicate_semantic: Optional[bool] = None,
     candidate_for: Optional[Callable[[Any], ResolvedCandidate]] = None,
     now: Optional[datetime] = None,
 ) -> EventIngestSummary:
@@ -350,6 +354,12 @@ async def ingest_records_to_events(
     클러스터마다 resolve_and_apply_cluster 를 호출하되 **후보 단위 try/except 격리**: 한 클러스터
     실패는 rollback + 계속(배치 전체 중단 금지). 각 apply_routing 은 자체 트랜잭션을 commit 하므로
     성공 클러스터는 이미 영속됨(부분 영속 안전, orphan 0 은 apply_routing 이 보장).
+
+    **stage③ shadow adjudication 배선(ADR#48):** adjudicate_semantic=None 이면
+    `settings.EVENT_SEMANTIC_ADJUDICATION_ENABLED`(기본 off). on 이면 클러스터 루프(② semantic 후보 link
+    누적)가 끝난 뒤 배치 전역으로 `adjudicate_semantic_links`(③)를 1회 실행해 event_identity_adjudication
+    백로그를 누적한다 — **자동 병합 0**(read + adjudication write only·Event count 불변·idempotent upsert).
+    off(기본)면 ③ 미실행 → in-memory/fake 세션 호출처 무영향(하위호환).
     """
     flag = settings.EVENT_RESOLUTION_ENABLED if enabled is None else enabled
     summary = EventIngestSummary(enabled=flag)
@@ -390,6 +400,20 @@ async def ingest_records_to_events(
             logger.warning("event ingest cluster failed: %s", type(exc).__name__)
             continue
         _tally(summary, result)
+
+    # stage③ shadow adjudication 배선(ADR#48, R-LiveIdentityBacklog): ② semantic 후보 link 가 누적된 뒤
+    # 배치 전역으로 deterministic shadow adjudication 을 실행해 event_identity_adjudication 백로그를 누적한다.
+    # **자동 병합 0**(adjudicate_semantic_links = read + adjudication upsert only·Event/updates/cmap 미변경).
+    # 실패는 격리(배치 summary 를 깨지 않음). idempotent(link_id PK upsert)라 재실행 안전.
+    adj_flag = settings.EVENT_SEMANTIC_ADJUDICATION_ENABLED if adjudicate_semantic is None else adjudicate_semantic
+    if adj_flag:
+        try:
+            results = await adjudicate_semantic_links(session, persist=True)
+            summary.adjudications = len(results)
+        except Exception as exc:  # ③ 실패 격리 — 운영 배치(①②)는 이미 영속됨, shadow 만 누락
+            await session.rollback()
+            summary.failures.append({"stage": "semantic_adjudication", "error": type(exc).__name__})
+            logger.warning("semantic adjudication failed: %s", type(exc).__name__)
     return summary
 
 

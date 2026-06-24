@@ -489,6 +489,19 @@ async def test_cross_batch_semantic_idempotent_no_duplicate_link():
 
 
 @pytest.mark.asyncio
+async def test_semantic_adjudication_default_off_no_stage3():
+    # ADR#48: adjudicate_semantic 기본(off) → 배치 후 stage③ 미실행(adjudications 0)·_FakeSession 무영향(하위호환).
+    s = _FakeSession()
+    summary = await ingest_records_to_events(s, _sem_batch("https://wire/x1"), enabled=True)
+    assert summary.adjudications == 0
+    # 명시 False 도 동일(파라미터가 settings flag 보다 우선) — in-memory 세션이 ③ 쿼리에 노출되지 않음.
+    s2 = _FakeSession()
+    summary2 = await ingest_records_to_events(
+        s2, _sem_batch("https://cnn/y"), enabled=True, adjudicate_semantic=False)
+    assert summary2.adjudications == 0
+
+
+@pytest.mark.asyncio
 async def test_cross_batch_semantic_different_title_no_link():
     # 다른 제목(다른 token-set)·같은 날 → fingerprint 다름 → 후보 없음 → 링크 0.
     s = _FakeSession()

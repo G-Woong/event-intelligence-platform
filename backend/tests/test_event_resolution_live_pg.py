@@ -1205,6 +1205,90 @@ async def test_live_tool_report_idempotent_event_unchanged(session):
     assert await _count(session, "events") == before_e
 
 
+# ── stage③ shadow adjudication operational wiring + migration readiness (ADR#48) ────
+from backend.app.services.event_ingest_pipeline import ingest_records_to_events
+from backend.app.tools import identity_backlog_readiness as rdymod
+
+# 배치 내부=같은 canonical 강신호 2건(단일 Event), 배치 간=canonical 다르게(공유 anchor 없음·fingerprint만 공유).
+# 제목/날짜는 cross_source_dedup.semantic_identity_fingerprint 가 fingerprint 를 만드는 영어 강신호(검증된 형태).
+_ADJ_TITLE = "Federal Reserve raises benchmark interest rates today"
+
+
+def _sem_ingest_batch(canonical, *, title=_ADJ_TITLE, date="2026-06-24", s1="cnn", s2="npr"):
+    return [
+        _rec(source_id=s1, canonical_url=canonical, title_or_label=title, published_at_or_observed_at=date),
+        _rec(source_id=s2, canonical_url=canonical, title_or_label=title, published_at_or_observed_at=date),
+    ]
+
+
+async def test_live_stage3_wiring_auto_adjudicates(session):
+    # ADR#48(scenario 7·8): ingest(adjudicate_semantic=True) 가 배치 후 stage③ 를 자동 실행 → adjudication 누적
+    # (수동 adjudicate 호출 0). events 분열 표면화(병합 0).
+    await ingest_records_to_events(
+        session, _sem_ingest_batch("https://wire/x1"), enabled=True, adjudicate_semantic=True)
+    s2 = await ingest_records_to_events(
+        session, _sem_ingest_batch("https://cnn/y"), enabled=True, adjudicate_semantic=True)
+    assert await _count(session, "events") == 2                        # 분열 표면화(자동 병합 0)
+    assert await _count(session, "event_links") == 1                   # ② semantic 후보 link
+    assert await _count(session, "event_identity_adjudication") == 1   # ③ 자동 누적(운영 배선)
+    assert s2.adjudications == 1
+
+
+async def test_live_stage3_wiring_off_no_adjudication(session):
+    # ADR#48(scenario 14): adjudicate_semantic=False → link 은 생기되 ③ 미실행(게이트 입증).
+    await ingest_records_to_events(
+        session, _sem_ingest_batch("https://wire/x1"), enabled=True, adjudicate_semantic=False)
+    await ingest_records_to_events(
+        session, _sem_ingest_batch("https://cnn/y"), enabled=True, adjudicate_semantic=False)
+    assert await _count(session, "event_links") == 1                   # ② link 은 생성
+    assert await _count(session, "event_identity_adjudication") == 0   # ③ 미실행(off)
+
+
+async def test_live_stage3_idempotent_and_no_merge(session):
+    # ADR#48(scenario 11·12·46·47): 재실행 → stage③ upsert 멱등·events/cmap 불변(자동 병합 0).
+    await ingest_records_to_events(
+        session, _sem_ingest_batch("https://wire/x1"), enabled=True, adjudicate_semantic=True)
+    await ingest_records_to_events(
+        session, _sem_ingest_batch("https://cnn/y"), enabled=True, adjudicate_semantic=True)
+    e = await _count(session, "events")
+    cm = await _count(session, "cluster_event_map")
+    await ingest_records_to_events(   # 재실행(같은 cluster_id mapped → APPEND) + stage③ 재실행
+        session, _sem_ingest_batch("https://cnn/y"), enabled=True, adjudicate_semantic=True)
+    assert await _count(session, "event_identity_adjudication") == 1   # 멱등(link_id PK upsert)
+    assert await _count(session, "events") == e == 2                   # stage③ 자동 병합 0
+    assert await _count(session, "cluster_event_map") == cm
+
+
+async def test_live_ingest_to_packet_e2e_operational_backlog(session):
+    # ADR#48(scenario 15·16·17): ingest(adjudicate_semantic=True) → 운영 백로그 → live packet eligible>0
+    # **수동 adjudicate 호출 없이**(R-LiveIdentityBacklog 부분진전 입증). Event 불변.
+    await ingest_records_to_events(
+        session, _sem_ingest_batch("https://wire/x1"), enabled=True, adjudicate_semantic=True)
+    await ingest_records_to_events(
+        session, _sem_ingest_batch("https://cnn/y"), enabled=True, adjudicate_semantic=True)
+    before_e = await _count(session, "events")
+    rep = await livemod.generate_live_packet_report(
+        session, packet_id="pkt-ops", reviewers=["reviewer-a", "reviewer-b"])
+    assert rep["total_adjudications"] == 1
+    assert rep["eligible_for_packet"] == 1
+    assert rep["live_selected_count"] == 1            # 운영 loop 유래(synthetic/수동 아님)
+    assert rep["reviewer_assignment_count"] == 2
+    assert rep["exclusion_reasons"][livemod.EXCL_LINK_NO_ADJUDICATION] == 0   # ③ 자동 실행됨 → 미배선 0
+    assert rep["auto_merge_enabled"] is False
+    assert rep["event_count_before"] == rep["event_count_after"] == before_e
+
+
+async def test_live_migration_readiness_test_db_on_head(session):
+    # ADR#48(scenario 1~6·48): test DB(event_intel_test)=HEAD → on_head·ready_for_stage3·non-destructive.
+    rep = await rdymod.operational_db_readiness(session, db_name="event_intel_test")
+    assert rep["on_head"] is True
+    assert rep["behind_count"] == 0
+    assert rep["ready_for_stage3"] is True
+    assert rep["destructive_risk"] is False
+    assert rep["tables_present"]["event_identity_adjudication"] is True
+    assert rep["expected_head"] == "c9d0e1f2a3b4"
+
+
 async def test_live_failed_cluster_isolated_other_persists(session):
     # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
     # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).

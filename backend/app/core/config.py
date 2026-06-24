@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     # 영속 0(DB 미접근), 기존 경로만 동작. LLM 미사용(전 경로 결정론).
     EVENT_RESOLUTION_ENABLED: bool = False
 
+    # Semantic shadow adjudication operational wiring(ADR#48, R-LiveIdentityBacklog): EVENT_RESOLUTION_ENABLED
+    # 로 ② semantic 후보 link(event_links possible)가 누적된 뒤, 배치 종료 시 결정론 shadow adjudication
+    # (③ semantic_identity_adjudicator)을 자동 실행해 event_identity_adjudication 백로그를 누적한다 — 그래야
+    # live-derived labeling packet 이 synthetic/수동 주입 없이 운영 후보를 읽는다. **자동 병합 0**(read +
+    # adjudication write only·events/updates/cluster_event_map 미변경·idempotent upsert). 기본 off — on 이어도
+    # Event count 불변. off 면 ③ 미실행(기존 ①② 경로만·_FakeSession 등 in-memory 호출처 무영향).
+    EVENT_SEMANTIC_ADJUDICATION_ENABLED: bool = False
+
     # Event 타임라인 read API(D-2a): /api/events/timeline* 공개 조회 노출 토글. 기본 off —
     # off 면 endpoint 404(미노출). write(EVENT_RESOLUTION_ENABLED)와 분리(읽기 노출 ≠ 쓰기 결선).
     # read-only·결정론(LLM/network 0). 기존 /api/events(event_cards) 경로는 무관(항상 동작).
