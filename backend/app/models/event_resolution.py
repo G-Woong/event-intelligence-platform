@@ -13,7 +13,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, func
+from sqlalchemy import CheckConstraint, DateTime, Float, ForeignKey, Index, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -21,6 +21,13 @@ from backend.app.models.base import Base
 
 # event_links.status 허용값(자동병합 금지 — possible 보류가 기본).
 LINK_STATUSES = ("possible", "confirmed", "rejected", "merged")
+# semantic adjudicator shadow status(ADR#42, R-SemanticIdentityAdjudicator). 자동 병합 아님 — shadow/eval.
+ADJUDICATION_STATUSES = (
+    "likely_same_event",
+    "ambiguous",
+    "likely_different_event",
+    "insufficient_features",
+)
 
 
 class ClusterEventMapORM(Base):
@@ -85,6 +92,35 @@ class EventIdentityCandidateMapORM(Base):
         ForeignKey("events.id", ondelete="RESTRICT"),
         nullable=False,
     )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class EventIdentityAdjudicationORM(Base):
+    """semantic 후보 link 의 shadow/eval 판정 status (cross-batch 동일성 adjudicator; ADR#42, 0009).
+
+    ADR#41 event_identity_candidate 가 만든 `event_links(possible, semantic_cross_batch_candidate)` 를
+    소비하는 **첫 shadow/eval 계층**. deterministic adjudicator 가 두 Event feature 로 status 를 산출해 누적
+    (link_id PK=link 당 1건·idempotent). **이 status 로 Event 를 자동 병합하지 않는다**(shadow only·중복 count
+    미감소·false-merge 0). 실제 병합은 labeled eval set·precision·adversarial 승인 전까지 금지(R-SemanticIdentityAdjudicator)."""
+
+    __tablename__ = "event_identity_adjudication"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('likely_same_event', 'ambiguous', 'likely_different_event', 'insufficient_features')",
+            name="ck_event_identity_adjudication_status",
+        ),
+        Index("ix_event_identity_adjudication_status", "status"),
+    )
+
+    # RESTRICT(ADR#20 일관): adjudication 이 가리키는 link 는 DB 레벨에서 삭제 차단(감사 보호).
+    link_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("event_links.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    status: Mapped[str] = mapped_column(String(24), nullable=False)
+    score: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")
+    reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 

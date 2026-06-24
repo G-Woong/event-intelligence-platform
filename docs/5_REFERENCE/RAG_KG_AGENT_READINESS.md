@@ -37,9 +37,10 @@
 
 ## 4. RAG/KG 이전 **필수 substrate gate**(닫아야 handoff 가능)
 1. **R-CrossBatchEventIdentity**(MEDIUM, **부분종결 진전** ADR#40+#41) — 같은 사건이 배치마다 분열(UNDER-merge). **닫힌 범위(병합):** deterministic shared-anchor 층(`event_identity_map`: 동일 canonical_url/official_id 재등장→기존 Event APPEND, live-PG 검증, ADR#40). **닫힌 범위(후보 substrate):** 공유 anchor 없는 같은 token-set+같은 날 publishable 후보를 `event_identity_candidate`→`event_links(possible)` 로 **표면화**(ADR#41, live-PG 검증). **⚠ 미해결:** ADR#41 은 **LINK 만 — 중복 Event count 미감소**(실 병합 아님). 패러프레이즈/다국어/엔티티 동일성·실 병합은 **R-SemanticIdentityAdjudicator**(신규, 미구현) → **여전히 RAG/KG 이전 gate**.
-2. **R-SemanticIdentityAdjudicator**(MEDIUM, **신규 OPEN** ADR#41) — possible-link 후보를 실제 병합/기각해 중복 Event 를 줄이는 adjudicator(embedding/LLM/KG, mock-default). closure=실 병합으로 count 감소 입증+한국어 fingerprint 캘리브레이션+shadow 평가. **이게 닫혀야 cross-batch 동일성이 진짜 해결**.
-3. **R-SourceCatalogFidelity**(**CLOSED** ADR#40) — catalog(6종)→catalog_metadata 비-publishable override 로 official Event 누수 차단(fail-closed·live-PG 0 events). KG enrichment 역할은 catalog source_type 라벨로 보존. ✅ handoff gate 통과.
-4. (기존) heat/ranking 미산정(events.heat=0), event_cards↔Event 자동연결 부재, 3엔진(PG/Milvus/OpenSearch) 색인 정합 미검증(R-EventModelMigration).
+2. **R-SemanticIdentityAdjudicator**(MEDIUM, **OPEN·부분 진전** ADR#41+#42) — possible-link 후보를 실제 병합/기각해 중복 Event 를 줄이는 adjudicator. **ADR#42 부분 진전**: deterministic **shadow** adjudicator(`event_identity_adjudication`[0009])가 LINK 를 소비해 status(likely_same/ambiguous/likely_different/insufficient) 산출(소비처 0 부분 해소·자동 병합 0·API 미노출). **미해소**: 실 병합(count 감소)·embedding/LLM/KG·한국어 캘리브레이션·labeled 평가셋. **이게 닫혀야 cross-batch 동일성이 진짜 해결**.
+3. **R-IdentityEvalDataset**(MEDIUM, **신규 OPEN** ADR#42) — adjudication status 가 self-labeled deterministic 출력이라 자기 precision 측정 불가. labeled identity pair set + precision/recall 측정 필요(없으면 "측정 불가 라벨"). **실 병합 허용 판단의 선결**.
+4. **R-SourceCatalogFidelity**(**CLOSED** ADR#40) — catalog(6종)→catalog_metadata 비-publishable override 로 official Event 누수 차단(fail-closed·live-PG 0 events). KG enrichment 역할은 catalog source_type 라벨로 보존. ✅ handoff gate 통과.
+5. (기존) heat/ranking 미산정(events.heat=0), event_cards↔Event 자동연결 부재, 3엔진(PG/Milvus/OpenSearch) 색인 정합 미검증(R-EventModelMigration).
 
 ## 4b. 제품 출력 계약 — raw source ≠ public product (substrate→intelligence unit)
 이 제품은 **뉴스 본문 하나를 그대로 보여주는 웹이 아니다.** 모든 소스(article/catalog/market/community/official/search)는 최종적으로 다음 중 하나로 정제된다:

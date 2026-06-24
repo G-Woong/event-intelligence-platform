@@ -233,6 +233,17 @@ Analyzer: standard (기본). 한국어 nori는 STEP 010+ TODO.
 | candidate_key | VARCHAR(256) | PK (semantic fingerprint `sem:{sha1}`; 첫 매핑 보존) |
 | event_id | UUID | FK → events.id (**RESTRICT**, 감사 보호) |
 
+### event_identity_adjudication (semantic adjudicator shadow/eval — ✅ **alembic 0009, ADR#42 / R-SemanticIdentityAdjudicator**)
+
+> ADR#41 의 `event_links(possible, reason='semantic_cross_batch_candidate')`(소비처 0)를 소비하는 **첫 shadow/eval 계층**의 출력. `semantic_identity_adjudicator` 가 두 Event 의 deterministic feature(title Jaccard·date_distance·source_type·multiple_candidates·언어·generic 토큰)로 status(likely_same_event / ambiguous / likely_different_event / insufficient_features)를 산출해 누적(link_id PK=link 당 1건·on_conflict_do_update idempotent). **⚠ 이 status 로 Event 를 자동 병합하지 않는다**(shadow only·중복 Event count 미감소·false-merge 0·API 미노출). 실제 병합은 labeled eval set(R-IdentityEvalDataset)·precision 입증·adversarial 승인 전까지 금지. source role guard: community/market/catalog-only·unknown→insufficient(fail-closed).
+
+| event_identity_adjudication | 타입 | 설명 |
+|---|---|---|
+| link_id | UUID | PK, FK → event_links.id (**RESTRICT**); semantic 후보 link 당 1 adjudication |
+| status | VARCHAR(24) | likely_same_event / ambiguous / likely_different_event / insufficient_features (CheckConstraint) |
+| score | FLOAT | deterministic 신뢰도(title_similarity × date_factor, 0..1; 자동 병합 신호 아님) |
+| reason | VARCHAR(128) | 분류 사유(예: high_sim_near_date_publishable, multiple_candidate_links) |
+
 ## Entity (entities 테이블 — 1급 객체, SPEC §3.1)
 
 | 컬럼 | 타입 | 설명 |

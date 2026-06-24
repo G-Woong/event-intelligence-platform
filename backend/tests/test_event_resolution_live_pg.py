@@ -38,7 +38,7 @@ _LIVE_PG_URL = os.environ.get(
     "LIVE_PG_TEST_URL",
     "postgresql+asyncpg://event_user:event_pass@localhost:5432/event_intel_test",
 )
-_EVENT_TABLES = "events, event_updates, cluster_event_map, event_links, event_identity_map, event_identity_candidate, event_cards"
+_EVENT_TABLES = "events, event_updates, cluster_event_map, event_links, event_identity_map, event_identity_candidate, event_identity_adjudication, event_cards"
 
 
 def _pg_reachable() -> bool:
@@ -760,6 +760,82 @@ async def test_live_semantic_non_publishable_withheld_no_claim_no_link(session):
     assert await _count(session, "events") == 1                    # 새 Event 0(WITHHELD)
     assert await _count(session, "event_identity_candidate") == 1  # community 는 claim 0(E1 것만 유지)
     assert await _count(session, "event_links") == 0               # 미발행 → 링크 0
+
+
+# ── semantic identity adjudicator shadow/eval (ADR#42) ──────────────────────────
+from backend.app.services import semantic_identity_adjudicator as adjmod
+
+
+async def _make_semantic_link(session, title="연준 기준금리 인상 결정 발표"):
+    # ADR#41 경로로 cross-batch semantic 후보 link 1개 생성(다른 cluster·같은 fingerprint·publishable).
+    c1 = _IdCluster(cluster_id="xcluster:adj1", duplicate_group=("canon:a",))
+    r1 = await pipe.resolve_and_apply_cluster(session, c1, candidate=_sem_cand(_T2, ("sem:F",), title=title))
+    c2 = _IdCluster(cluster_id="xcluster:adj2", duplicate_group=("canon:b",))
+    r2 = await pipe.resolve_and_apply_cluster(session, c2, candidate=_sem_cand(_T3, ("sem:F",), title=title))
+    return r1.event_id, r2.event_id
+
+
+async def test_live_adjudicator_consumes_link_and_persists_status(session):
+    # ADR#42(scenario 23·24): semantic 후보 link 를 소비해 status 산출·영속(소비처 #1). Event 불변.
+    await _make_semantic_link(session)
+    assert await _count(session, "event_links") == 1
+    events_before = await _count(session, "events")
+    report = await adjmod.generate_shadow_adjudication_report(session)
+    assert report["total"] == 1 and report["auto_merged"] == 0
+    assert await _count(session, "events") == events_before              # Event count 불변(merge 0)
+    assert await _count(session, "event_identity_adjudication") == 1      # status 영속(소비처 생성)
+    st = (await session.execute(text("SELECT status FROM event_identity_adjudication"))).scalar_one()
+    assert st == "likely_same_event"   # 같은 token-set·근접 시점·publishable → 결정론 likely_same
+
+
+async def test_live_adjudicator_no_merge_event_count_unchanged(session):
+    # ADR#42(scenario 25): adjudication 이 events/cluster_event_map/event_updates 를 변경하지 않는다(shadow).
+    await _make_semantic_link(session)
+    before_e = await _count(session, "events")
+    before_m = await _count(session, "cluster_event_map")
+    before_u = await _count(session, "event_updates")
+    await adjmod.adjudicate_semantic_links(session)
+    assert await _count(session, "events") == before_e                   # 자동 병합 0
+    assert await _count(session, "cluster_event_map") == before_m
+    assert await _count(session, "event_updates") == before_u            # append 0(genesis 그대로)
+
+
+async def test_live_adjudicator_idempotent_no_duplicate_row(session):
+    # ADR#42(scenario 26): 재실행 → link_id PK upsert 로 중복 row 0.
+    await _make_semantic_link(session)
+    await adjmod.adjudicate_semantic_links(session)
+    n = await _count(session, "event_identity_adjudication")
+    await adjmod.adjudicate_semantic_links(session)
+    assert await _count(session, "event_identity_adjudication") == n == 1
+
+
+async def test_live_adjudicator_no_links_empty_report(session):
+    # semantic link 0 → report total 0·adjudication 0(빈 입력 안전·영속 0).
+    report = await adjmod.generate_shadow_adjudication_report(session)
+    assert report["total"] == 0
+    assert await _count(session, "event_identity_adjudication") == 0
+
+
+async def test_live_adjudicator_ambiguous_multiple_candidates(session):
+    # candidate Event 하나가 서로 다른 기존 Event 2개와 semantic link → 모호(ambiguous). 자동 병합 0.
+    # 세 Event 를 각각 다른 fingerprint 로 CREATE(genesis article evidence 보유)한 뒤, 한 candidate(E3)가
+    # E1·E2 양쪽과 possible 링크를 갖도록 직접 구성(모호 상황). 직접 create_event 는 evidence 가 없어
+    # fail-closed insufficient 가 되므로 publishable genesis 가 있는 CREATE 경로 Event 를 쓴다.
+    # 세 Event 모두 유사 제목(같은 token-set) — 현실적 모호 상황: 한 candidate(E3)가 같은 사건 후보 2개
+    # (E1·E2)와 동시 link. fingerprint 는 테스트 격리를 위해 다르게 줘 자동 병합/자동 link 를 방지(직접 구성).
+    title = "연준 기준금리 인상 결정 발표"
+    c1 = _IdCluster(cluster_id="xcluster:m1", duplicate_group=("canon:a",))
+    r1 = await pipe.resolve_and_apply_cluster(session, c1, candidate=_sem_cand(_T2, ("sem:F1",), title=title))
+    c2 = _IdCluster(cluster_id="xcluster:m2", duplicate_group=("canon:b",))
+    r2 = await pipe.resolve_and_apply_cluster(session, c2, candidate=_sem_cand(_T2, ("sem:F2",), title=title))
+    c3 = _IdCluster(cluster_id="xcluster:m3", duplicate_group=("canon:c",))
+    r3 = await pipe.resolve_and_apply_cluster(session, c3, candidate=_sem_cand(_T3, ("sem:F3",), title=title))
+    await svc.hold_link(session, event_id=r3.event_id, linked_event_id=r1.event_id, reason=adjmod.SEMANTIC_LINK_REASON)
+    await svc.hold_link(session, event_id=r3.event_id, linked_event_id=r2.event_id, reason=adjmod.SEMANTIC_LINK_REASON)
+    before_e = await _count(session, "events")
+    results = await adjmod.adjudicate_semantic_links(session)
+    assert len(results) == 2 and all(r.status == "ambiguous" for r in results)   # 다중 후보 → 모두 ambiguous
+    assert await _count(session, "events") == before_e                   # 자동 병합 0
 
 
 async def test_live_failed_cluster_isolated_other_persists(session):
