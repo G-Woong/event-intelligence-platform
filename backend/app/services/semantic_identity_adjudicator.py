@@ -238,6 +238,12 @@ async def _semantic_links(session: AsyncSession) -> list[tuple[str, object, obje
     return [(str(r[0]), r[1], r[2]) for r in rows]
 
 
+async def _adjudicated_link_ids(session: AsyncSession) -> set[str]:
+    """이미 adjudication 이 존재하는 link_id 집합(incremental 필터용·id-only·싸다)."""
+    rows = (await session.execute(select(EventIdentityAdjudicationORM.link_id))).scalars().all()
+    return {str(r) for r in rows}
+
+
 async def _persist_adjudication(session: AsyncSession, result: AdjudicationResult, *, commit: bool) -> None:
     """adjudication status 영속(idempotent upsert — link_id PK on_conflict_do_update). events 불변."""
     stmt = pg_insert(EventIdentityAdjudicationORM).values(
@@ -253,18 +259,30 @@ async def _persist_adjudication(session: AsyncSession, result: AdjudicationResul
 
 
 async def adjudicate_semantic_links(
-    session: AsyncSession, *, persist: bool = True
+    session: AsyncSession, *, persist: bool = True,
+    only_unadjudicated: bool = False, limit: Optional[int] = None,
 ) -> list[AdjudicationResult]:
-    """모든 semantic 후보 link 를 shadow adjudication(소비처 #1). **Event 불변**(read + adjudication write only).
+    """semantic 후보 link 를 shadow adjudication(소비처 #1). **Event 불변**(read + adjudication write only).
 
     각 link 의 두 Event 를 읽어 feature·status 산출, persist=True 면 event_identity_adjudication 에 idempotent
     upsert. 자동 병합/APPEND 0. candidate Event 가 서로 다른 기존 Event 다수와 link 면 multiple_candidates=True
-    (모호). Event 가 없는 link(삭제 등)는 skip(결과 제외)."""
+    (모호). Event 가 없는 link(삭제 등)는 skip(결과 제외).
+
+    **incremental(ADR#49, R-LiveIdentityBacklog·O(N) 비용 완화):** only_unadjudicated=True 면 아직 adjudication
+    이 없는 link 만 처리(비싼 per-link Event view load + persist 를 pending 에 한정 — 매 배치 전수 재판정 회피).
+    limit 이면 link id 정렬 순 상위 N 개만(결정론 chunk·backfill 주기 job 용). **multiple_candidates(모호성)는
+    전체 possible-link 로 산출**(incremental 에서도 ambiguity 정확 — id-only scan 은 싸다)."""
     links = await _semantic_links(session)
-    # multiple_candidates: candidate_event_id → {linked_event_id} 다수면 모호.
+    # multiple_candidates: candidate_event_id → {linked_event_id} 다수면 모호. **전체** link 로 산출(정확).
     cand_targets: dict[str, set[str]] = {}
     for _lid, cand, existing in links:
         cand_targets.setdefault(str(cand), set()).add(str(existing))
+    # incremental: 아직 adjudication 없는 link 만(O(전체) 비싼 work 회피·ambiguity 는 위에서 전체로 이미 산출).
+    if only_unadjudicated:
+        done = await _adjudicated_link_ids(session)
+        links = [lk for lk in links if lk[0] not in done]
+    if limit is not None:
+        links = links[:limit]   # link id 정렬 순 — 결정론 chunk(backfill bounded run)
     results: list[AdjudicationResult] = []
     views: dict[str, Optional[EventView]] = {}
 

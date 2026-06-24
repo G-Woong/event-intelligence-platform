@@ -355,11 +355,11 @@ async def ingest_records_to_events(
     실패는 rollback + 계속(배치 전체 중단 금지). 각 apply_routing 은 자체 트랜잭션을 commit 하므로
     성공 클러스터는 이미 영속됨(부분 영속 안전, orphan 0 은 apply_routing 이 보장).
 
-    **stage③ shadow adjudication 배선(ADR#48):** adjudicate_semantic=None 이면
-    `settings.EVENT_SEMANTIC_ADJUDICATION_ENABLED`(기본 off). on 이면 클러스터 루프(② semantic 후보 link
-    누적)가 끝난 뒤 배치 전역으로 `adjudicate_semantic_links`(③)를 1회 실행해 event_identity_adjudication
-    백로그를 누적한다 — **자동 병합 0**(read + adjudication write only·Event count 불변·idempotent upsert).
-    off(기본)면 ③ 미실행 → in-memory/fake 세션 호출처 무영향(하위호환).
+    **stage③ shadow adjudication 배선(ADR#48 + ADR#49 incremental):** adjudicate_semantic=None 이면
+    `settings.EVENT_SEMANTIC_ADJUDICATION_ENABLED`(기본 off). on 이면 클러스터 루프(② semantic 후보 link 누적)
+    뒤 `adjudicate_semantic_links(only_unadjudicated=True)`(③)를 실행해 **아직 판정 안 된 link 만** 백로그로
+    누적한다 — 매 배치 전수 재판정(O(N)) 회피·**클러스터 0 인 배치에서도 이전 pending link backfill**. **자동 병합 0**
+    (read + adjudication write only·Event count 불변·idempotent upsert). off(기본)면 ③ 미실행(하위호환).
     """
     flag = settings.EVENT_RESOLUTION_ENABLED if enabled is None else enabled
     summary = EventIngestSummary(enabled=flag)
@@ -377,38 +377,39 @@ async def ingest_records_to_events(
     for c in clusters:
         clustered_keys.update(c.duplicate_group)
     summary.singletons_dropped = len(set(index) - clustered_keys)
-    if not clusters:
-        return summary
 
-    mapper = candidate_for or (lambda c: candidate_from_cluster(c, index, now=now))
+    # 클러스터가 있으면 라우팅·영속(② semantic 후보 link 누적). 클러스터 0 이어도 아래 stage③ backfill 은
+    # 실행될 수 있다(ADR#49: 이전 배치의 미판정 pending link 를 incremental 로 처리 — early-return 제거).
+    if clusters:
+        mapper = candidate_for or (lambda c: candidate_from_cluster(c, index, now=now))
+        for cluster in clusters:
+            if candidate_for is None and index.get(cluster.primary_record_key) is None:
+                # primary record 를 못 찾으면(키 없음) 기본 매퍼가 후보를 합성할 수 없음 → skip(정직 집계).
+                summary.skipped_no_primary += 1
+                continue
+            try:
+                result = await resolve_and_apply_cluster(
+                    session, cluster, candidate=mapper(cluster), title_matcher=titles_similar
+                )
+            except Exception as exc:  # 후보 단위 격리 — 한 클러스터 실패가 배치를 멈추지 않음
+                await session.rollback()
+                summary.failed += 1
+                summary.failures.append(
+                    {"cluster_id": getattr(cluster, "cluster_id", "?"), "error": type(exc).__name__}
+                )
+                logger.warning("event ingest cluster failed: %s", type(exc).__name__)
+                continue
+            _tally(summary, result)
 
-    for cluster in clusters:
-        if candidate_for is None and index.get(cluster.primary_record_key) is None:
-            # primary record 를 못 찾으면(키 없음) 기본 매퍼가 후보를 합성할 수 없음 → skip(정직 집계).
-            summary.skipped_no_primary += 1
-            continue
-        try:
-            result = await resolve_and_apply_cluster(
-                session, cluster, candidate=mapper(cluster), title_matcher=titles_similar
-            )
-        except Exception as exc:  # 후보 단위 격리 — 한 클러스터 실패가 배치를 멈추지 않음
-            await session.rollback()
-            summary.failed += 1
-            summary.failures.append(
-                {"cluster_id": getattr(cluster, "cluster_id", "?"), "error": type(exc).__name__}
-            )
-            logger.warning("event ingest cluster failed: %s", type(exc).__name__)
-            continue
-        _tally(summary, result)
-
-    # stage③ shadow adjudication 배선(ADR#48, R-LiveIdentityBacklog): ② semantic 후보 link 가 누적된 뒤
-    # 배치 전역으로 deterministic shadow adjudication 을 실행해 event_identity_adjudication 백로그를 누적한다.
-    # **자동 병합 0**(adjudicate_semantic_links = read + adjudication upsert only·Event/updates/cmap 미변경).
-    # 실패는 격리(배치 summary 를 깨지 않음). idempotent(link_id PK upsert)라 재실행 안전.
+    # stage③ shadow adjudication 배선(ADR#48 + ADR#49 incremental·no-cluster backfill, R-LiveIdentityBacklog):
+    # ② semantic 후보 link 가 누적된 뒤(또는 이전 배치의 미판정 pending link) deterministic shadow adjudication 을
+    # **only_unadjudicated=True** 로 실행해 event_identity_adjudication 백로그를 누적한다 — 매 배치 전수 재판정(O(N))을
+    # 회피하고 **아직 판정 안 된 link 만** 처리(클러스터 0 인 배치에서도 backfill). **자동 병합 0**(read + adjudication
+    # upsert only·Event/updates/cmap 미변경). 실패는 격리(배치 summary 를 깨지 않음). idempotent(link_id PK upsert).
     adj_flag = settings.EVENT_SEMANTIC_ADJUDICATION_ENABLED if adjudicate_semantic is None else adjudicate_semantic
     if adj_flag:
         try:
-            results = await adjudicate_semantic_links(session, persist=True)
+            results = await adjudicate_semantic_links(session, persist=True, only_unadjudicated=True)
             summary.adjudications = len(results)
         except Exception as exc:  # ③ 실패 격리 — 운영 배치(①②)는 이미 영속됨, shadow 만 누락
             await session.rollback()

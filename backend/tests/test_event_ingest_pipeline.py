@@ -502,6 +502,15 @@ async def test_semantic_adjudication_default_off_no_stage3():
 
 
 @pytest.mark.asyncio
+async def test_no_cluster_batch_flag_off_returns_clean():
+    # ADR#49: 클러스터 0 배치 + adjudicate off → stage③ 미실행·DB write 0(early-return 제거 회귀·_FakeSession 무영향).
+    s = _FakeSession()
+    summary = await ingest_records_to_events(s, [], enabled=True)
+    assert summary.clusters_total == 0 and summary.adjudications == 0
+    assert s.commits == 0 and s.rollbacks == 0   # no-cluster + flag off → DB write 0
+
+
+@pytest.mark.asyncio
 async def test_cross_batch_semantic_different_title_no_link():
     # 다른 제목(다른 token-set)·같은 날 → fingerprint 다름 → 후보 없음 → 링크 0.
     s = _FakeSession()

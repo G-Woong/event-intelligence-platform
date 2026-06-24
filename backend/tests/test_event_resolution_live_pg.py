@@ -1289,6 +1289,117 @@ async def test_live_migration_readiness_test_db_on_head(session):
     assert rep["expected_head"] == "c9d0e1f2a3b4"
 
 
+# ── incremental / no-cluster backfill adjudication (ADR#49) ─────────────────────────
+from backend.app.tools import backfill_semantic_adjudications as bfmod
+
+
+async def _make_two_semantic_links(session):
+    # 2개 독립 semantic link(서로 다른 fingerprint·제목) → incremental limit/backfill 테스트용. 4 Event·2 link.
+    for fp, title, ca, cb in (
+        ("sem:G1", "연준 기준금리 인상 결정 발표", "g1a", "g1b"),
+        ("sem:G2", "호르무즈 해협 유조선 나포 사건 발생", "g2a", "g2b"),
+    ):
+        c1 = _IdCluster(cluster_id=f"xc:{ca}", duplicate_group=(f"canon:{ca}",))
+        await pipe.resolve_and_apply_cluster(session, c1, candidate=_sem_cand(_T2, (fp,), title=title))
+        c2 = _IdCluster(cluster_id=f"xc:{cb}", duplicate_group=(f"canon:{cb}",))
+        await pipe.resolve_and_apply_cluster(session, c2, candidate=_sem_cand(_T3, (fp,), title=title))
+
+
+async def test_live_incremental_only_unadjudicated_skips_done(session):
+    # ADR#49(scenario 1·2·4): only_unadjudicated → 미판정 link 만 처리·재실행 시 판정된 link skip(전수 재판정 회피·멱등).
+    await _make_semantic_link(session)
+    assert await _count(session, "event_links") == 1
+    r1 = await adjmod.adjudicate_semantic_links(session, only_unadjudicated=True)
+    assert len(r1) == 1 and await _count(session, "event_identity_adjudication") == 1
+    r2 = await adjmod.adjudicate_semantic_links(session, only_unadjudicated=True)
+    assert len(r2) == 0                                   # 이미 판정 → skip(O(N) 회피)
+    assert await _count(session, "event_identity_adjudication") == 1
+
+
+async def test_live_incremental_limit_bounded_chunk(session):
+    # ADR#49(scenario 3·5·43): limit → 1회 chunk 상한·나머지는 다음 호출(결정론 bounded backfill).
+    await _make_two_semantic_links(session)
+    assert await _count(session, "event_links") == 2
+    r1 = await adjmod.adjudicate_semantic_links(session, only_unadjudicated=True, limit=1)
+    assert len(r1) == 1 and await _count(session, "event_identity_adjudication") == 1
+    r2 = await adjmod.adjudicate_semantic_links(session, only_unadjudicated=True, limit=1)
+    assert len(r2) == 1 and await _count(session, "event_identity_adjudication") == 2
+    r3 = await adjmod.adjudicate_semantic_links(session, only_unadjudicated=True, limit=1)
+    assert len(r3) == 0                                   # pending 0
+
+
+async def test_live_backfill_tool_dry_run_then_persist(session):
+    # ADR#49(scenario 13·14·45·46·47): backfill dry-run(영속 0·규모만) → persist(pending 감소)·Event 불변·멱등.
+    await _make_semantic_link(session)
+    before_e = await _count(session, "events")
+    dry = await bfmod.backfill_semantic_adjudications(session, dry_run=True)
+    assert dry["pending_before"] == 1 and dry["processed"] == 1
+    assert dry["pending_after"] == 1                      # dry-run → 영속 0
+    assert await _count(session, "event_identity_adjudication") == 0
+    run = await bfmod.backfill_semantic_adjudications(session, dry_run=False)
+    assert run["pending_before"] == 1 and run["processed"] == 1 and run["pending_after"] == 0
+    assert run["auto_merge_enabled"] is False
+    assert await _count(session, "event_identity_adjudication") == 1
+    assert await _count(session, "events") == before_e == run["event_count_after"]
+    rerun = await bfmod.backfill_semantic_adjudications(session, dry_run=False)
+    assert rerun["processed"] == 0 and rerun["pending_before"] == 0   # 멱등(pending 0)
+
+
+async def test_live_no_cluster_batch_backfills_pending(session):
+    # ADR#49(scenario 9·11·44): semantic link 존재(미판정) + 클러스터 0 배치(adjudicate on) → no-cluster backfill 실행.
+    await _make_semantic_link(session)                   # link 1·adjudication 0
+    before_e = await _count(session, "events")
+    summary = await ingest_records_to_events(session, [], enabled=True, adjudicate_semantic=True)
+    assert summary.clusters_total == 0
+    assert summary.adjudications == 1                     # 클러스터 0 이어도 pending backfill(early-return 제거)
+    assert await _count(session, "event_identity_adjudication") == 1
+    assert await _count(session, "events") == before_e    # 자동 병합 0
+
+
+async def test_live_no_cluster_no_pending_noop(session):
+    # ADR#49(scenario 10): 클러스터 0 + pending 0 → no-op(adjudication 0·Event 불변).
+    summary = await ingest_records_to_events(session, [], enabled=True, adjudicate_semantic=True)
+    assert summary.clusters_total == 0 and summary.adjudications == 0
+    assert await _count(session, "event_identity_adjudication") == 0
+
+
+async def test_live_backfill_packet_exclusion_decreases(session):
+    # ADR#49(scenario 13~16): pending link → packet exclusion 1·eligible 0 → backfill → exclusion 0·eligible 1.
+    await _make_semantic_link(session)                   # link 1·adjudication 0(pending)
+    before_e = await _count(session, "events")
+    _rows0, backlog0 = await livemod.collect_live_identity_candidates(session)
+    assert backlog0["eligible_for_packet"] == 0
+    assert backlog0["exclusion_reasons"][livemod.EXCL_LINK_NO_ADJUDICATION] == 1
+    await bfmod.backfill_semantic_adjudications(session, dry_run=False)
+    _rows1, backlog1 = await livemod.collect_live_identity_candidates(session)
+    assert backlog1["eligible_for_packet"] == 1
+    assert backlog1["exclusion_reasons"][livemod.EXCL_LINK_NO_ADJUDICATION] == 0   # 감소
+    assert await _count(session, "events") == before_e    # 자동 병합 0
+
+
+async def test_live_incremental_ambiguity_preserved_partial_preadjudicated(session):
+    # ADR#49(adversarial MEDIUM 회귀 가드): incremental 모드에서도 ambiguity 정확. 한 candidate(E3)가 2 Event
+    # (E1·E2)와 link(모호), 그 중 1개를 먼저 판정한 뒤 only_unadjudicated 로 나머지를 판정해도 **여전히 ambiguous**
+    # — cand_targets(모호성 map)는 incremental 필터 **전** 전체 link 로 산출(순서 의존 안전 속성을 잠금).
+    title = "연준 기준금리 인상 결정 발표"
+    c1 = _IdCluster(cluster_id="xc:amb1", duplicate_group=("canon:amb1",))
+    r1 = await pipe.resolve_and_apply_cluster(session, c1, candidate=_sem_cand(_T2, ("sem:A1",), title=title))
+    c2 = _IdCluster(cluster_id="xc:amb2", duplicate_group=("canon:amb2",))
+    r2 = await pipe.resolve_and_apply_cluster(session, c2, candidate=_sem_cand(_T2, ("sem:A2",), title=title))
+    c3 = _IdCluster(cluster_id="xc:amb3", duplicate_group=("canon:amb3",))
+    r3 = await pipe.resolve_and_apply_cluster(session, c3, candidate=_sem_cand(_T3, ("sem:A3",), title=title))
+    await svc.hold_link(session, event_id=r3.event_id, linked_event_id=r1.event_id, reason=adjmod.SEMANTIC_LINK_REASON)
+    await svc.hold_link(session, event_id=r3.event_id, linked_event_id=r2.event_id, reason=adjmod.SEMANTIC_LINK_REASON)
+    assert await _count(session, "event_links") == 2
+    # 1개만 먼저 판정(limit=1) — 이미 ambiguous.
+    first = await adjmod.adjudicate_semantic_links(session, only_unadjudicated=True, limit=1)
+    assert len(first) == 1 and first[0].status == "ambiguous"
+    # 나머지를 incremental 로 판정 → **여전히 ambiguous**(전체 cand_targets 기준·필터가 모호성 오염 안 함).
+    rest = await adjmod.adjudicate_semantic_links(session, only_unadjudicated=True)
+    assert len(rest) == 1 and rest[0].status == "ambiguous"
+    assert await _count(session, "event_identity_adjudication") == 2
+
+
 async def test_live_failed_cluster_isolated_other_persists(session):
     # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
     # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).
