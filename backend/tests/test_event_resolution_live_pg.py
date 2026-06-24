@@ -887,6 +887,72 @@ async def test_live_export_roundtrip_to_jsonl(session, tmp_path):
     assert await _count(session, "events") == before_e     # export 는 Event 불변
 
 
+# ── identity human-labeled gold workflow — worksheet→gold roundtrip (ADR#44) ─────────
+from backend.app.services import identity_human_labeling as hlmod
+
+
+async def _export_and_promote_gold(session):
+    # ADR#44 라이브 경로: semantic link → adjudication → 워크시트 export → 사람이 gold 로 승격(시뮬).
+    await _make_semantic_link(session)
+    await adjmod.adjudicate_semantic_links(session)
+    rows = await exmod.collect_adjudication_eval_pairs(session)
+    gold_rows = [
+        hlmod.promote_worksheet_to_gold(
+            r, label="same_event", reviewed_by="sample_reviewer",
+            reviewed_at="2026-06-24T18:00:00Z", review_status="gold",
+            label_confidence="high", dataset_source=hlmod.SOURCE_LIVE,
+        )
+        for r in rows
+    ]
+    return rows, gold_rows
+
+
+async def test_live_export_promote_gold_import_validate(session, tmp_path):
+    # ADR#44(scenario 46·47): 워크시트 → gold 승격 → 기록·검증·로드. gold workflow 가 Event 불변.
+    _ws, gold_rows = await _export_and_promote_gold(session)
+    after_link_e = await _count(session, "events")   # ADR#41 link 경로가 만든 Event(정상). 이후 불변 기준.
+    assert len(gold_rows) == 1
+    p = tmp_path / "gold.jsonl"
+    assert hlmod.write_gold_jsonl(gold_rows, p) == 1
+    loaded = hlmod.load_gold_pairs(p)
+    assert len(loaded) == 1 and loaded[0].review_status == "gold"
+    assert loaded[0].dataset_source == hlmod.SOURCE_LIVE     # live-derived marker 보존
+    assert await _count(session, "events") == after_link_e   # gold 기록/로드는 Event 불변(병합 0)
+
+
+async def test_live_gold_report_no_merge_and_readiness_off(session):
+    # ADR#44(scenario 48·49): live-derived gold report — readiness False·자동 병합 OFF·Event 불변.
+    _ws, gold_rows = await _export_and_promote_gold(session)
+    after_link_e = await _count(session, "events")
+    pairs = [hlmod.GoldPair(
+        pair_id=r["pair_id"], label=r["label"], language=r["language"],
+        source_type_left=r["source_type_left"], source_type_right=r["source_type_right"],
+        title_left=r["title_left"], title_right=r["title_right"],
+        observed_at_left=r["observed_at_left"], observed_at_right=r["observed_at_right"],
+        reviewed_by=r["reviewed_by"], reviewed_at=r["reviewed_at"],
+        review_status=r["review_status"], label_confidence=r["label_confidence"],
+        dataset_source=r["dataset_source"], risk_tags=tuple(r.get("risk_tags", [])),
+    ) for r in gold_rows]
+    rep = hlmod.generate_gold_eval_report(pairs)
+    assert rep["auto_merged"] == 0
+    mr = rep["merge_readiness"]
+    assert mr["live_sample_ok"] is False           # 1행 << floor(200)
+    assert mr["merge_ready"] is False and mr["auto_merge_enabled"] is False
+    assert await _count(session, "events") == after_link_e   # report 산출은 Event 불변
+
+
+async def test_live_gold_roundtrip_idempotent(session, tmp_path):
+    # ADR#44(scenario 50): 같은 export→promote→write 재실행 → 같은 gold 파일(결정론)·Event 불변.
+    _ws, gold_rows = await _export_and_promote_gold(session)
+    after_link_e = await _count(session, "events")
+    p = tmp_path / "gold.jsonl"
+    hlmod.write_gold_jsonl(gold_rows, p)
+    t1 = p.read_text(encoding="utf-8")
+    hlmod.write_gold_jsonl(gold_rows, p)
+    assert t1 == p.read_text(encoding="utf-8")
+    assert await _count(session, "events") == after_link_e
+
+
 async def test_live_failed_cluster_isolated_other_persists(session):
     # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
     # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).
