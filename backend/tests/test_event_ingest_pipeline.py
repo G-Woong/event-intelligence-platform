@@ -107,6 +107,9 @@ class _Result:
     def scalars(self):
         return list(self._rows)
 
+    def all(self):
+        return list(self._rows)
+
 
 class _FakeSession:
     """apply_routing 이 쓰는 statement 만 해석하는 최소 in-memory 세션(실 DB 아님)."""
@@ -168,6 +171,26 @@ class _FakeSession:
     def _select(self, stmt):
         entity = stmt.column_descriptions[0]["entity"]
         table = entity.__tablename__
+        if table == "event_links":
+            # find_held_parents(ADR#38) 시뮬: degenerate(canonical_title==member_key)의 possible 링크가
+            # 가리키는 **매핑된 parent**(cmap 값) 목록 [(parent_id, parent_title)]. 결정적·중복 제거.
+            keys = self._extract_in_values(stmt)
+            mapped_parents = {str(v) for v in self.cmap.values()}
+            out: list = []
+            seen: set[str] = set()
+            for ln in self.links:
+                if getattr(ln, "status", None) != "possible":
+                    continue
+                de = self.events.get(str(ln.event_id))
+                if de is None or str(de.canonical_title) not in keys:
+                    continue
+                pid = str(ln.linked_event_id)
+                if pid not in mapped_parents or pid in seen:
+                    continue
+                seen.add(pid)
+                parent = self.events.get(pid)
+                out.append((ln.linked_event_id, parent.canonical_title if parent else None))
+            return _Result(rows=out)
         where_val = stmt.whereclause.right.value if stmt.whereclause is not None else None
         if table == "cluster_event_map":
             return _Result(scalar=self.cmap.get(where_val))
@@ -180,6 +203,17 @@ class _FakeSession:
         if table == "event_cards":
             return _Result(scalar=self.cards.get(str(where_val)))
         raise NotImplementedError(f"select {table}")
+
+    @staticmethod
+    def _extract_in_values(stmt) -> set:
+        """find_held_parents 의 canonical_title.in_([...]) 값 추출(첫 list 값 절). 못 찾으면 빈 set."""
+        wc = stmt.whereclause
+        clauses = list(getattr(wc, "clauses", [wc])) if wc is not None else []
+        for c in clauses:
+            val = getattr(getattr(c, "right", None), "value", None)
+            if isinstance(val, (list, tuple)):
+                return {str(x) for x in val}
+        return set()
 
 
 class _ExplodingSession:
@@ -657,6 +691,124 @@ def test_publishable_record_types_contract_matches_source_type_mapping():
     from backend.app.services.event_resolver import _PUBLISHABLE_SOURCE_TYPES
     derived = {rt for rt, st in _RECORD_TYPE_TO_SOURCE_TYPE.items() if st in _PUBLISHABLE_SOURCE_TYPES}
     assert _PUBLISHABLE_RECORD_TYPES == derived
+
+
+# ── held 승격 (ADR#38) ─────────────────────────────────────────────────────────
+_HP_T = "Reactor scram at coastal nuclear plant"
+_HP_ACC_A = "0001193125-26-000111"
+_HP_ACC_B = "0001193125-26-000222"
+
+
+def _hp_batch1(title=_HP_T):
+    # 강신호 news core(accA·다른 canonical) + official 약신호 title-link → CREATE P(news), official held.
+    return [
+        _rec(record_type="article_candidate", source_id="ap", canonical_url="https://ap.com/p1",
+             source_url_or_evidence=f"https://ap.com/Archives/{_HP_ACC_A}", title_or_label=title, published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="article_candidate", source_id="reuters", canonical_url="https://reuters.com/p2",
+             source_url_or_evidence=f"https://reuters.com/Archives/{_HP_ACC_A}", title_or_label=title, published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="official_record", source_id="sec", canonical_url="https://sec.gov/o-doc",
+             title_or_label=title, published_at_or_observed_at="2025-06-02"),
+    ]
+
+
+def _hp_batch2(title):
+    # official(batch1 과 같은 canonical=같은 key) 재등장 + official2 강신호(accB).
+    return [
+        _rec(record_type="official_record", source_id="sec", canonical_url="https://sec.gov/o-doc",
+             source_url_or_evidence=f"https://sec.gov/Archives/{_HP_ACC_B}", title_or_label=title, published_at_or_observed_at="2025-06-03"),
+        _rec(record_type="official_record", source_id="sec2", canonical_url="https://sec.gov/o-doc2",
+             source_url_or_evidence=f"https://sec.gov/data/{_HP_ACC_B}", title_or_label=title, published_at_or_observed_at="2025-06-03"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_held_promotion_same_title_appends_to_parent():
+    # ADR#38: 약신호로 held 된 official 이 강신호 재등장 + 제목 동일 → 새 중복 Event 0, parent APPEND.
+    s = _FakeSession()
+    s1 = await ingest_records_to_events(s, _hp_batch1(), enabled=True)
+    assert s1.created == 1 and s1.held_member_links == 1      # P + official held
+    assert len(s.events) == 2                                 # P + held degenerate
+    s2 = await ingest_records_to_events(s, _hp_batch2(_HP_T), enabled=True)
+    assert s2.created == 0 and s2.appended == 1               # 중복 Event 0 — parent 로 승격 APPEND
+    assert len(s.events) == 2                                 # 새 Event 없음
+
+
+@pytest.mark.asyncio
+async def test_held_promotion_different_title_creates_independent():
+    # ADR#38 false-merge 방어: held official 재등장 강신호지만 제목 무관 → parent 병합 안 함, 독립 Event CREATE.
+    s = _FakeSession()
+    await ingest_records_to_events(s, _hp_batch1(), enabled=True)
+    assert len(s.events) == 2
+    s2 = await ingest_records_to_events(s, _hp_batch2("Unrelated harbor crane maintenance notice"), enabled=True)
+    assert s2.created == 1 and s2.appended == 0              # 독립 Event(병합 안 함)
+    assert len(s.events) == 3                                # P + held + Q
+
+
+@pytest.mark.asyncio
+async def test_held_promotion_no_lineage_normal_create():
+    # held lineage 없으면 승격 영향 0 — 정상 CREATE(회귀: title_matcher 가 무관 cluster 를 병합하지 않음).
+    s = _FakeSession()
+    s2 = await ingest_records_to_events(s, _hp_batch2(_HP_T), enabled=True)   # batch1 없이 단독
+    assert s2.created == 1                                   # held lineage 0 → 정상 신규 Event
+    assert len(s.events) == 1
+
+
+def _hp_batch1_nonpub(held_rt, title=_HP_T):
+    # news core(accA) + 비-publishable(community/market) 약신호 title-link → CREATE P, 비-publishable held.
+    held = (
+        _rec(record_type=held_rt, source_id="hx", canonical_url="https://hx.com/n-doc",
+             body_state_or_signal="snap", title_or_label=title, published_at_or_observed_at="2025-06-02")
+    )
+    return [
+        _rec(record_type="article_candidate", source_id="ap", canonical_url="https://ap.com/p1",
+             source_url_or_evidence=f"https://ap.com/Archives/{_HP_ACC_A}", title_or_label=title, published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="article_candidate", source_id="reuters", canonical_url="https://reuters.com/p2",
+             source_url_or_evidence=f"https://reuters.com/Archives/{_HP_ACC_A}", title_or_label=title, published_at_or_observed_at="2025-06-02"),
+        held,
+    ]
+
+
+def _hp_batch2_nonpub(held_rt, title):
+    # 비-publishable(같은 canonical=같은 key) 재등장 + 동종 2건 강신호(community=accB / market=signal-key).
+    common = dict(body_state_or_signal="snap", title_or_label=title, published_at_or_observed_at="2025-06-03")
+    if held_rt == "community_signal":
+        return [
+            _rec(record_type=held_rt, source_id="hx", canonical_url="https://hx.com/n-doc",
+                 source_url_or_evidence=f"https://hx.com/Archives/{_HP_ACC_B}", **common),
+            _rec(record_type=held_rt, source_id="hx2", canonical_url="https://hx.com/n-doc2",
+                 source_url_or_evidence=f"https://hx2.com/Archives/{_HP_ACC_B}", **common),
+        ]
+    return [  # structured_signal: 동일 signal-key(body|date|title) → 강신호
+        _rec(record_type=held_rt, source_id="hx", canonical_url="https://hx.com/n-doc", **common),
+        _rec(record_type=held_rt, source_id="hx2", canonical_url="https://hx.com/n-doc2", **common),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("held_rt", ["community_signal", "structured_signal"])
+async def test_held_promotion_nonpublishable_title_match_appends_to_parent(held_rt):
+    # ADR#38: 비-publishable(community/market) held 가 강신호 재등장 + 제목 동일 → parent 연결(corroborator
+    # APPEND), 자체 Event 0(market 투자조언성 Event 금지·community 직접발행 금지 유지).
+    s = _FakeSession()
+    await ingest_records_to_events(s, _hp_batch1_nonpub(held_rt), enabled=True)
+    assert len(s.events) == 2                                # P + 비-publishable held
+    s2 = await ingest_records_to_events(s, _hp_batch2_nonpub(held_rt, _HP_T), enabled=True)
+    assert s2.created == 0 and s2.appended == 1              # parent APPEND(자체 Event 0)
+    assert len(s.events) == 2                                # 새 Event 없음
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("held_rt", ["community_signal", "structured_signal"])
+async def test_held_promotion_nonpublishable_title_mismatch_withheld(held_rt):
+    # ADR#38 회귀: 비-publishable held 재등장이지만 제목 무관 → 승격 안 함 → CREATE 경로 gate → WITHHELD
+    # (pure community/market 직접 발행 차단 유지 — 승격이 gate 를 무력화하지 않음).
+    s = _FakeSession()
+    await ingest_records_to_events(s, _hp_batch1_nonpub(held_rt), enabled=True)
+    s2 = await ingest_records_to_events(
+        s, _hp_batch2_nonpub(held_rt, "Totally unrelated quarterly maintenance memo"), enabled=True
+    )
+    assert s2.created == 0 and s2.withheld_source_type == 1  # 승격 X → 비-publishable gate WITHHELD
+    assert len(s.events) == 2                                # 새 Event 0
 
 
 @pytest.mark.asyncio

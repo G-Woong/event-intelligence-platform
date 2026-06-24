@@ -147,6 +147,17 @@ def test_weak_cluster_preserves_continuous_signal_strength():
     assert 0.8 <= c.signal_strength < 1.0     # 연속값(≈0.857), 1.0으로 양자화되지 않음
 
 
+def test_titles_similar_contract():
+    # ADR#38 held 승격 판정자: 정규화 일치 OR token Jaccard≥0.8 → 같은 사건.
+    from ingestion.orchestration.cross_source_dedup import titles_similar
+    assert titles_similar("Bank collapse triggers selloff", "bank collapse triggers selloff")   # 정규화 일치
+    assert titles_similar("Major outage hits cloud provider today",
+                          "Major outage hits cloud provider")                                   # Jaccard≈0.83
+    assert not titles_similar("Bank collapse triggers selloff", "Unrelated weather storm warning")
+    assert not titles_similar("", "anything")                                                   # 빈 입력=False
+    assert not titles_similar(None, "x")
+
+
 def test_legacy_fields_unchanged_additive():
     # 기존 소비처 비파괴: confidence/duplicate_group 등 기존 필드 동작 불변.
     recs = [

@@ -35,7 +35,7 @@ from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ingestion.orchestration.cross_source_dedup import CONF_DUPLICATE, cluster_records
+from ingestion.orchestration.cross_source_dedup import CONF_DUPLICATE, cluster_records, titles_similar
 from ingestion.orchestration.eventqueue_dedup import _external_url, compute_record_key
 
 from backend.app.core.config import settings
@@ -333,7 +333,7 @@ async def ingest_records_to_events(
             continue
         try:
             result = await resolve_and_apply_cluster(
-                session, cluster, candidate=mapper(cluster)
+                session, cluster, candidate=mapper(cluster), title_matcher=titles_similar
             )
         except Exception as exc:  # 후보 단위 격리 — 한 클러스터 실패가 배치를 멈추지 않음
             await session.rollback()

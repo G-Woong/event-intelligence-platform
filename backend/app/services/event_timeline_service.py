@@ -29,6 +29,7 @@ from typing import Any, Mapping, Optional
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from backend.app.models.event import EventCardORM
 from backend.app.models.event_resolution import ClusterEventMapORM, EventLinkORM
@@ -407,6 +408,44 @@ async def map_cluster(
         await session.commit()
     existing = await get_cluster_event(session, cluster_id)
     return existing if existing is not None else str(eid)
+
+
+async def find_held_parents(
+    session: AsyncSession, *, member_keys: tuple[str, ...]
+) -> list[tuple[str, str]]:
+    """재등장 멤버의 held lineage 조회(ADR#38 held 승격): degenerate held event(canonical_title==member_key)의
+    possible 링크가 가리키는 **매핑된 parent Event** 목록 [(parent_event_id, parent_canonical_title)].
+
+    - degenerate held event 는 canonical_title=record_key(member_key)로 영속됨(apply_routing held 루프).
+    - event_links(status='possible') 가 held→parent. parent 는 cluster_event_map 에 매핑된 실 Event 만(공개 주제;
+      degenerate 끼리의 링크·미매핑 우회 차단).
+    - 결정적 순서(parent id asc)·중복 제거. 빈 입력/무매칭 → []. 호출자(resolve_and_apply_cluster)가 parent 제목과
+      재등장 cluster 제목을 title_matcher 로 비교해 same 일 때만 승격(false-merge 방어).
+    """
+    keys = [str(k) for k in member_keys if k]
+    if not keys:
+        return []
+    de = aliased(EventORM)  # degenerate held event(canonical_title=member_key)
+    pe = aliased(EventORM)  # 매핑된 parent event
+    stmt = (
+        select(EventLinkORM.linked_event_id, pe.canonical_title)
+        .select_from(EventLinkORM)
+        .join(de, de.id == EventLinkORM.event_id)
+        .join(pe, pe.id == EventLinkORM.linked_event_id)
+        .where(de.canonical_title.in_(keys))
+        .where(EventLinkORM.status == "possible")
+        .where(EventLinkORM.linked_event_id.in_(select(ClusterEventMapORM.event_id)))
+        .order_by(pe.id.asc())
+    )
+    rows = (await session.execute(stmt)).all()
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for parent_id, parent_title in rows:
+        pid = str(parent_id)
+        if pid not in seen:
+            seen.add(pid)
+            out.append((pid, parent_title))
+    return out
 
 
 async def hold_link(

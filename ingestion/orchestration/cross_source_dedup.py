@@ -81,6 +81,20 @@ def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
     return inter / union if union else 0.0
 
 
+def titles_similar(a: Optional[str], b: Optional[str], threshold: float = _TITLE_JACCARD_THRESHOLD) -> bool:
+    """두 제목이 '같은 사건'으로 볼 만큼 유사한가(약신호 결합과 동일 기준 — 정규화 일치 OR token Jaccard≥threshold).
+
+    held 승격(ADR#38)에서 재등장 cluster 제목 ↔ parent Event 제목을 판정하는 공개 계약: 약신호 cluster 를
+    만든 기준(`_norm_title`/token Jaccard≥0.8)과 **동일 로직**이라 hold 시점 유사성과 일관된다. stdlib only.
+    """
+    na, nb = _norm_title(a), _norm_title(b)
+    if not na or not nb:
+        return False
+    if na == nb:
+        return True
+    return _jaccard(_title_tokens(a), _title_tokens(b)) >= threshold
+
+
 class _UnionFind:
     def __init__(self, n: int) -> None:
         self.parent = list(range(n))

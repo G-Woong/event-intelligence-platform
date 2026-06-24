@@ -492,6 +492,78 @@ async def test_live_weak_cluster_news_news_publishes(session):
     assert await _count(session, "events") == 2
 
 
+# ── held 승격 (ADR#38) ─────────────────────────────────────────────────────────
+_HP_T = "Reactor scram at coastal nuclear plant"
+_ACC_A = "0001193125-26-000111"
+_ACC_B = "0001193125-26-000222"
+
+
+def _held_batch1(title=_HP_T):
+    # 강신호 news core(accA, 다른 canonical) + official 약신호 title-link → CREATE P(news), official held.
+    return [
+        _rec(record_type="article_candidate", source_id="ap", canonical_url="https://ap.com/p1",
+             source_url_or_evidence=f"https://ap.com/Archives/{_ACC_A}", title_or_label=title,
+             published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="article_candidate", source_id="reuters", canonical_url="https://reuters.com/p2",
+             source_url_or_evidence=f"https://reuters.com/Archives/{_ACC_A}", title_or_label=title,
+             published_at_or_observed_at="2025-06-02"),
+        _rec(record_type="official_record", source_id="sec", canonical_url="https://sec.gov/o-doc",
+             title_or_label=title, published_at_or_observed_at="2025-06-02"),
+    ]
+
+
+def _held_batch2_official(title):
+    # official(batch1 과 같은 canonical=같은 key) 재등장 + official2 강신호(accB).
+    return [
+        _rec(record_type="official_record", source_id="sec", canonical_url="https://sec.gov/o-doc",
+             source_url_or_evidence=f"https://sec.gov/Archives/{_ACC_B}", title_or_label=title,
+             published_at_or_observed_at="2025-06-03"),
+        _rec(record_type="official_record", source_id="sec2", canonical_url="https://sec.gov/o-doc2",
+             source_url_or_evidence=f"https://sec.gov/data/{_ACC_B}", title_or_label=title,
+             published_at_or_observed_at="2025-06-03"),
+    ]
+
+
+async def test_live_held_promotion_same_title_appends_to_parent(session):
+    # ADR#38: 약신호로 held 된 official 이 나중에 강신호로 재등장 + 제목 동일 → **새 중복 Event 대신 parent APPEND**.
+    from backend.app.services.event_ingest_pipeline import ingest_records_to_events
+
+    s1 = await ingest_records_to_events(session, _held_batch1(), enabled=True)
+    assert s1.created == 1 and s1.held_member_links == 1          # P + official held
+    assert await _count(session, "events") == 2                  # P + held degenerate
+    s2 = await ingest_records_to_events(session, _held_batch2_official(_HP_T), enabled=True)
+    assert s2.created == 0 and s2.appended == 1                  # 중복 Event 0 — parent 로 승격 APPEND
+    assert await _count(session, "events") == 2                  # 새 Event 없음(여전히 P + held)
+
+
+async def test_live_held_promotion_different_title_creates_independent(session):
+    # ADR#38 false-merge 방어: held official 재등장 강신호지만 **제목 무관** → parent 병합 안 함, 독립 Event CREATE.
+    from backend.app.services.event_ingest_pipeline import ingest_records_to_events
+
+    s1 = await ingest_records_to_events(session, _held_batch1(), enabled=True)
+    assert s1.created == 1 and await _count(session, "events") == 2
+    s2 = await ingest_records_to_events(
+        session, _held_batch2_official("Unrelated harbor crane maintenance notice"), enabled=True
+    )
+    assert s2.created == 1 and s2.appended == 0                  # 독립 Event(병합 안 함)
+    assert await _count(session, "events") == 3                  # P + held + Q(독립)
+
+
+async def test_live_held_promotion_idempotent_on_reprocess(session):
+    # ADR#38: 승격(parent APPEND) 후 같은 batch2 재처리 → cluster_id→parent 매핑으로 멱등(중복 APPEND/Event 0).
+    from backend.app.services.event_ingest_pipeline import ingest_records_to_events
+
+    await ingest_records_to_events(session, _held_batch1(), enabled=True)
+    await ingest_records_to_events(session, _held_batch2_official(_HP_T), enabled=True)
+    n_events = await _count(session, "events")
+    n_updates = await _count(session, "event_updates")
+    s3 = await ingest_records_to_events(session, _held_batch2_official(_HP_T), enabled=True)
+    assert s3.created == 0                                       # 재처리 → 새 Event 0
+    assert await _count(session, "events") == n_events          # Event 수 불변(멱등)
+    # 같은 cluster_id 가 mapped → APPEND(append-only 관측은 1행 늘 수 있으나 새 Event/held 중복 0)
+    assert await _count(session, "event_updates") >= n_updates
+
+
 async def test_live_failed_cluster_isolated_other_persists(session):
     # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
     # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).
