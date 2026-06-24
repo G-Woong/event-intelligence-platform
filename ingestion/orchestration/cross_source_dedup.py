@@ -14,9 +14,10 @@ stdlib만. 신규 설치 0.
 """
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Optional
 
 from ingestion.orchestration.eventqueue_dedup import (
     _external_url,
@@ -28,6 +29,9 @@ from ingestion.orchestration.time_normalizer import normalize_time
 _WS = re.compile(r"\s+")
 _TOKEN = re.compile(r"[0-9A-Za-z가-힣]+")
 _TITLE_JACCARD_THRESHOLD = 0.8
+# semantic identity fingerprint(ADR#41) non-generic 가드: 유의미 토큰이 이보다 적으면 fingerprint 를
+# 만들지 않는다(generic 제목 충돌로 인한 cross-batch 오링크 차단). 결정론 층은 고정밀·저재현 의도.
+_MIN_SEMANTIC_TOKENS = 4
 _STOPWORDS = frozenset({
     "the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "with",
     "is", "are", "was", "were", "says", "say", "after", "as", "at", "by",
@@ -93,6 +97,25 @@ def titles_similar(a: Optional[str], b: Optional[str], threshold: float = _TITLE
     if na == nb:
         return True
     return _jaccard(_title_tokens(a), _title_tokens(b)) >= threshold
+
+
+def semantic_identity_fingerprint(title: Optional[str], observed_at: Any) -> Optional[str]:
+    """제목 token-set + date bucket → 결정론 cross-batch semantic identity fingerprint(또는 None; ADR#41).
+
+    같은 사건을 보도하는 두 **다른-URL** 기사가 같은 날 같은 의미 토큰 집합을 쓰면 같은 fingerprint 가 된다
+    (어순 무관·stopword 제거·소문자). 이 fingerprint 가 같다고 **자동 병합하지 않는다** — 호출자는 event_links
+    (possible) 로만 링크한다(false-merge surface 0). **None(보수) 조건**: ① 유의미 토큰 < _MIN_SEMANTIC_TOKENS
+    (generic 제목) ② date bucket 비어있음(시점 불명 → cross-day 오매칭 차단). `titles_similar`/약신호 결합과
+    **동일 정규화**(`_title_tokens`)라 hold 시점 유사성 기준과 일관된다. embedding/LLM 미사용. stdlib only."""
+    tokens = _title_tokens(title)
+    if len(tokens) < _MIN_SEMANTIC_TOKENS:
+        return None
+    nt = normalize_time(observed_at) if observed_at else None
+    bucket = nt.value[:10] if (nt and nt.value) else ""
+    if not bucket:
+        return None  # 시점 불명 fingerprint 금지 — 같은 토큰이라도 다른 날(다른 사건)을 잇지 않도록.
+    basis = " ".join(sorted(tokens)) + "|" + bucket
+    return "sem:" + hashlib.sha1(basis.encode("utf-8")).hexdigest()[:16]
 
 
 class _UnionFind:

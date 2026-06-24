@@ -127,6 +127,7 @@ class _FakeSession:
         self.links: list[SimpleNamespace] = []
         self.cards: dict[str, SimpleNamespace] = {}   # event_cards 무변경 입증용(쓰기 0 기대)
         self.identity: dict[str, uuid.UUID] = {}      # event_identity_map(ADR#40): identity_key→event_id
+        self.candidate: dict[str, uuid.UUID] = {}     # event_identity_candidate(ADR#41): candidate_key→event_id
         self.commits = 0
         self.rollbacks = 0
 
@@ -163,6 +164,10 @@ class _FakeSession:
             # on_conflict_do_nothing(identity_key) = 첫 매핑 보존(ADR#40).
             if p["identity_key"] not in self.identity:
                 self.identity[p["identity_key"]] = p["event_id"]
+        elif table == "event_identity_candidate":
+            # on_conflict_do_nothing(candidate_key) = 첫 매핑 보존(ADR#41 — 첫 Event 가 fingerprint hub).
+            if p["candidate_key"] not in self.candidate:
+                self.candidate[p["candidate_key"]] = p["event_id"]
         else:
             raise NotImplementedError(f"insert {table}")
         return _Result()
@@ -213,6 +218,17 @@ class _FakeSession:
                     eids.append(eid)
             eids.sort(key=str)   # order_by event_id asc(결정적)
             return _Result(rows=eids)
+        if table == "event_identity_candidate":
+            # find_event_candidates_by_fingerprint(ADR#41) 시뮬: candidate_key.in_(keys) event_id distinct(정렬).
+            keys = self._extract_in_values(stmt)
+            ceids: list = []
+            cseen: set[str] = set()
+            for k, eid in self.candidate.items():
+                if k in keys and str(eid) not in cseen:
+                    cseen.add(str(eid))
+                    ceids.append(eid)
+            ceids.sort(key=str)   # order_by event_id asc(결정적)
+            return _Result(rows=ceids)
         where_val = stmt.whereclause.right.value if stmt.whereclause is not None else None
         if table == "cluster_event_map":
             return _Result(scalar=self.cmap.get(where_val))
@@ -383,6 +399,146 @@ def test_identity_keys_empty_for_catalog_cluster():
     if clusters:                                          # 같은 제목/날짜로 약신호 cluster 형성 시
         cand = candidate_from_cluster(clusters[0], build_record_index(recs))
         assert cand.identity_keys == ()                  # catalog 는 identity anchor 0
+
+
+# ── cross-batch semantic identity candidate (ADR#41) ──────────────────────────────
+_SEM_DATE = "2026-06-24"
+_SEM_T1 = "Federal Reserve raises benchmark interest rates today"
+_SEM_T2 = "Coastal refinery fire forces mass evacuation nearby"
+
+
+def _sem_batch(canonical, title=_SEM_T1, date=_SEM_DATE, s1="cnn", s2="npr"):
+    # 배치 **내부**는 같은 canonical 강신호 2건 → 깔끔한 단일 Event(held degenerate 없음). 배치 **간**에는
+    # canonical 을 다르게 줘 공유 strong anchor 없음을 만든다(같은 제목/날짜면 semantic fingerprint 만 공유).
+    return [
+        _rec(record_type="article_candidate", source_id=s1, canonical_url=canonical,
+             title_or_label=title, published_at_or_observed_at=date),
+        _rec(record_type="article_candidate", source_id=s2, canonical_url=canonical,
+             title_or_label=title, published_at_or_observed_at=date),
+    ]
+
+
+def test_semantic_fingerprints_populated_for_publishable_long_title():
+    recs = _sem_batch("https://a/1")
+    cand = candidate_from_cluster(cluster_records(recs)[0], build_record_index(recs))
+    assert len(cand.semantic_fingerprints) == 1            # 같은 제목/날짜 → 1 fingerprint(dedup)
+    assert cand.semantic_fingerprints[0].startswith("sem:")
+
+
+def test_semantic_fingerprints_empty_for_generic_short_title():
+    # 유의미 토큰 < 4(generic) → fingerprint None → 후보 비활성(충돌 차단).
+    recs = _sem_batch("https://a/1", title="Market update")
+    cand = candidate_from_cluster(cluster_records(recs)[0], build_record_index(recs))
+    assert cand.semantic_fingerprints == ()
+
+
+def test_semantic_fingerprints_empty_for_non_publishable_community():
+    # community(non-publishable) 는 semantic anchor 금지 → fingerprint 0.
+    recs = [
+        _rec(record_type="community_signal", source_id="hn", canonical_url="https://hn/1",
+             title_or_label=_SEM_T1, published_at_or_observed_at=_SEM_DATE),
+        _rec(record_type="community_signal", source_id="reddit", canonical_url="https://rd/2",
+             title_or_label=_SEM_T1, published_at_or_observed_at=_SEM_DATE),
+    ]
+    clusters = cluster_records(recs)
+    assert clusters
+    cand = candidate_from_cluster(clusters[0], build_record_index(recs))
+    assert cand.semantic_fingerprints == ()
+
+
+def test_same_token_set_same_date_forms_single_cluster_in_batch():
+    # adversarial 갭 해소(구조적): 같은 token-set + 같은 날 record 들은 cross_source_dedup 의 약신호 title-link
+    # (Jaccard≥0.8)로 **한 cluster 로 병합**된다 → 한 배치 안에서 같은 fingerprint 가 두 독립 cluster 로 갈리지
+    # 않는다(in-batch 이중 CREATE·자기-링크 구조적 불가). semantic 후보 링크는 그래서 진짜 cross-batch(별 호출)
+    # 에서만 발동한다 — same-batch 다중-cluster 오링크 시나리오는 clustering 단계에서 선제 차단된다.
+    recs = [
+        _rec(record_type="article_candidate", source_id="ap", canonical_url="https://ap/1",
+             title_or_label=_SEM_T1, published_at_or_observed_at=_SEM_DATE),
+        _rec(record_type="article_candidate", source_id="bbc", canonical_url="https://bbc/2",
+             title_or_label=_SEM_T1, published_at_or_observed_at=_SEM_DATE),
+    ]
+    clusters = cluster_records(recs)
+    assert len(clusters) == 1                              # 같은 token-set → 한 cluster(분리 안 됨)
+
+
+@pytest.mark.asyncio
+async def test_cross_batch_semantic_different_url_links_not_merges():
+    # 상용 핵심: 공유 anchor 없는 두 다른-URL 배치가 같은 사건(같은 제목·날짜) → **병합 아님**, possible 링크.
+    s = _FakeSession()
+    await ingest_records_to_events(s, _sem_batch("https://wire/x1"), enabled=True)
+    assert len(s.events) == 1 and len(s.candidate) == 1    # E1 + fingerprint claim
+    e1 = next(iter(s.events))
+    summary2 = await ingest_records_to_events(s, _sem_batch("https://cnn/y"), enabled=True)
+    assert summary2.created == 1 and summary2.appended == 0  # 새 독립 Event(자동 병합 0 → false-merge 0)
+    assert len(s.events) == 2                                # E1 + E2 (분열 표면화, 병합 안 함)
+    sem = [l for l in s.links if getattr(l, "reason", "") == "semantic_cross_batch_candidate"]
+    assert len(sem) == 1 and sem[0].status == "possible"
+    assert str(sem[0].linked_event_id) == e1                # E2 → E1 후보 링크(병합 아님)
+
+
+@pytest.mark.asyncio
+async def test_cross_batch_semantic_idempotent_no_duplicate_link():
+    s = _FakeSession()
+    await ingest_records_to_events(s, _sem_batch("https://wire/x1"), enabled=True)
+    b2 = _sem_batch("https://cnn/y")
+    await ingest_records_to_events(s, b2, enabled=True)     # CREATE E2 + 링크
+    await ingest_records_to_events(s, b2, enabled=True)     # 재실행: cluster_id mapped → APPEND, 신규 0
+    assert len(s.events) == 2
+    sem = [l for l in s.links if getattr(l, "reason", "") == "semantic_cross_batch_candidate"]
+    assert len(sem) == 1                                    # 링크 중복 0(멱등)
+
+
+@pytest.mark.asyncio
+async def test_cross_batch_semantic_different_title_no_link():
+    # 다른 제목(다른 token-set)·같은 날 → fingerprint 다름 → 후보 없음 → 링크 0.
+    s = _FakeSession()
+    await ingest_records_to_events(s, _sem_batch("https://wire/x1"), enabled=True)
+    await ingest_records_to_events(s, _sem_batch("https://cnn/y", title=_SEM_T2), enabled=True)
+    assert len(s.events) == 2
+    assert not any(getattr(l, "reason", "") == "semantic_cross_batch_candidate" for l in s.links)
+
+
+@pytest.mark.asyncio
+async def test_cross_batch_semantic_far_date_no_link():
+    # 같은 제목·다른 날(scenario 4) → date bucket 다름 → fingerprint 다름 → 링크 0.
+    s = _FakeSession()
+    await ingest_records_to_events(s, _sem_batch("https://wire/x1"), enabled=True)
+    await ingest_records_to_events(s, _sem_batch("https://cnn/y", date="2026-07-15"), enabled=True)
+    assert len(s.events) == 2
+    assert not any(getattr(l, "reason", "") == "semantic_cross_batch_candidate" for l in s.links)
+
+
+@pytest.mark.asyncio
+async def test_cross_batch_semantic_ambiguous_no_link():
+    # 한 cluster 의 fingerprints 가 서로 다른 기존 Event 2개를 가리키면(모호) → 링크 안 함, 독립 CREATE(scenario 7).
+    s = _FakeSession()
+    await ingest_records_to_events(s, _sem_batch("https://a1/x", title=_SEM_T1), enabled=True)
+    await ingest_records_to_events(s, _sem_batch("https://b1/x", title=_SEM_T2), enabled=True)
+    assert len(s.events) == 2 and len(s.candidate) == 2     # E1(F1), E2(F2)
+    acc = "0001193125-26-000333"
+    b3 = [  # 같은 accession bridge(강신호)·다른 canonical·다른 제목(T1,T2) → core fingerprints {F1, F2}.
+        _rec(record_type="article_candidate", source_id="x", canonical_url="https://x/1",
+             source_url_or_evidence=f"https://x/Archives/{acc}", title_or_label=_SEM_T1,
+             published_at_or_observed_at=_SEM_DATE),
+        _rec(record_type="article_candidate", source_id="y", canonical_url="https://y/2",
+             source_url_or_evidence=f"https://y/Archives/{acc}", title_or_label=_SEM_T2,
+             published_at_or_observed_at=_SEM_DATE),
+    ]
+    clusters = cluster_records(b3)
+    assert len(clusters) == 1 and len(dict.fromkeys(clusters[0].duplicate_group)) == 2
+    summary3 = await ingest_records_to_events(s, b3, enabled=True)
+    assert summary3.created == 1                            # 모호 → 병합/링크 안 함, 독립 Event
+    assert not any(getattr(l, "reason", "") == "semantic_cross_batch_candidate" for l in s.links)
+
+
+@pytest.mark.asyncio
+async def test_strong_anchor_takes_precedence_over_semantic_no_link():
+    # 공유 strong anchor(같은 canonical) 재등장은 ADR#40 경로로 APPEND(병합) — semantic 링크 경로 미발동.
+    s = _FakeSession()
+    await ingest_records_to_events(s, _sem_batch("https://wire/x1"), enabled=True)
+    summary2 = await ingest_records_to_events(s, _sem_batch("https://wire/x1"), enabled=True)
+    assert summary2.appended == 1 and len(s.events) == 1    # strong anchor APPEND(분열 0)
+    assert not any(getattr(l, "reason", "") == "semantic_cross_batch_candidate" for l in s.links)
 
 
 # ── 2. flag 게이트 ────────────────────────────────────────────────────────────────

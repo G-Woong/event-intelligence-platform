@@ -224,6 +224,15 @@ Analyzer: standard (기본). 한국어 nori는 STEP 010+ TODO.
 | identity_key | VARCHAR(256) | PK (publishable core 멤버 record_key; 첫 매핑 보존) |
 | event_id | UUID | FK → events.id (**RESTRICT**, 감사 보호) |
 
+### event_identity_candidate (deterministic semantic cross-batch 후보 — ✅ **alembic 0008, ADR#41 / R-CrossBatchEventIdentity**)
+
+> event_identity_map(확정 anchor)이 **동일 URL/공식ID 재등장**만 잇는 것과 달리, 공유 strong anchor 가 **없어도** 같은 사건일 수 있는 후보를 결정론으로 표면화한다. candidate_key = publishable core 멤버 제목의 **normalized token-set + date bucket** fingerprint(`semantic_identity_fingerprint`; 유의미 토큰<4 generic·시점불명은 None). CREATE/APPEND 시 claim(on_conflict_do_nothing=첫 Event 가 fingerprint hub). 미매핑 cluster 가 fingerprint **정확히 1개** Event 를 가리키면 **자동 병합하지 않고** `event_links(status='possible', reason='semantic_cross_batch_candidate')` 로만 LINK(false-merge surface 0), 2개+(모호)면 링크 안 함. **⚠ 중복 Event count 는 줄지 않는다** — 후보 표면화일 뿐 실 병합 아님(실 병합=semantic adjudicator, R-SemanticIdentityAdjudicator 이월). LINK 소비처 현재 0(가역 raw substrate).
+
+| event_identity_candidate | 타입 | 설명 |
+|---|---|---|
+| candidate_key | VARCHAR(256) | PK (semantic fingerprint `sem:{sha1}`; 첫 매핑 보존) |
+| event_id | UUID | FK → events.id (**RESTRICT**, 감사 보호) |
+
 ## Entity (entities 테이블 — 1급 객체, SPEC §3.1)
 
 | 컬럼 | 타입 | 설명 |

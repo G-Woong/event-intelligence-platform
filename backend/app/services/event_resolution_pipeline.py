@@ -21,14 +21,16 @@ from typing import Any, Callable, Iterable, Optional, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.services.event_resolver import ACTION_APPEND, resolve_routing
+from backend.app.services.event_resolver import ACTION_APPEND, ACTION_CREATE, resolve_routing
 from backend.app.services.event_timeline_service import (
     ApplyResult,
     ResolvedCandidate,
     apply_routing,
+    find_event_candidates_by_fingerprint,
     find_events_by_identity,
     find_held_parents,
     get_cluster_event,
+    hold_link,
     map_cluster,
 )
 
@@ -86,6 +88,19 @@ async def resolve_and_apply_cluster(
         if len(existing) == 1:
             mapped = existing[0]
             promoted = True
+    # deterministic semantic identity 후보 탐지(ADR#41, R-CrossBatchEventIdentity): strong anchor 로도
+    # held lineage 로도 안 잡힌 미매핑 cluster 라도, **공유 anchor 없이 같은 사건**을 다른 배치에서 보도한
+    # 후보(같은 normalized token-set + date bucket fingerprint)가 기존 Event 에 있을 수 있다. 이를 **자동
+    # 병합하지 않고**(false-merge 0) CREATE 후 event_links(possible) 로만 링크한다 — 실제 병합은 미래 semantic
+    # adjudicator(embedding/LLM/KG) 이월. **정확히 1개** 후보일 때만(2개+ 모호→링크 안 함). promoted(strong/held
+    # 로 이미 기존 Event 에 APPEND 예정)면 후보 탐지 생략(이미 올바른 Event 로 수렴). fingerprint 가 비면 생략.
+    semantic_candidate: Optional[str] = None
+    if mapped is None and not promoted and candidate.semantic_fingerprints:
+        cands = await find_event_candidates_by_fingerprint(
+            session, fingerprints=tuple(candidate.semantic_fingerprints)
+        )
+        if len(cands) == 1:
+            semantic_candidate = cands[0]
     # source-type publish gate 입력(ADR#33/#36): 우선 candidate.core_source_types(강신호 core 멤버 source_type,
     # weak_only 제외 — candidate_from_cluster 가 채움)로 판정해 **weak_only publishable 로 발행되는 것을 차단**.
     # 미설정(레거시 candidate)이면 candidate.evidence 의 source_type 으로 fallback(하위호환).
@@ -107,6 +122,22 @@ async def resolve_and_apply_cluster(
     if promoted and result.action == ACTION_APPEND and result.event_id is not None:
         # 재등장 cluster_id → parent 매핑(멱등): 같은 cluster_id 재처리 시 held 재조회 없이 바로 mapped APPEND.
         await map_cluster(session, cluster_id=cluster.cluster_id, event_id=result.event_id)
+    # semantic cross-batch 동일성 후보 LINK(ADR#41): **새로 CREATE 된** 독립 Event 가 기존 후보 Event 와 같은
+    # 사건일 수 있으면 event_links(possible) 로 연결한다 — **병합이 아니라 후보 표면화**(RAG/KG/agent 가 동일성을
+    # 재판정·정제할 substrate). result.action==CREATE 이고 후보가 자기 자신이 아닐 때만(concurrent degrade-append
+    # 패배·동일 event 자기링크 방지). 자동 병합 없음 → false-merge surface 0. 실제 병합은 semantic adjudicator 이월.
+    if (
+        semantic_candidate is not None
+        and result.action == ACTION_CREATE
+        and result.event_id is not None
+        and result.event_id != semantic_candidate
+    ):
+        await hold_link(
+            session,
+            event_id=result.event_id,
+            linked_event_id=semantic_candidate,
+            reason="semantic_cross_batch_candidate",
+        )
     return result
 
 

@@ -35,7 +35,12 @@ from urllib.parse import urlparse
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ingestion.orchestration.cross_source_dedup import CONF_DUPLICATE, cluster_records, titles_similar
+from ingestion.orchestration.cross_source_dedup import (
+    CONF_DUPLICATE,
+    cluster_records,
+    semantic_identity_fingerprint,
+    titles_similar,
+)
 from ingestion.orchestration.eventqueue_dedup import _external_url, _official_id, compute_record_key
 
 from backend.app.core.config import settings
@@ -270,6 +275,21 @@ def candidate_from_cluster(
         and (r.get("canonical_url") or _official_id(_external_url(r)))
     )
 
+    # deterministic semantic cross-batch fingerprint(ADR#41): **publishable core 멤버**(identity_keys 와 동일
+    # 자격: official/article·weak_only/held 제외)의 제목 token-set + date bucket. strong anchor(canonical_url/
+    # official_id)가 **없어도** 만들 수 있다 — 다른 URL 두 기사가 같은 사건을 보도하는 경우를 잡기 위함. 같은
+    # fingerprint cluster 는 자동 병합되지 않고 event_links(possible) 후보로만 링크된다(false-merge 0). generic
+    # 제목(유의미 토큰 < 4)·시점 불명은 fingerprint None(보수). dict.fromkeys 로 중복 제거(결정론 순서 보존).
+    semantic_fingerprints = tuple(dict.fromkeys(
+        fp
+        for m in core_members
+        if (r := index.get(m)) is not None
+        and _RECORD_TYPE_TO_SOURCE_TYPE.get(r.get("record_type")) in _IDENTITY_ANCHOR_SOURCE_TYPES
+        if (fp := semantic_identity_fingerprint(
+            r.get("title_or_label"), r.get("published_at_or_observed_at")
+        )) is not None
+    ))
+
     return ResolvedCandidate(
         canonical_title=canonical_title,
         observed_at=observed_at,
@@ -294,6 +314,8 @@ def candidate_from_cluster(
         core_source_types=core_source_types,
         # cross-batch identity anchor(ADR#40): publishable strong-key 멤버 record_key → 배치 넘어 동일성 유지.
         identity_keys=identity_keys,
+        # deterministic semantic fingerprint(ADR#41): 공유 anchor 없는 같은-사건 후보 → event_links(possible) 링크.
+        semantic_fingerprints=semantic_fingerprints,
     )
 
 

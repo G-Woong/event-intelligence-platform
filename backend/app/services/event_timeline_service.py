@@ -34,6 +34,7 @@ from sqlalchemy.orm import aliased
 from backend.app.models.event import EventCardORM
 from backend.app.models.event_resolution import (
     ClusterEventMapORM,
+    EventIdentityCandidateMapORM,
     EventIdentityMapORM,
     EventLinkORM,
 )
@@ -97,6 +98,11 @@ class ResolvedCandidate:
     # event_id 로 영속되고, 다음 배치의 미매핑 cluster 가 같은 anchor 를 가지면 그 Event 로 APPEND(분열 방지).
     # ()=미설정(레거시 candidate; cross-batch 승격 비활성 — 하위호환). community/market/catalog/약신호 제외(보수).
     identity_keys: tuple[str, ...] = ()
+    # deterministic semantic cross-batch identity fingerprint(ADR#41, R-CrossBatchEventIdentity): publishable
+    # core 제목의 normalized token-set + date bucket(`semantic_identity_fingerprint`). 공유 strong anchor 가
+    # 없어도 같은 사건일 수 있는 후보를 결정론으로 식별한다. **확정 anchor(identity_keys)와 분리** — 매칭 시
+    # 자동 병합하지 않고 event_links(possible) 로만 링크(false-merge 0). ()=미설정(후보 비활성 — 하위호환).
+    semantic_fingerprints: tuple[str, ...] = ()
 
 
 @dataclass
@@ -500,6 +506,49 @@ async def map_event_identities(
         await session.commit()
 
 
+async def find_event_candidates_by_fingerprint(
+    session: AsyncSession, *, fingerprints: tuple[str, ...]
+) -> list[str]:
+    """semantic fingerprint 들이 가리키는 **기존 매핑 Event** 목록(cross-batch 동일성 후보; ADR#41).
+
+    event_identity_candidate(candidate_key→event_id)에서 주어진 fingerprint 중 하나라도 매핑된 event_id 를
+    distinct 로 반환(결정론 정렬 event_id asc). 0개=신규(→CREATE, 후보 없음), **정확히 1개**=같은 사건 후보
+    (→event_links possible 링크; 자동 병합 아님), 2개 이상=서로 다른 기존 Event 후보 다수(모호)→호출자가
+    링크하지 않는다(잘못된 연결 금지). event_identity_map(확정 anchor)과 별개 테이블 — 약한 신호. 빈 입력 → []."""
+    keys = [str(k) for k in fingerprints if k]
+    if not keys:
+        return []
+    stmt = (
+        select(EventIdentityCandidateMapORM.event_id)
+        .where(EventIdentityCandidateMapORM.candidate_key.in_(keys))
+        .distinct()
+        .order_by(EventIdentityCandidateMapORM.event_id.asc())
+    )
+    rows = (await session.execute(stmt)).scalars().all()
+    return [str(r) for r in rows]
+
+
+async def map_event_candidate_fingerprints(
+    session: AsyncSession, *, fingerprints: tuple[str, ...], event_id: Any, commit: bool = True
+) -> None:
+    """semantic fingerprint 들 → event_id 영속(cross-batch 동일성 후보 단일 출처; ADR#41).
+
+    각 fingerprint 를 on_conflict_do_nothing(candidate_key) 로 INSERT — **첫 매핑 보존**(첫 Event 가 fingerprint
+    hub). CREATE/APPEND 시 호출돼 발행 Event 가 자신의 semantic fingerprint 를 claim → 다음 배치의 같은
+    fingerprint cluster 가 이 Event 를 후보로 발견(→ possible 링크). 빈 입력은 no-op. commit=False 면 미종료."""
+    eid = _coerce_uuid(event_id)
+    keys = [str(k) for k in fingerprints if k]
+    for key in keys:
+        stmt = (
+            pg_insert(EventIdentityCandidateMapORM)
+            .values(candidate_key=key, event_id=eid)
+            .on_conflict_do_nothing(index_elements=["candidate_key"])
+        )
+        await session.execute(stmt)
+    if commit:
+        await session.commit()
+
+
 async def hold_link(
     session: AsyncSession,
     *,
@@ -640,6 +689,19 @@ async def apply_routing(
     ):
         await map_event_identities(
             session, identity_keys=candidate.identity_keys, event_id=primary_id, commit=False
+        )
+
+    # deterministic semantic fingerprint claim(ADR#41): 발행 Event 가 자신의 fingerprint 를 claim → 다음 배치의
+    # 같은 fingerprint cluster 가 이 Event 를 cross-batch 동일성 **후보**로 발견(→ possible 링크; 자동 병합 아님).
+    # event_identity_candidate(별도 테이블)에 영속 — 확정 anchor(event_identity_map)와 분리. CREATE/APPEND 만
+    # (WITHHELD/HOLD 미발행은 claim 안 함). 첫 매핑 보존(첫 Event 가 hub). 실제 링크는 resolve_and_apply_cluster.
+    if (
+        candidate.semantic_fingerprints
+        and primary_id is not None
+        and decision.action in (ACTION_CREATE, ACTION_APPEND)
+    ):
+        await map_event_candidate_fingerprints(
+            session, fingerprints=candidate.semantic_fingerprints, event_id=primary_id, commit=False
         )
 
     await session.commit()  # 단일 원자 커밋(부분 실패 orphan 차단).

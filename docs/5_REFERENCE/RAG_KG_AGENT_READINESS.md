@@ -36,14 +36,15 @@
 | unknown/missing source_type | (미지) | 차단(fail-closed) | **FAIL-CLOSED** | publishable 0→WITHHELD(ADR#35 조용한 우회 차단) |
 
 ## 4. RAG/KG 이전 **필수 substrate gate**(닫아야 handoff 가능)
-1. **R-CrossBatchEventIdentity**(MEDIUM, **부분종결** ADR#40) — 같은 사건이 배치마다 분열(UNDER-merge). **닫힌 범위:** deterministic shared-anchor 층(`event_identity_map`: 동일 canonical_url/official_id 재등장→기존 Event APPEND, live-PG 검증). **미해결:** 공유 anchor 없는 독립 보도 cross-batch 분열(semantic identity 필요·미구현) + fragment 오APPEND 잔여 → **여전히 RAG/KG 이전 gate**(semantic 잔여가 substrate 분열원으로 남음).
-2. **R-SourceCatalogFidelity**(**CLOSED** ADR#40) — catalog(6종)→catalog_metadata 비-publishable override 로 official Event 누수 차단(fail-closed·live-PG 0 events). KG enrichment 역할은 catalog source_type 라벨로 보존. ✅ handoff gate 통과.
-3. (기존) heat/ranking 미산정(events.heat=0), event_cards↔Event 자동연결 부재, 3엔진(PG/Milvus/OpenSearch) 색인 정합 미검증(R-EventModelMigration).
+1. **R-CrossBatchEventIdentity**(MEDIUM, **부분종결 진전** ADR#40+#41) — 같은 사건이 배치마다 분열(UNDER-merge). **닫힌 범위(병합):** deterministic shared-anchor 층(`event_identity_map`: 동일 canonical_url/official_id 재등장→기존 Event APPEND, live-PG 검증, ADR#40). **닫힌 범위(후보 substrate):** 공유 anchor 없는 같은 token-set+같은 날 publishable 후보를 `event_identity_candidate`→`event_links(possible)` 로 **표면화**(ADR#41, live-PG 검증). **⚠ 미해결:** ADR#41 은 **LINK 만 — 중복 Event count 미감소**(실 병합 아님). 패러프레이즈/다국어/엔티티 동일성·실 병합은 **R-SemanticIdentityAdjudicator**(신규, 미구현) → **여전히 RAG/KG 이전 gate**.
+2. **R-SemanticIdentityAdjudicator**(MEDIUM, **신규 OPEN** ADR#41) — possible-link 후보를 실제 병합/기각해 중복 Event 를 줄이는 adjudicator(embedding/LLM/KG, mock-default). closure=실 병합으로 count 감소 입증+한국어 fingerprint 캘리브레이션+shadow 평가. **이게 닫혀야 cross-batch 동일성이 진짜 해결**.
+3. **R-SourceCatalogFidelity**(**CLOSED** ADR#40) — catalog(6종)→catalog_metadata 비-publishable override 로 official Event 누수 차단(fail-closed·live-PG 0 events). KG enrichment 역할은 catalog source_type 라벨로 보존. ✅ handoff gate 통과.
+4. (기존) heat/ranking 미산정(events.heat=0), event_cards↔Event 자동연결 부재, 3엔진(PG/Milvus/OpenSearch) 색인 정합 미검증(R-EventModelMigration).
 
 ## 4b. 제품 출력 계약 — raw source ≠ public product (substrate→intelligence unit)
 이 제품은 **뉴스 본문 하나를 그대로 보여주는 웹이 아니다.** 모든 소스(article/catalog/market/community/official/search)는 최종적으로 다음 중 하나로 정제된다:
 - **Event substrate 의 근거**(publishable: official/article → Event CREATE/APPEND 근거) · **signal**(market/numeric → 비발행 지표) · **catalog/entity enrichment**(catalog_metadata → 비발행·KG/entity 보강 후보, ADR#40) · **held/review evidence**(약신호 corroborator → possible link) · **expansion seed**(search → URL 후보) · **public intelligence unit 의 구성요소**.
-규칙: **raw article/catalog/market/community 를 그대로 public 으로 내보내지 않는다.** public 출력 단위는 사건 단위 Event(향후 curated Intelligence Unit). source-type publish gate(ADR#33/#35)+catalog fidelity(ADR#40)+cross-batch identity(ADR#40)+held 정책(ADR#38)이 이 계약을 코드로 강제한다. Agent/RAG/KG 는 이 substrate **위에서** 관련 source 확장수집·entity 연결·반응/영향/시간흐름 정리·citation 유지로 intelligence unit 을 생성한다(현재 미구축 — §2/§5).
+규칙: **raw article/catalog/market/community 를 그대로 public 으로 내보내지 않는다.** public 출력 단위는 사건 단위 Event(향후 curated Intelligence Unit). source-type publish gate(ADR#33/#35)+catalog fidelity(ADR#40)+cross-batch identity(ADR#40 병합·ADR#41 후보)+held 정책(ADR#38)이 이 계약을 코드로 강제한다. Agent/RAG/KG 는 이 substrate **위에서** 관련 source 확장수집·entity 연결·반응/영향/시간흐름 정리·citation 유지로 intelligence unit 을 생성한다(현재 미구축 — §2/§5). **계약 단일 출처: `INTELLIGENCE_UNIT_CONTRACT.md`**(IU 구성·source role·entity/semantic identity hook).
 
 ## 5. 미구축 미래층(roadmap 사실 — RISK 아님)
 신규 RISK 남발 금지: RAG/KG/agent 미구축은 **launch blocker 가 아니라 미착수 roadmap**이다(현 제품은 event card+timeline 으로 동작). 설계 문서:

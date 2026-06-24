@@ -38,7 +38,7 @@ _LIVE_PG_URL = os.environ.get(
     "LIVE_PG_TEST_URL",
     "postgresql+asyncpg://event_user:event_pass@localhost:5432/event_intel_test",
 )
-_EVENT_TABLES = "events, event_updates, cluster_event_map, event_links, event_identity_map, event_cards"
+_EVENT_TABLES = "events, event_updates, cluster_event_map, event_links, event_identity_map, event_identity_candidate, event_cards"
 
 
 def _pg_reachable() -> bool:
@@ -687,6 +687,79 @@ async def test_live_catalog_source_type_withheld(session):
     res = await pipe.resolve_and_apply_cluster(session, c, candidate=cand)
     assert res.action == "WITHHELD"                            # catalog 메타는 official Event 로 발행 안 됨
     assert await _count(session, "events") == 0
+
+
+# ── deterministic semantic cross-batch identity 후보 (ADR#41) ────────────────────
+def _sem_cand(observed, fingerprints, title="연준 기준금리 인상 결정", source_types=("article",)):
+    return ResolvedCandidate(
+        canonical_title=title, observed_at=observed, delta_summary="update",
+        evidence=({"source_type": source_types[0], "relation": "primary"},),
+        core_source_types=source_types, semantic_fingerprints=fingerprints,
+    )
+
+
+async def test_live_semantic_candidate_links_not_merges(session):
+    # ADR#41(scenario 30): 공유 strong anchor 없이 같은 semantic fingerprint → **병합 아님**,
+    # event_links(possible) 후보 링크(분열을 표면화하되 false-merge 0). 실제 병합은 semantic adjudicator 이월.
+    c1 = _IdCluster(cluster_id="xcluster:s1", duplicate_group=("canon:a",))
+    r1 = await pipe.resolve_and_apply_cluster(session, c1, candidate=_sem_cand(_T2, ("sem:F",)))
+    assert r1.action == ACTION_CREATE
+    assert await _count(session, "event_identity_candidate") == 1   # E1 이 fingerprint F claim
+    c2 = _IdCluster(cluster_id="xcluster:s2", duplicate_group=("canon:b",))
+    r2 = await pipe.resolve_and_apply_cluster(
+        session, c2, candidate=_sem_cand(_T3, ("sem:F",), title="연준 금리 인상")
+    )
+    assert r2.action == ACTION_CREATE                               # 독립 Event(자동 병합 0)
+    assert await _count(session, "events") == 2                     # E1 + E2 (false-merge surface 0)
+    links = (await session.execute(text(
+        "SELECT status, reason, event_id::text, linked_event_id::text FROM event_links"
+    ))).all()
+    assert len(links) == 1
+    assert links[0][0] == "possible" and links[0][1] == "semantic_cross_batch_candidate"
+    assert links[0][2] == r2.event_id and links[0][3] == r1.event_id   # E2 → E1 후보 링크
+
+
+async def test_live_semantic_ambiguous_no_link(session):
+    # ADR#41(scenario 31): 한 cluster fingerprints 가 서로 다른 두 Event 를 가리키면(모호) → 링크 안 함, 독립 CREATE.
+    c1 = _IdCluster(cluster_id="xcluster:s1", duplicate_group=("canon:a",))
+    await pipe.resolve_and_apply_cluster(session, c1, candidate=_sem_cand(_T2, ("sem:F1",), title="사건 A 보도 묶음"))
+    c2 = _IdCluster(cluster_id="xcluster:s2", duplicate_group=("canon:b",))
+    await pipe.resolve_and_apply_cluster(session, c2, candidate=_sem_cand(_T2, ("sem:F2",), title="사건 B 보도 묶음"))
+    assert await _count(session, "events") == 2
+    c3 = _IdCluster(cluster_id="xcluster:s3", duplicate_group=("canon:c",))
+    r3 = await pipe.resolve_and_apply_cluster(
+        session, c3, candidate=_sem_cand(_T3, ("sem:F1", "sem:F2"), title="A·B 양쪽 언급")
+    )
+    assert r3.action == ACTION_CREATE and await _count(session, "events") == 3
+    sem = (await session.execute(text(
+        "SELECT count(*) FROM event_links WHERE reason='semantic_cross_batch_candidate'"
+    ))).scalar_one()
+    assert sem == 0                                                 # 모호 → 후보 링크 0
+
+
+async def test_live_semantic_no_match_creates_independent(session):
+    # ADR#41(scenario 33 회귀): 후보 없는 fingerprint → 독립 CREATE·링크 0(정상 신규, 오링크 0).
+    c1 = _IdCluster(cluster_id="xcluster:s1", duplicate_group=("canon:a",))
+    await pipe.resolve_and_apply_cluster(session, c1, candidate=_sem_cand(_T2, ("sem:F",)))
+    c2 = _IdCluster(cluster_id="xcluster:s2", duplicate_group=("canon:b",))
+    r2 = await pipe.resolve_and_apply_cluster(session, c2, candidate=_sem_cand(_T3, ("sem:G",), title="다른 사건"))
+    assert r2.action == ACTION_CREATE and await _count(session, "events") == 2
+    assert await _count(session, "event_links") == 0
+
+
+async def test_live_semantic_non_publishable_withheld_no_claim_no_link(session):
+    # source role 우선(ADR#33/#41, scenario 32): 비-publishable(community) candidate 는 fingerprint 가 있어도
+    # WITHHELD → 새 Event 0·fingerprint claim 0·링크 0(미발행 사건에 cross-batch 동일성 부여 금지).
+    c0 = _IdCluster(cluster_id="xcluster:pub", duplicate_group=("canon:a",))
+    await pipe.resolve_and_apply_cluster(session, c0, candidate=_sem_cand(_T2, ("sem:F",)))   # E1 claims F
+    c1 = _IdCluster(cluster_id="xcluster:com", duplicate_group=("canon:c1", "canon:c2"))
+    r1 = await pipe.resolve_and_apply_cluster(
+        session, c1, candidate=_sem_cand(_T3, ("sem:F",), title="커뮤니티만", source_types=("community",))
+    )
+    assert r1.action == "WITHHELD"
+    assert await _count(session, "events") == 1                    # 새 Event 0(WITHHELD)
+    assert await _count(session, "event_identity_candidate") == 1  # community 는 claim 0(E1 것만 유지)
+    assert await _count(session, "event_links") == 0               # 미발행 → 링크 0
 
 
 async def test_live_failed_cluster_isolated_other_persists(session):

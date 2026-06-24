@@ -64,6 +64,30 @@ class EventIdentityMapORM(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class EventIdentityCandidateMapORM(Base):
+    """deterministic semantic fingerprint → event_id (cross-batch 동일성 **후보**; ADR#41, 0008).
+
+    event_identity_map(확정 anchor=canonical_url/official_id)과 **분리**한다 — 이 테이블의 키는 publishable
+    core 멤버 제목의 normalized token-set + date bucket 으로 만든 **결정론 fingerprint**(약한 신호)다. 다른 URL
+    의 두 기사가 같은 사건을 보도하면 anchor 는 다르지만 fingerprint 는 같을 수 있다. 매칭 시 **자동 병합하지
+    않고**(false-merge surface 0) event_links(possible) 로만 링크 — 실제 병합은 미래 semantic adjudicator 이월.
+    on_conflict_do_nothing(candidate_key) = 첫 매핑 보존(첫 Event 가 fingerprint hub)."""
+
+    __tablename__ = "event_identity_candidate"
+    __table_args__ = (
+        Index("ix_event_identity_candidate_event_id", "event_id"),
+    )
+
+    candidate_key: Mapped[str] = mapped_column(String(256), primary_key=True)
+    # RESTRICT(ADR#20 일관): 후보 매핑이 가리키는 Event 는 DB 레벨에서 삭제 차단(감사 보호).
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("events.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 class EventLinkORM(Base):
     """event ↔ event 링크. EVENT_SCHEMA Part 2 §event_links. 약신호 자동병합 금지(possible 보류)."""
 
