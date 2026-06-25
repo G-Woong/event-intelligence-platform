@@ -217,6 +217,40 @@ services:
         condition: service_healthy
     restart: on-failure
 
+  semantic-backfill-scheduler:
+    # stage③ semantic adjudication backfill 주기 드라이버(ADR#52·R-LiveIdentityBacklog gap②).
+    # ── profile-gated(기본 미가동) ── 기본 `docker compose up` 스택에 안 뜬다. 명시 활성만:
+    #     docker compose --profile backfill up semantic-backfill-scheduler
+    # backend 이미지 재사용 — worker 이미지는 backend/app/{services,tools,models} 를 COPY 안 해
+    # scheduler import 가 불가하므로 backend 이미지(전체 backend) + entrypoint override 로 entrypoint.sh
+    # 의 alembic+uvicorn 대신 scheduler 모듈을 직접 구동한다.
+    # ── 안전 기본값 ── command 에 --persist 없음 = **dry-run default**(영속 0). 매 tick preflight
+    # (readiness ready_for_stage3 + flag EVENT_SEMANTIC_ADJUDICATION_ENABLED) gated:
+    # 운영 DB 0003(adjudication 테이블 부재)/flag off 면 persist 안 함·크래시 0·자동 병합 0.
+    # ── safe-target 경계(정직·adversarial MEDIUM-1) ── 이 DATABASE_URL 은 dev `event_intel`(prod 마커 없음)·
+    # APP_ENV 는 .env 의 dev 상속이라 assert_safe_write_target 는 이 경로에 **사실상 no-op**(dev DB 허용).
+    # 즉 이 컨테이너의 안전은 safe-target 이 아니라 **dry-run default + preflight** 가 책임진다. dev/운영이 같은
+    # `event_intel` 인스턴스를 공유하므로, **실 persist 운영 가동은 반드시 별도 운영 DB URL + APP_ENV=production +
+    # `--allow-non-dev-db` 명시** 로 safe-target 을 실 보호막으로 만든 뒤에만(공유 dev DB 에 --persist 금지·승인 필요).
+    # ── 동시성 ── 단일 instance(replicas 미설정·restart "no") — 중복행 0(link_id PK upsert·데이터 안전). 단 이는
+    # 물리적 차단이 아니라 **단일 runner 운영 규율 가정**(`--scale`/수동 CLI 병행 우회 가능·중복 work[성능]만·데이터 안전 무관·
+    # advisory lock 미구현·ADR#52 ⓓ DEFER).
+    profiles: ["backfill"]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: ei-semantic-backfill-scheduler
+    entrypoint: ["python", "-m", "workers.tools.run_semantic_backfill_scheduler"]
+    command: ["--interval-sec", "300", "--limit", "100", "--cursor-mode", "created_at"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://event_user:event_pass@postgres:5432/event_intel
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   opensearch:
     image: opensearchproject/opensearch:2.13.0
     container_name: ei-opensearch

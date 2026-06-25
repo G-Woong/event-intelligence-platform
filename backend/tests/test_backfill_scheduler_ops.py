@@ -10,6 +10,9 @@ DB orchestration(실 readiness · cursor_mode='created_at' 시간순 · persist 
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
+
+import yaml
 
 from backend.app.tools import backfill_semantic_adjudications as bf
 from workers.tools import run_semantic_backfill_scheduler as sched
@@ -152,3 +155,48 @@ def test_scheduler_once_runtime_error_exit_2(monkeypatch):
         raise RuntimeError("boom")
     _patch_session(monkeypatch, _boom)
     assert sched.main(["--once", "--persist"]) == 2   # tick 예외 격리 → exit 2(루프 미중단)
+
+
+# ── docker compose 일관성 (ADR#52: semantic-backfill-scheduler 안전 속성 잠금) ──────────
+# scheduler 를 실제 docker 서비스로 배선하되 **기본 미가동·dry-run default** 가 silent 회귀하지 않도록
+# compose 정의를 정적 파싱해 검증한다(build/up 안 함 — 정의만). runbook/compose 불일치 방지.
+def _compose_service(name: str = "semantic-backfill-scheduler") -> dict:
+    path = Path(__file__).resolve().parents[2] / "docker-compose.dev.yml"
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return doc["services"][name]
+
+
+def test_compose_scheduler_service_exists_and_profile_gated():
+    svc = _compose_service()
+    # profile-gated → `docker compose up` 기본 스택에 미기동(--profile backfill 명시해야 기동).
+    assert svc.get("profiles") == ["backfill"]
+
+
+def test_compose_scheduler_dry_run_default_no_persist():
+    svc = _compose_service()
+    cmd = svc.get("command") or []
+    tokens = cmd if isinstance(cmd, list) else str(cmd).split()
+    assert "--persist" not in tokens   # command 에 --persist 없음 = dry-run default(영속 0)
+
+
+def test_compose_scheduler_entrypoint_is_scheduler_module():
+    svc = _compose_service()
+    ep = svc.get("entrypoint") or []
+    tokens = ep if isinstance(ep, list) else str(ep).split()
+    # backend entrypoint.sh(alembic+uvicorn) 우회 — scheduler 모듈 직접 구동.
+    assert "workers.tools.run_semantic_backfill_scheduler" in tokens
+    assert "uvicorn" not in tokens
+
+
+def test_compose_scheduler_db_target_and_postgres_dep():
+    svc = _compose_service()
+    assert "DATABASE_URL" in (svc.get("environment") or {})       # write target 명시
+    assert "postgres" in (svc.get("depends_on") or {})            # DB healthy 후 기동
+
+
+def test_compose_scheduler_single_instance_no_replicas():
+    svc = _compose_service()
+    # 동시성 경계: 단일 instance(중복 work 회피·ADR#52 ⓓ) — replicas 미설정·restart 자동부활 아님.
+    replicas = (svc.get("deploy") or {}).get("replicas")
+    assert replicas in (None, 1)
+    assert str(svc.get("restart", "no")) in ("no", "false", "False")
