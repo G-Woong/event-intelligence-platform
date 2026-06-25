@@ -1456,6 +1456,120 @@ async def test_live_deploy_checklist_from_real_readiness(session):
             "backfill_limited_persist", "rollback_if_needed"} <= names
 
 
+# ── created_at cursor / preflight gate (ADR#51) ──────────────────────────────────────
+async def test_live_cursor_mode_created_at_orders_oldest_first(session):
+    # ADR#51(scenario 17): cursor_mode='created_at' → 시간순(오래된 백로그 우선). created_at 을 id 역순으로
+    # 설정해 created_at 순서 ≠ id 순서임을 입증(id=UUIDv4 byte 순서와 독립).
+    await _make_two_semantic_links(session)
+    by_id = await adjmod.adjudicate_semantic_links(session, persist=False, cursor_mode="id")
+    assert len(by_id) == 2
+    lo, hi = by_id[0].link_id, by_id[1].link_id            # id(byte) 오름차순: lo < hi
+    # 큰 id(hi)=더 오래된 시각·작은 id(lo)=더 최근 → created_at 순서는 [hi, lo](id 와 반대).
+    await session.execute(text("UPDATE event_links SET created_at = '2026-01-01T00:00:00+00:00' WHERE id::text = :i"), {"i": hi})
+    await session.execute(text("UPDATE event_links SET created_at = '2026-06-01T00:00:00+00:00' WHERE id::text = :i"), {"i": lo})
+    await session.commit()
+    by_ca = await adjmod.adjudicate_semantic_links(session, persist=False, cursor_mode="created_at")
+    assert [r.link_id for r in by_ca] == [hi, lo]          # 오래된(hi) 먼저 — id 순서와 반대
+    assert by_ca[0].link_created_at < by_ca[1].link_created_at
+
+
+async def test_live_cursor_mode_created_at_composite_resume(session):
+    # ADR#51(scenario 14·17): (after_created_at, after_link_id) 복합 cursor → 시간순 다음 페이지(정확 resumable·중복 0).
+    await _make_two_semantic_links(session)
+    page1 = await adjmod.adjudicate_semantic_links(session, persist=False, cursor_mode="created_at", limit=1)
+    assert len(page1) == 1
+    page2 = await adjmod.adjudicate_semantic_links(
+        session, persist=False, cursor_mode="created_at", limit=1,
+        after_created_at=page1[0].link_created_at, after_link_id=page1[0].link_id)
+    assert len(page2) == 1 and page2[0].link_id != page1[0].link_id   # 다음 페이지(중복 0)
+    page3 = await adjmod.adjudicate_semantic_links(
+        session, persist=False, cursor_mode="created_at", limit=1,
+        after_created_at=page2[0].link_created_at, after_link_id=page2[0].link_id)
+    assert page3 == []                                     # 2 link 소진
+
+
+async def test_live_backfill_created_at_cursor_report(session):
+    # ADR#51(scenario 12·17): created_at cursor_mode report — cursor_mode·next_created_at·full_scan.
+    await _make_two_semantic_links(session)
+    rep = await bfmod.backfill_semantic_adjudications(session, cursor_mode="created_at", limit=1, dry_run=True)
+    assert rep["cursor_mode"] == "created_at" and rep["full_scan"] is False and rep["processed"] == 1
+    assert rep["next_created_at"] is not None and rep["next_cursor"] is not None
+    assert rep["pending_after"] == rep["pending_before"]   # dry-run(영속 0)
+
+
+async def test_live_backfill_preflight_flag_off_blocks_persist(session, monkeypatch):
+    # ADR#51(scenario 4): readiness OK(test DB head) + flag off + persist 요청 → block 'flag'·persist 0.
+    await _make_semantic_link(session)
+    monkeypatch.setattr(bfmod.settings, "EVENT_SEMANTIC_ADJUDICATION_ENABLED", False)
+    out = await bfmod.run_backfill_with_preflight(session, dry_run=False)
+    assert out["ran"] is False and out["block"] == "flag"
+    assert out["preflight"]["ready_for_stage3"] is True    # 테이블은 준비(head)
+    assert await _count(session, "event_identity_adjudication") == 0   # persist 안 됨
+
+
+async def test_live_backfill_preflight_flag_on_persists(session, monkeypatch):
+    # ADR#51(scenario 5): readiness OK + flag on + persist → ran·persist·Event 불변(자동 병합 0).
+    await _make_semantic_link(session)
+    monkeypatch.setattr(bfmod.settings, "EVENT_SEMANTIC_ADJUDICATION_ENABLED", True)
+    before_e = await _count(session, "events")
+    out = await bfmod.run_backfill_with_preflight(session, dry_run=False)
+    assert out["ran"] is True and out["block"] is None and out["report"]["processed"] == 1
+    assert await _count(session, "event_identity_adjudication") == 1
+    assert await _count(session, "events") == before_e
+
+
+async def test_live_backfill_preflight_dry_run_allowed_when_flag_off(session, monkeypatch):
+    # ADR#51(scenario 2·10): dry-run 은 flag off 여도 허용(read-only)·persist 0.
+    await _make_semantic_link(session)
+    monkeypatch.setattr(bfmod.settings, "EVENT_SEMANTIC_ADJUDICATION_ENABLED", False)
+    out = await bfmod.run_backfill_with_preflight(session, dry_run=True)
+    assert out["ran"] is True and out["report"]["dry_run"] is True
+    assert await _count(session, "event_identity_adjudication") == 0
+
+
+async def test_live_backfill_preflight_allow_flag_off_persists(session, monkeypatch):
+    # ADR#51(scenario 4): flag off 여도 allow_flag_off 명시 우회 → persist.
+    await _make_semantic_link(session)
+    monkeypatch.setattr(bfmod.settings, "EVENT_SEMANTIC_ADJUDICATION_ENABLED", False)
+    out = await bfmod.run_backfill_with_preflight(session, dry_run=False, allow_flag_off=True)
+    assert out["ran"] is True
+    assert await _count(session, "event_identity_adjudication") == 1
+
+
+async def test_live_cursor_mode_created_at_tie_break_resume(session):
+    # ADR#51(adversarial MEDIUM): **동일 created_at** link 들에서 복합 cursor 의 tie-break 분기
+    # and_(created_at==cur, id>after_link_id) 를 강제로 타며 resume 중복/skip 0 입증(별도 txn 이라 created_at 이
+    # 다른 composite_resume 테스트가 못 타는 경로). 두 link 의 created_at 을 같게 설정.
+    await _make_two_semantic_links(session)
+    await session.execute(text(
+        "UPDATE event_links SET created_at = '2026-03-01T00:00:00+00:00' "
+        "WHERE status='possible' AND reason=:r"), {"r": adjmod.SEMANTIC_LINK_REASON})
+    await session.commit()
+    p1 = await adjmod.adjudicate_semantic_links(session, persist=False, cursor_mode="created_at", limit=1)
+    assert len(p1) == 1
+    p2 = await adjmod.adjudicate_semantic_links(
+        session, persist=False, cursor_mode="created_at", limit=1,
+        after_created_at=p1[0].link_created_at, after_link_id=p1[0].link_id)
+    assert len(p2) == 1 and p2[0].link_id != p1[0].link_id   # 동일 created_at → id tie-break 진행(중복 0)
+    assert p1[0].link_created_at == p2[0].link_created_at     # 같은 시각(tie-break 분기 입증)
+    p3 = await adjmod.adjudicate_semantic_links(
+        session, persist=False, cursor_mode="created_at", limit=1,
+        after_created_at=p2[0].link_created_at, after_link_id=p2[0].link_id)
+    assert p3 == []                                          # 소진(skip/중복 0)
+
+
+async def test_live_preflight_blocks_when_adjudication_table_absent(engine):
+    # ADR#51(adversarial MEDIUM): adjudication 테이블 부재(운영 DB 0003 형상)에서 preflight 가 쿼리 크래시 없이
+    # block='readiness' 로 안전 차단하는지 **실 DB** 로 입증. DROP 은 트랜잭션 내(PG DDL transactional)·rollback 복원.
+    maker = async_sessionmaker(engine, expire_on_commit=False)
+    async with maker() as s:
+        await s.execute(text("DROP TABLE event_identity_adjudication"))   # 같은 txn 내 information_schema 부재
+        out = await bfmod.run_backfill_with_preflight(s, dry_run=True)    # dry-run 도 차단(hard gate·크래시 방지)
+        assert out["ran"] is False and out["block"] == "readiness"
+        assert out["preflight"]["ready_for_stage3"] is False
+        await s.rollback()                                               # 테이블 복원(다음 테스트 보호)
+
+
 async def test_live_failed_cluster_isolated_other_persists(session):
     # 실 DB 로 후보 단위 격리 입증(adversarial D): 한 클러스터 실패의 rollback 이 다른 클러스터의
     # commit 된 영속을 훼손하지 않는다(fake 가 아닌 실 Postgres commit/rollback).
