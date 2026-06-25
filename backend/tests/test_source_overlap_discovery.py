@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 
 from backend.app.tools.source_overlap_discovery import (
+    _HARD_NEG_FLOOR,
     _RSS_OVERLAP_SOURCES,
     DEFAULT_NEAR_JACCARD,
     _rec,
@@ -15,6 +16,7 @@ from backend.app.tools.source_overlap_discovery import (
     build_acquisition_plan,
     build_agent_orchestration_schema,
     build_captured_overlap_fixture,
+    build_hard_negative_reviewer_candidates,
     build_near_match_reviewer_candidates,
     discover_overlap,
     fetch_gdelt_overlap_records,
@@ -636,3 +638,82 @@ def test_gdelt_provider_status_malformed_cooldown_safe():
     for bad in [(), (True,), "nope", (1, 2, 3)]:
         ps = gdelt_provider_status(cooldown=bad, policy={"x": 1}, host_gate=_AllowGate())
         assert ps["provider_status"] in ("ok", "cooldown", "host_rate_limited")
+
+
+# ── ADR#59 hard-negative band 포착(near 미만 [floor,near) overlap → different-event lean) ──────────────
+def _hard_neg_records() -> list[dict]:
+    """publishable·same-date·cross-URL·near 미만 overlap(jaccard 0.3/0.4) — different-event lean 음성 후보."""
+    day = "2026-06-22"
+    return [
+        _rec(source_id="news_a", canonical_url="https://a.test/summit",
+             title_or_label="Global summit on climate policy opens in Geneva today",
+             published_at_or_observed_at=day),
+        _rec(source_id="news_b", canonical_url="https://b.test/summit",
+             title_or_label="Regional summit on trade policy opens in Vienna",
+             published_at_or_observed_at=day),
+    ]
+
+
+def test_hard_negative_band_captured_below_near():
+    """[_HARD_NEG_FLOOR,near) overlap 은 hard_negative_pairs 로 분리 포착(possible_same_event 미가산·near 아님)."""
+    disc = discover_overlap(_hard_neg_records())
+    assert _HARD_NEG_FLOOR == 0.2 and DEFAULT_NEAR_JACCARD == 0.5
+    assert disc["hard_negative_band_pairs"] == 1
+    assert len(disc["hard_negative_pairs"]) == 1
+    assert disc["near_match_below_fingerprint_pairs"] == 0   # near 미만.
+    assert disc["possible_same_event_pairs"] == 0            # 같은 사건 후보 아님(possible 미가산).
+    p = disc["hard_negative_pairs"][0]
+    assert p["pair_id"].startswith("hn:")                    # near("nm:")와 분리된 prefix.
+    assert p["source_role_compatible"] is True
+    assert _HARD_NEG_FLOOR <= p["title_token_jaccard"] < DEFAULT_NEAR_JACCARD
+
+
+def test_hard_negative_reviewer_candidates_risk_tag_and_no_predicted_status():
+    """hard-negative 후보 → risk_tags=['hard_negative']·predicted_status 미포함·no_merge_without_gold."""
+    disc = discover_overlap(_hard_neg_records())
+    cands = build_hard_negative_reviewer_candidates(disc)
+    assert len(cands) == 1
+    c = cands[0]
+    assert c["risk_tags"] == ["hard_negative"]
+    assert c["label"] == "unlabeled"
+    assert "predicted_status" not in c and "score" not in c   # bias 차단(near 후보와 동일 계약).
+    assert c["no_merge_without_gold"] is True
+    from backend.app.services.identity_human_labeling import assign_candidate_bucket
+    bucket = assign_candidate_bucket(
+        predicted_status="", reason=c["reason"], language=c["language"],
+        source_type_left=c["source_type_left"], source_type_right=c["source_type_right"],
+        risk_tags=tuple(c["risk_tags"]))
+    assert bucket == "hard_negative"                          # 음성 floor bucket(other 미분류 회피).
+
+
+def test_hard_negative_band_excludes_below_floor():
+    """floor(0.2) 미만 overlap 은 hard_negative_pairs 에도 미포착(잡음 차단)."""
+    day = "2026-06-22"
+    recs = [
+        _rec(source_id="a", canonical_url="https://a.test/1",
+             title_or_label="Major port strike halts container shipping nationwide",
+             published_at_or_observed_at=day),
+        _rec(source_id="b", canonical_url="https://b.test/2",
+             title_or_label="Sunny weather forecast brings clear skies weekend",
+             published_at_or_observed_at=day),
+    ]
+    disc = discover_overlap(recs)
+    assert disc["hard_negative_band_pairs"] == 0
+    assert disc["near_match_below_fingerprint_pairs"] == 0
+
+
+def test_hard_negative_community_anchor_rejected():
+    """community anchor 는 hard-negative 후보에서도 거부(source role guard·publishable core 만)."""
+    day = "2026-06-22"
+    recs = [
+        _rec(record_type="community_signal", source_id="forum_a", canonical_url="https://f.test/1",
+             title_or_label="Global summit on climate policy opens in Geneva today",
+             published_at_or_observed_at=day),
+        _rec(source_id="news_b", canonical_url="https://b.test/2",
+             title_or_label="Regional summit on trade policy opens in Vienna",
+             published_at_or_observed_at=day),
+    ]
+    disc = discover_overlap(recs)
+    # community×article 은 both_pub=False → pairwise 진입 자체가 안 됨(hard-neg 포착 0).
+    assert disc["hard_negative_band_pairs"] == 0
+    assert build_hard_negative_reviewer_candidates(disc) == []

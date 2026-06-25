@@ -48,6 +48,9 @@ _PUBLISHABLE_SOURCE_TYPES = frozenset({"official", "article"})
 # near-match 임계: fingerprint 정확일치(token-set 동치)보다 느슨하나 within-batch 약신호 결합(0.8)보다도
 # 낮춰 "overlap 은 있으나 fingerprint 사각지대"인 adjudicator-zone 까지 본다(병합 아님·신호 측정만).
 DEFAULT_NEAR_JACCARD = 0.5
+# hard-negative band(ADR#59): publishable·same-date·cross-URL 이나 near 미만 token overlap — "헷갈릴 만하나 다른
+# 사건"(different-event lean) 후보. reviewer/gold 음성 floor·calibration 용(라벨은 reviewer 가·단정 아님·near 미만만).
+_HARD_NEG_FLOOR = 0.2
 
 # GDELT DOC ArtList — key-free·다출처 집계(같은 사건이 다른 outlet·다른 URL 로 등장 → 실 cross-source overlap 생성원).
 _GDELT_BASE = "https://api.gdeltproject.org/api/v2/doc/doc"
@@ -431,8 +434,10 @@ def discover_overlap(
     date_overlap = 0               # 같은 date bucket(임의 role)
     fingerprint_overlap = 0        # 정확 fingerprint 일치·다른 URL·둘 다 publishable → deterministic 검출
     near_only = 0                  # near Jaccard≥near·fingerprint 불일치·다른 URL·둘 다 publishable → adjudicator 영역
+    hard_neg_band = 0              # [_HARD_NEG_FLOOR,near) overlap·publishable·다른 URL·같은 날 → different-event lean(reviewer 음성 후보)
     possible_same_event: list[tuple[str, str, str]] = []   # (canonical_i, canonical_j, granularity)
     near_match_pairs: list[dict] = []      # near(adjudicator-zone) pair 전체 정보(reviewer route 입력·병합 아님)
+    hard_negative_pairs: list[dict] = []   # hard-negative band pair(reviewer/gold 음성 floor·calibration·라벨은 reviewer)
     pair_matrix: dict[tuple[str, str], dict[str, int]] = {}
     publishable_pairs = 0
     publishable_same_date_pairs = 0
@@ -459,7 +464,7 @@ def discover_overlap(
         fa, fb = _fingerprint(ra), _fingerprint(rb)
         jac = _jaccard(_title_tokens(ra.get("title_or_label")), _title_tokens(rb.get("title_or_label")))
         pkey = tuple(sorted((ra.get("source_id") or "unknown", rb.get("source_id") or "unknown")))
-        slot = pair_matrix.setdefault(pkey, {"same_date": 0, "fingerprint": 0, "near": 0, "possible": 0})
+        slot = pair_matrix.setdefault(pkey, {"same_date": 0, "fingerprint": 0, "near": 0, "hard_neg": 0, "possible": 0})
         slot["same_date"] += 1
         if fa is not None and fa == fb:
             fingerprint_overlap += 1
@@ -472,6 +477,12 @@ def discover_overlap(
             slot["possible"] += 1
             possible_same_event.append((ca, cb, "near_match_below_fingerprint"))
             near_match_pairs.append(_near_pair_record(ra, rb, a, b, jac))
+        elif jac >= _HARD_NEG_FLOOR:
+            # overlap 은 있으나 near 미만 — 같은 사건 후보 아님(possible 미가산). 다른 사건이 비슷한 어휘를 쓰는
+            # "헷갈릴 만한 음성"(hard negative) — reviewer/gold 음성 floor·calibration 으로만 보냄(병합·단정 0).
+            hard_neg_band += 1
+            slot["hard_neg"] += 1
+            hard_negative_pairs.append(_near_pair_record(ra, rb, a, b, jac, prefix="hn"))
 
     block_reasons = _block_reasons(
         records, possible=len(possible_same_event), fingerprint=fingerprint_overlap, near=near_only,
@@ -499,6 +510,8 @@ def discover_overlap(
         "deterministic_detectable_pairs": fingerprint_overlap,
         "adjudicator_zone_pairs": near_only,
         "near_match_pairs": near_match_pairs,        # adjudicator-zone pair 전체 정보(reviewer route 입력·병합 아님)
+        "hard_negative_band_pairs": hard_neg_band,   # [floor,near) overlap·different-event lean(reviewer 음성 후보 수)
+        "hard_negative_pairs": hard_negative_pairs,  # hard-negative band pair 전체 정보(reviewer/gold calibration·병합 아님)
         # write-free — DB 단계는 미도달(정직). live-db escalation 시 real_source_identity_smoke 가 채운다.
         "semantic_cross_batch_candidates": None,
         "adjudications": None,
@@ -525,20 +538,22 @@ def _overlap_potential_matrix(pair_matrix: dict[tuple[str, str], dict[str, int]]
             "same_date_pairs": c["same_date"],
             "fingerprint_overlap": c["fingerprint"],
             "near_match_overlap": c["near"],
+            "hard_negative_overlap": c.get("hard_neg", 0),
             "possible_same_event": c["possible"],
             "overlap_potential": potential,
         })
     return rows
 
 
-def _near_pair_record(ra: dict, rb: dict, ia: int, ib: int, jac: float) -> dict:
-    """near_match_below_fingerprint pair → reviewer-route 입력 record(병합 아님·predicted_status 미포함).
+def _near_pair_record(ra: dict, rb: dict, ia: int, ib: int, jac: float, *, prefix: str = "nm") -> dict:
+    """near_match_below_fingerprint(prefix=nm) / hard-negative band(prefix=hn) pair → reviewer-route 입력 record
+    (병합 아님·predicted_status 미포함).
 
     order-invariant: 왼쪽=사전식 작은 source_id(결정론·pair_id 안정)."""
     left, right = ((ra, rb) if (ra.get("source_id") or "") <= (rb.get("source_id") or "")
                    else (rb, ra))
     return {
-        "pair_id": f"nm:{min(ia, ib)}-{max(ia, ib)}",
+        "pair_id": f"{prefix}:{min(ia, ib)}-{max(ia, ib)}",
         "source_id_left": left.get("source_id"),
         "source_id_right": right.get("source_id"),
         "source_type_left": _role(left),
@@ -585,6 +600,38 @@ def build_near_match_reviewer_candidates(discovery: dict) -> list[dict]:
             # "paraphrase" = 다운스트림 assign_candidate_bucket 이 인식하는 정확 bucket 토큰(other 미분류 회피).
             "risk_tags": ["near_match_below_fingerprint", "paraphrase"],
             "reason": "near_match_below_fingerprint(paraphrase overlap·deterministic fingerprint 사각지대)",
+            "no_merge_without_gold": True,        # gold/MERGE_GATE 없이 병합·같은 사건 단정 금지(불변).
+        })
+    return out
+
+
+def build_hard_negative_reviewer_candidates(discovery: dict) -> list[dict]:
+    """hard_negative_pairs([_HARD_NEG_FLOOR,near) overlap·different-event lean) → reviewer candidate worksheet 행.
+
+    near-match(near-positive)와 **분리된 음성 후보** — reviewer/gold 음성 floor·calibration(같은 사건 단정 아님·
+    risk_tags=`hard_negative` → 다운스트림 `assign_candidate_bucket` 이 `hard_negative` bucket 으로 분류). 라벨은
+    reviewer 가 채움(predicted_status 미포함=bias 차단). 경계: publishable×publishable 만·no_merge_without_gold."""
+    out: list[dict] = []
+    for p in discovery.get("hard_negative_pairs") or []:
+        if not p.get("source_role_compatible"):
+            continue   # publishable core 만 reviewer 후보(community/market/catalog 음성 후보도 anchor 금지).
+        out.append({
+            "pair_id": p["pair_id"],
+            "label": "unlabeled",                 # reviewer/gold 가 채움 — predicted_status 미입력(bias 차단).
+            "language": "und",                    # 결정론 단계 미산출(언어 판정은 reviewer/calibration 영역).
+            "source_type_left": p["source_type_left"],
+            "source_type_right": p["source_type_right"],
+            "title_left": p["title_left"],
+            "title_right": p["title_right"],
+            "observed_at_left": p["observed_at_left"],
+            "observed_at_right": p["observed_at_right"],
+            "canonical_url_left": p["canonical_url_left"],
+            "canonical_url_right": p["canonical_url_right"],
+            "title_token_jaccard": p["title_token_jaccard"],
+            "date_bucket_match": p["date_bucket_match"],
+            # "hard_negative" = assign_candidate_bucket 이 인식하는 정확 음성 bucket 토큰(음성 floor 충당).
+            "risk_tags": ["hard_negative"],
+            "reason": "hard_negative_band(publishable·same-date·cross-URL·near 미만 — different-event lean·reviewer 확인 필요)",
             "no_merge_without_gold": True,        # gold/MERGE_GATE 없이 병합·같은 사건 단정 금지(불변).
         })
     return out
