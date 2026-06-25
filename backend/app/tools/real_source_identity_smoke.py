@@ -39,8 +39,12 @@ from backend.app.tools.db_target import (
     assert_safe_write_target,
     target_db_label,
 )
+from backend.app.services.semantic_identity_adjudicator import SEMANTIC_LINK_REASON
 from backend.app.tools.export_identity_eval_pairs import collect_adjudication_eval_pairs
-from backend.app.tools.real_source_smoke_report import assemble_activation_report
+from backend.app.tools.real_source_smoke_report import (
+    assemble_activation_report,
+    classify_adjudication_block_reason,
+)
 
 DEFAULT_MAX_RECORDS = 50   # bounded smoke(폭주 차단·결정론).
 DEFAULT_MAX_PER_SOURCE = 5  # live_network: source 당 상한(rate-limit·폭주 차단).
@@ -90,6 +94,35 @@ def build_fake_source_records() -> list[dict]:
              title_or_label="Another distinct missing body article headline",
              published_at_or_observed_at="2025-06-06", body_state_or_signal="missing"),
     ]
+
+
+def build_replay_batches() -> list[list[dict]]:
+    """**artificial** time-series replay 템플릿(ADR#56) — 같은 사건을 **다른 canonical_url** 로 배치 A→B 재유입.
+
+    배치 A: 같은 canonical_url 2 record(strong duplicate) → CREATE E1 + fingerprint F(제목 token-set+date bucket) claim.
+    배치 B: **다른 canonical_url** 2 record(같은 제목·같은 날짜 = 같은 F) → CREATE E2 → F 가 E1 과 매칭(공유 strong anchor
+    없음) → E2→E1 `semantic_cross_batch_candidate` link → stage③ likely_same adjudication. **자동 병합 0**(E1·E2 개별 존재·
+    link 은 shadow). **실 source behavior 가 아니다** — substrate(cross-batch identity→adjudication)가 *같은-사건·다른-URL·
+    교차배치* 데이터에서 닫히는지 입증하는 합성 replay(`artificial_replay=True` 로 표면화·과장 차단). 본문 미저장."""
+    title = "Major port strike halts container shipping operations nationwide"
+    day = "2026-06-20"
+    batch_a = [
+        _rec(record_type="article_candidate", source_id="wire_alpha",
+             canonical_url="https://replay.test/strike-primary",
+             title_or_label=title, published_at_or_observed_at=day),
+        _rec(record_type="article_candidate", source_id="wire_beta",
+             canonical_url="https://replay.test/strike-primary",
+             title_or_label=title, published_at_or_observed_at=day),
+    ]
+    batch_b = [
+        _rec(record_type="article_candidate", source_id="wire_gamma",
+             canonical_url="https://replay.test/strike-secondary",
+             title_or_label=title, published_at_or_observed_at=day),
+        _rec(record_type="article_candidate", source_id="wire_delta",
+             canonical_url="https://replay.test/strike-secondary",
+             title_or_label=title, published_at_or_observed_at=day),
+    ]
+    return [batch_a, batch_b]
 
 
 def _canonical_for(source_id: str, item: dict) -> Optional[str]:
@@ -276,6 +309,25 @@ async def _count_events(session: AsyncSession) -> int:
     return int((await session.execute(text("SELECT count(*) FROM events"))).scalar_one())
 
 
+async def _link_reason_distribution(session: AsyncSession) -> dict[str, int]:
+    """event_links.reason 별 분포(read-only·§5 분해). held-member reason 은 `{reason}:{member_key}` 라
+    `:` 앞만 취해 정규화(member_key 고유값으로 인한 cardinality 폭주 차단) — `semantic_cross_batch_candidate`
+    (suffix 없음)와 `new_event_low_confidence`(held) 가 깨끗한 bucket 으로 분리되어 가시화된다."""
+    raws = (await session.execute(text("SELECT reason FROM event_links"))).scalars().all()
+    dist: dict[str, int] = {}
+    for raw in raws:
+        key = str(raw).split(":", 1)[0] if raw else "unknown"
+        dist[key] = dist.get(key, 0) + 1
+    return dist
+
+
+async def _adjudication_status_distribution(session: AsyncSession) -> dict[str, int]:
+    """event_identity_adjudication.status 별 분포(read-only·§5). likely_same/ambiguous/likely_different/insufficient."""
+    rows = (await session.execute(text(
+        "SELECT status, count(*) FROM event_identity_adjudication GROUP BY status"))).all()
+    return {str(r[0]): int(r[1]) for r in rows}
+
+
 async def run_db_identity_smoke(
     session: AsyncSession,
     records: Optional[list[dict]] = None,
@@ -305,8 +357,74 @@ async def run_db_identity_smoke(
     if collect_packet and persist:
         packet_eligible = len(await collect_adjudication_eval_pairs(session))
     db = summarize_db_ingest(summary, packet_eligible=packet_eligible)
+    # §5 분해: 실제 event_links.reason 분포 + adjudication status 분포(held-member vs semantic 후보 가시화).
+    link_reason = await _link_reason_distribution(session)
+    adj_status = await _adjudication_status_distribution(session)
     return {**offline, **db, "mode": "live_db",
+            "smoke_mode": "single_source",
+            "semantic_cross_batch_candidates": link_reason.get(SEMANTIC_LINK_REASON, 0),
+            "identity_link_reason_distribution": link_reason,
+            "adjudication_status_distribution": adj_status,
             "event_count_before": event_count_before, "event_count_after": event_count_after}
+
+
+async def run_time_series_replay_smoke(
+    session: AsyncSession,
+    batches: Optional[list[list[dict]]] = None,
+    *,
+    persist: bool = True,
+    allow_non_dev: bool = False,
+    app_env: Optional[str] = None,
+    database_url: Optional[str] = None,
+) -> dict:
+    """**artificial** time-series replay smoke(ADR#56, 옵션 B) — 같은 사건을 다른 canonical_url 로 배치 A→B
+    재유입해 cross-batch `semantic_cross_batch_candidate` 발생 + stage③ adjudication 을 결정론으로 검증.
+
+    각 배치를 순차 `ingest_records_to_events`(배치 간 commit 으로 배치 A 의 fingerprint 가 배치 B 가시) 하고,
+    실제 `event_links.reason`/adjudication status 분포를 집계한다. **safe-target gated**(test/dev DB 만)·**자동 병합 0**
+    (Event 개별 생성·link 은 shadow)·**본문 미저장**. `artificial_replay=True`(실 source behavior 아님·과장 차단).
+    실 DB 행위는 `ingest_records_to_events`(live-PG 검증됨)에 귀속(이 함수는 배치 순차 glue + 분포 read-only)."""
+    app_env = settings.APP_ENV if app_env is None else app_env
+    database_url = settings.DATABASE_URL if database_url is None else database_url
+    assert_safe_write_target(app_env=app_env, database_url=database_url, allow_non_dev=allow_non_dev)
+
+    batches = batches if batches is not None else build_replay_batches()
+    event_count_before = await _count_events(session)
+    created = appended = held = adjudications = 0
+    per_batch: list[dict] = []
+    for i, batch in enumerate(batches):
+        summary = await ingest_records_to_events(
+            session, batch, enabled=True, adjudicate_semantic=persist)
+        created += summary.created
+        appended += summary.appended
+        held += summary.held
+        adjudications += summary.adjudications
+        per_batch.append({"batch": i, "records": len(batch),
+                          "created": summary.created, "adjudications": summary.adjudications})
+    event_count_after = await _count_events(session)
+    link_reason = await _link_reason_distribution(session)
+    adj_status = await _adjudication_status_distribution(session)
+    return {
+        "mode": "live_db",
+        "smoke_mode": "time_series_replay",
+        "artificial_replay": True,
+        "real_fetch": False,
+        "batches": len(batches),
+        "records_per_batch": [len(b) for b in batches],
+        "per_batch": per_batch,
+        "source_ids": sorted({r.get("source_id") for b in batches for r in b if r.get("source_id")}),
+        "source_count": len({r.get("source_id") for b in batches for r in b if r.get("source_id")}),
+        "created_events": created,
+        "appended_events": appended,
+        "held_events": held,
+        "semantic_cross_batch_candidates": link_reason.get(SEMANTIC_LINK_REASON, 0),
+        "identity_link_reason_distribution": link_reason,
+        "adjudications": adjudications,
+        "adjudication_status_distribution": adj_status,
+        "event_count_before": event_count_before,
+        "event_count_after": event_count_after,
+        "no_auto_merge": True,
+    }
 
 
 # ── CLI(기본 offline fake·network 0·DB 0; --live-network/--live-db opt-in·safe-target gated) ──
@@ -319,6 +437,17 @@ async def _run_live_db(records: Optional[list[dict]], *,
             return await run_db_identity_smoke(
                 session, records=records, persist=persist,
                 allow_non_dev=allow_non_dev, collect_packet=collect_packet)
+    finally:
+        await engine.dispose()
+
+
+async def _run_time_series_replay(*, persist: bool, allow_non_dev: bool) -> dict:
+    engine = create_async_engine(settings.DATABASE_URL, poolclass=NullPool)
+    factory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    try:
+        async with factory() as session:
+            return await run_time_series_replay_smoke(
+                session, persist=persist, allow_non_dev=allow_non_dev)
     finally:
         await engine.dispose()
 
@@ -340,6 +469,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help=f"--live-network source(콤마구분·allowlist 만). 기본={_DEFAULT_LIVE_SOURCES}.")
     parser.add_argument("--live-db", action="store_true",
                         help="test/dev DB 에 ingest 까지 도달(safe-target gated). 미지정=offline(DB 0).")
+    parser.add_argument("--time-series-replay", action="store_true",
+                        help="artificial 2-배치 replay(같은 사건·다른 URL·교차배치)로 semantic 후보+adjudication 검증"
+                             "(safe-target gated·자동 병합 0·실 source 아님).")
     parser.add_argument("--persist", action="store_true",
                         help="--live-db 와 함께 stage③ shadow adjudication 실행(자동 병합 아님).")
     parser.add_argument("--collect-packet", action="store_true",
@@ -358,8 +490,21 @@ def main(argv: Optional[list[str]] = None) -> int:
         records, failures_by_source = fetch_real_source_records(sources)
         print(f"- fetched {len(records)} record(s); failures_by_source={failures_by_source}")
 
-    run_mode = "live_db" if ns.live_db else ("live_network" if ns.live_network else "fake")
-    if not ns.live_db:
+    live_db = ns.live_db or ns.time_series_replay
+    run_mode = "live_db" if live_db else ("live_network" if ns.live_network else "fake")
+    if ns.time_series_replay:
+        print(f"- time-series replay (artificial·safe-target gated): "
+              f"{target_db_label(settings.DATABASE_URL)} (APP_ENV={settings.APP_ENV})")
+        try:
+            smoke = asyncio.run(_run_time_series_replay(
+                persist=True, allow_non_dev=ns.allow_non_dev_db))
+        except UnsafeWriteTargetError as e:
+            print(f"- BLOCKED unsafe write target: {e}")
+            return 1
+        except Exception as e:   # runtime error(DB down 등) → exit 2(자격증명 미노출).
+            print(f"- ERROR replay smoke runtime failure: {type(e).__name__}: {e}")
+            return 2
+    elif not ns.live_db:
         smoke = run_offline_identity_smoke(
             records, probe=((lambda: records) if (ns.live_network and records is not None) else None))
     else:
@@ -394,6 +539,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         f"adjudications={report['adjudications']} packet_eligible={report['packet_eligible']} "
         f"exportable={report['reviewer_packet_exportable']} no_auto_merge={report['no_auto_merge']}")
     print(f"- event_count: before={report['event_count_before']} after={report['event_count_after']}")
+    print(
+        f"- identity[{report['smoke_mode']}]: semantic_cross_batch_candidates="
+        f"{report['semantic_cross_batch_candidates']} link_reasons={report['identity_link_reason_distribution']} "
+        f"adj_status={report['adjudication_status_distribution']}")
+    print(f"- adjudication_block_reason: {report['adjudication_block_reason']}")
     g = report["agent_readiness_gate"]
     print(f"- agent_readiness: {g['verdict']} ({g['pass_count']}/{g['total']} PASS·unmet={g['unmet_conditions']})")
     print(f"- source_quality_matrix: {len(report['source_quality_matrix'])} row(s)")

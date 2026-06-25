@@ -133,7 +133,16 @@
 >
 > **정직 분해(Q13·Q19·Q20)**: adjudications 0 은 held-member link 의 reason 이 `new_event_low_confidence` 이지 `semantic_cross_batch_candidate` 가 아니라서(stage③ shadow 는 semantic 후보 link 만 처리) — 실 Event 는 형성되나 **cross-batch adjudication substrate** 는 동일사건 다중소스/시계열 fingerprint 중첩이 필요(single bounded single-source = **source scarcity**). identity link 부재 원인 = (a)source scarcity (b)fingerprint 약함(`no_semantic_fingerprint`) (c)dedup 약함(강신호 미일치). **다음 hard blocker = 실 fetch 커버리지/볼륨**(동일사건 다중소스)→운영 DB 배포→reviewer/gold.
 
-### RealSourceLoop 단계 상태 (ADR#50/#51/#52/#53/#54/#55 갱신 — fetch→Intelligence Unit)
+### time-series replay smoke + adjudication block-reason 분해 (ADR#56 · cross-batch adjudication substrate 실데이터 입증)
+> **문제(§5)**: ADR#55 단일 federal_register fetch 는 adjudications 0 이었다 — distinct document = distinct URL = distinct event = distinct fingerprint 라 **같은-사건·다른-URL 후보가 구조적으로 불가**(source scarcity). cross-batch `semantic_cross_batch_candidate` link 은 "새로 CREATE 된 Event 의 fingerprint(제목 token-set+date bucket)가 기존 `event_identity_candidate` 의 **다른-URL** Event 정확히 1개와 매칭"될 때만 생성된다(`event_resolution_pipeline.py`).
+>
+> **옵션 결정(§3)**: **B(time-series replay) + C(sanitized 계약) + E(report 보강)** 채택. A(multi-source 실 fetch)는 key-free 공식 레지스트리 단독으론 cross-source overlap 이 구조적으로 희소 → **정직 분해만**(깨지기 쉬운 스크레이퍼 미구현). D(production)·LLM 본경로 금지.
+>
+> **구현**: `run_time_series_replay_smoke`(safe-target gated·`--time-series-replay`) — `build_replay_batches()`(artificial 2배치: 배치 A 같은 canonical_url 2 record→CREATE E1+fingerprint F claim; 배치 B **다른 canonical_url** 2 record(같은 제목·날짜=같은 F)→CREATE E2→E2→E1 `semantic_cross_batch_candidate` link→stage③ likely_same)·배치 순차 ingest·실제 `event_links.reason`/adjudication status 분포 read-only 집계. **`artificial_replay=True`**(실 source behavior 아님·과장 차단)·**본문 미저장**. `real_source_smoke_report.classify_adjudication_block_reason`(§5 순수 분류기): `db_not_reached`/`none`/`semantic_link_without_adjudication`/`non_publishable_role`/`no_fingerprint_overlap`/`no_cross_batch_overlap`.
+>
+> **측정(실데이터·`event_intel_test` head 0009·TRUNCATE 격리)**: replay 2배치 → **created 2 · semantic_cross_batch_candidate 1 · adjudications 1(likely_same_event 1) · event_count 0→2 · no_auto_merge=True**(live-PG 테스트 잠금). 단일소스(ADR#55)의 block reason = `no_cross_batch_overlap` 로 정확 귀속(adjudication 0 을 '실패'로 뭉뚱그리지 않음). **substrate(cross-batch identity→adjudication)가 같은-사건·다른-URL·교차배치 데이터에서 닫힘을 실데이터로 입증** — 단 **artificial replay ≠ 실 source behavior**(실 동일사건 다중소스/시계열 fetch 로 재확인 필요).
+
+### RealSourceLoop 단계 상태 (ADR#50/#51/#52/#53/#54/#55/#56 갱신 — fetch→Intelligence Unit)
 > BUILT=코드 존재·TEST=deterministic/단위 검증·LIVE=실 Postgres/실 fetch 검증·PARTIAL=일부·BLOCKED=선결 미충족·NOT BUILT=미구현.
 
 | # | 단계 | 상태 | 근거 |
@@ -142,7 +151,7 @@
 | 2 | record/candidate | **LIVE** | cross_source_dedup→candidate(실 fetch) |
 | 3 | Event/HOLD/WITHHELD | **LIVE** | ADR#29 CREATE 2+HOLD 3·source-type gate(ADR#33~37) |
 | 4 | identity link(②) | **TEST**(live-PG) / **실 fetch→live_db 1회 도달**(ADR#55) | event_identity_candidate→event_links(possible)·**ADR#55 실 federal_register fetch→event_intel_test ingest: identity_link 1(held member)·semantic fingerprint candidate 1**·단 cross-source identity link 희소(source scarcity) |
-| 5 | stage③ adjudication | **TEST**(live-PG) / **실데이터 adjudications 0**(ADR#55) | ingest flag-gated 자동(ADR#48)·incremental(ADR#49)·운영 자동 누적 0(DB 0003·flag off)·**ADR#55 실 ingest adjudications 0**(held-member link reason ≠`semantic_cross_batch_candidate`·cross-batch fingerprint 중첩 필요) |
+| 5 | stage③ adjudication | **TEST**(live-PG) / **실 cross-batch replay adjudications 1**(ADR#56) / 단일소스 0(ADR#55) | ingest flag-gated 자동(ADR#48)·incremental(ADR#49)·운영 자동 누적 0(DB 0003·flag off)·**ADR#55 단일 federal_register adjudications 0**(block=`no_cross_batch_overlap`)·**ADR#56 artificial time-series replay → event_intel_test: semantic_cross_batch_candidate 1·adjudications 1(likely_same)·event_count 0→2·자동병합 0**(substrate 실데이터 입증·단 artificial≠실 source) |
 | 6 | backfill / scheduler | **TEST**(능력) / scheduler **PARTIAL**(docker scaffold·profile-gated·**build/up dry-run 검증됨**·미가동) | ADR#49 backfill tool·ADR#50 keyset CLI·ADR#51 preflight/exit-code/created_at cursor·ADR#52 docker `semantic-backfill-scheduler`(profile-gated·dry-run default·entrypoint override)·**ADR#53 docker build/up dry-run 실측**(build 성공·run 3경로 exit 2/1/0·ingestion COPY 버그 수정·**live-PG 91p 재실행**·실행성 입증·실가동 0) |
 | 7 | labeling packet | **TEST**(live-PG) | build_live_identity_labeling_packet(ADR#47)·exclusion/eligible report·실 reviewer 0 |
 | 8 | reviewer agreement | **PARTIAL**(protocol/packet 코드만) | ADR#45+#46·실 합의 0(R-ReviewerAgreement) |
@@ -151,7 +160,7 @@
 | 11 | semantic merge(④) | **NOT BUILT** | 실 병합 0(R-SemanticIdentityAdjudicator·gate 선결) |
 | 12 | Intelligence Unit | **NOT BUILT** | curated synthesis 미구축(`INTELLIGENCE_UNIT_CONTRACT` 계약만) |
 
-**정직 경계:** 1~3 은 실 웹 데이터 LIVE, 4~7 은 live-PG TEST(능력)이나 **운영 DB 미배포+실 fetch 누적 0 → production 백로그 0**, 8~12 는 실 데이터/구현 잔여. backfill/scheduler(6)는 merge safety substrate 의 운영 준비이지 그 자체가 public 단위가 아니다. **ADR#54:** 6 가동 전 `production_activation_preflight`(통합 점검·can_persist 게이트)·1~5 진단은 `real_source_identity_smoke`(기본 fake·offline·단계별 실패 분류) — **둘 다 점검/진단이지 가동/실 fetch 아님**(real_fetch 0·DB offline None·production 백로그 0 불변). **ADR#55:** smoke 가 **live_network**(실 federal_register fetch)+**live_db**(disposable event_intel_test)로 1~5 를 **실데이터 1회 도달**(created 1·identity_link 1·adjudications 0) — 단 **live_network=opt-in tool·live_db=disposable test DB≠production**·실 cross-source 비뉴스 Event·실 adjudication backlog·reviewer/gold/merge 여전히 잔여(production 백로그 0 불변·완전종결 금지).
+**정직 경계:** 1~3 은 실 웹 데이터 LIVE, 4~7 은 live-PG TEST(능력)이나 **운영 DB 미배포+실 fetch 누적 0 → production 백로그 0**, 8~12 는 실 데이터/구현 잔여. backfill/scheduler(6)는 merge safety substrate 의 운영 준비이지 그 자체가 public 단위가 아니다. **ADR#54:** 6 가동 전 `production_activation_preflight`(통합 점검·can_persist 게이트)·1~5 진단은 `real_source_identity_smoke`(기본 fake·offline·단계별 실패 분류) — **둘 다 점검/진단이지 가동/실 fetch 아님**(real_fetch 0·DB offline None·production 백로그 0 불변). **ADR#55:** smoke 가 **live_network**(실 federal_register fetch)+**live_db**(disposable event_intel_test)로 1~5 를 **실데이터 1회 도달**(created 1·identity_link 1·adjudications 0) — 단 **live_network=opt-in tool·live_db=disposable test DB≠production**·실 cross-source 비뉴스 Event·실 adjudication backlog·reviewer/gold/merge 여전히 잔여(production 백로그 0 불변·완전종결 금지). **ADR#56:** **artificial time-series replay** 가 단계 5(stage③ adjudication)를 **실데이터로 도달**(semantic_cross_batch_candidate 1·adjudications 1·event_count 0→2·자동병합 0) — single-source adjudication 0 의 원인을 `no_cross_batch_overlap` 로 정확 분해. **단 artificial replay ≠ 실 source behavior**(실 동일사건 다중소스/시계열 fetch·운영 DB 배포·reviewer/gold/merge 여전히 잔여·production 백로그 0 불변).
 
 ## Phase 4 — Search API expansion layer (tiered + budget + gate + Change Detection)
 - Goal: provider-agnostic tiered router(무료→유료), event 트리거 enrichment. **LAYER P(LLM 확장쿼리) → LAYER G(게이트) → LAYER F(fetch)** 분리(ADR#14).

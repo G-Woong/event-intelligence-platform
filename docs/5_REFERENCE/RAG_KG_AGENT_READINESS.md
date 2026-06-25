@@ -62,13 +62,13 @@
 - **No-Go(현재):** RAG/KG/Agent 본격 구현. 이유 = mock-default + substrate 차단 gate 2개 open.
 - **Go 조건:** §4 의 R-CrossBatchEventIdentity·R-SourceCatalogFidelity 종결 + 실 embedding 배선(#2) + heat/ranking(#12) → 그 다음 vector RAG baseline(#1~#4) → 입증 후 KG(#5~#7).
 
-## 6b. LLM / Agent 진입 조건 (ADR#54/#55 — substrate gate, 본경로 구현 아직 0)
+## 6b. LLM / Agent 진입 조건 (ADR#54/#55/#56 — substrate gate, 본경로 구현 아직 0)
 > 이 제품의 최종 주관 엔진은 LLM/Agent 다(여러 source 관측을 사건 단위로 묶어 연관도·공식성·커뮤니티 반응·시장 신호·카탈로그/엔티티 맥락·시계열 변화·불확실성을 정제한 **Intelligence Unit** 생성). 그러나 **raw source 를 즉시 요약해 public output 을 만드는 방식은 금지** — LLM 판단은 orchestration loop **내부**에서 evidence/guard 에 묶여야 한다. 아래 9조건이 **모두** 충족되기 전엔 LLM/Agent 본경로 진입 금지(현재 No-Go). 상태는 `real_source_smoke_report.agent_readiness_conditions` 가 결정론으로 산출(단일 출처).
 
 **LLM/Agent 진입 전 최소 조건(9) — 현재 status:**
 1. **production backlog > 0** — **FAIL**. 운영 DB 0009 배포 + flag on + 실 fetch 누적 필요(현재 0·R-LiveIdentityBacklog; ADR#55 live_db smoke 는 **test/dev** event_intel_test 이지 production 아님).
 2. **source role guard** — **PASS**. official/news=publishable·community=reaction·market=signal·catalog=entity·search=URL·unknown=fail-closed (코드 강제·ADR#55 live_network smoke 가 실 federal_register fetch role distribution 진단·community/market/catalog `guard_only`).
-3. **semantic identity candidate/adjudication 존재** — **PARTIAL**. `event_links(possible)`+`event_identity_adjudication`(shadow·자동 병합 0)·ADR#55 실 fetch→live_db 가 candidate fingerprint 영속(단 cross-batch adjudication=0·source scarcity).
+3. **semantic identity candidate/adjudication 존재** — **PARTIAL**. `event_links(possible)`+`event_identity_adjudication`(shadow·자동 병합 0)·ADR#55 실 fetch→live_db 가 candidate fingerprint 영속(단일소스 cross-batch adjudication=0·block=`no_cross_batch_overlap`)·**ADR#56 artificial time-series replay 가 cross-batch substrate 를 실데이터로 도달**(semantic_cross_batch_candidate 1·adjudications 1[likely_same]·event_count 0→2·자동병합 0·live-PG 잠금) — 단 artificial≠실 source·실 동일사건 다중소스/시계열 fetch 잔여.
 4. **reviewer/gold 또는 최소 eval gate** — **FAIL**. gold(review_status='gold') 없음·현 adjudicator precision 0.57 < gate(미달).
 5. **MERGE_GATE policy 통과** — **FAIL**. 정책 존재(precision≥0.98·FPR≤0.01·hard-neg FP=0·KO≥0.98·live gold≥200·KO≥50)·미통과·`auto_merge_enabled=False` 불변.
 6. **raw/public output 분리** — **PARTIAL**. public 단위는 Event(향후 curated IU)·raw source 직노출 금지·IU curated synthesis 미구축(§4b 계약).
@@ -76,4 +76,4 @@
 8. **community reaction layer 분리** — **PASS**. community 는 사실 근거가 아니라 reaction layer·merge anchor 금지(`non_publishable_role`·matrix `guard_only`).
 9. **time-series update substrate** — **PASS**. event_updates(append-only)/timeline(시계열 변화 추적 토대).
 
-**Agent 최종 역할(진입 후):** event core 이해 → source별 증거 연결 → community reaction 분리 해석 → market/catalog/entity signal enrichment → 시간 변화/업데이트 추적 → 불확실성 명시 → **Intelligence Unit 생성**. 단 evidence/source role/identity/gold/MERGE_GATE/uncertainty **밖에서 임의 병합 금지**. (현재: 9조건 중 **1·4·5·7 미충족** → 진입 금지·docs 설계만·본경로 구현 0. ADR#55 real-source smoke 가 조건 2/3/8 evidence 를 실데이터로 보강했으나 **여전히 No-Go**.)
+**Agent 최종 역할(진입 후):** event core 이해 → source별 증거 연결 → community reaction 분리 해석 → market/catalog/entity signal enrichment → 시간 변화/업데이트 추적 → 불확실성 명시 → **Intelligence Unit 생성**. 단 evidence/source role/identity/gold/MERGE_GATE/uncertainty **밖에서 임의 병합 금지**. (현재: 9조건 중 **1·4·5·7 미충족** → 진입 금지·docs 설계만·본경로 구현 0. ADR#55 real-source smoke 가 조건 2/3/8 evidence 를 실데이터로 보강하고 **ADR#56 time-series replay 가 조건 3 의 cross-batch adjudication substrate 를 실데이터로 도달**[artificial]했으나 **여전히 No-Go**[1·4·5·7].)

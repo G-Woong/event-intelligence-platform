@@ -17,10 +17,15 @@ from backend.app.tools.real_source_identity_smoke import (
     DEFAULT_MAX_PER_SOURCE,
     DEFAULT_MAX_RECORDS,
     build_fake_source_records,
+    build_replay_batches,
     fetch_real_source_records,
     run_db_identity_smoke,
     run_offline_identity_smoke,
     summarize_db_ingest,
+)
+from ingestion.orchestration.cross_source_dedup import (
+    cluster_records,
+    semantic_identity_fingerprint,
 )
 
 # federal_register payload fixture(network 0·MockTransport 주입용). dup 1개 포함.
@@ -208,3 +213,31 @@ def test_live_network_probe_runs_through_offline_smoke():
     assert r["source_role_distribution"] == {"official": 3}
     assert r["records_with_canonical_url"] == 3 and r["records_with_published_at"] == 3
     assert r["no_auto_merge"] is True
+
+
+# ── ADR#56 time-series replay 배치 빌더(network 0·DB 0·결정론) ──────────────────────────
+def test_build_replay_batches_shape_and_no_raw_body():
+    batches = build_replay_batches()
+    assert len(batches) == 2 and all(len(b) == 2 for b in batches)
+    for b in batches:
+        for r in b:
+            # 본문 미저장 — headline/canonical/published 만(raw_payload/body 키 부재·옵션 B/C 계약).
+            assert "raw_payload" not in r and "body" not in r
+            assert r["record_type"] == "article_candidate"     # publishable(anchor 자격)
+
+
+def test_replay_batches_cross_batch_same_event_different_url():
+    # 핵심 계약: 배치 A·B 는 **같은 제목·같은 날짜**(같은 fingerprint)이나 **다른 canonical_url**(공유 anchor 없음).
+    a, b = build_replay_batches()
+    assert a[0]["canonical_url"] != b[0]["canonical_url"]       # 다른 URL → strong anchor 매칭 안 됨
+    assert a[0]["title_or_label"] == b[0]["title_or_label"]
+    fp_a = semantic_identity_fingerprint(a[0]["title_or_label"], a[0]["published_at_or_observed_at"])
+    fp_b = semantic_identity_fingerprint(b[0]["title_or_label"], b[0]["published_at_or_observed_at"])
+    assert fp_a is not None and fp_a == fp_b                    # 같은 fingerprint → cross-batch 후보 가능
+
+
+def test_replay_each_batch_forms_strong_cluster():
+    # 각 배치는 같은 canonical_url 2 record → strong duplicate cluster(CREATE 1·held 없음).
+    for batch in build_replay_batches():
+        clusters = cluster_records(batch)
+        assert len(clusters) == 1 and clusters[0].confidence == "duplicate"

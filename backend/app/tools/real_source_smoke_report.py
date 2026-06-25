@@ -141,6 +141,37 @@ def agent_readiness_gate(conditions: list[dict]) -> dict:
             "total": len(conditions)}
 
 
+# ── §5 adjudication block-reason 분해(왜 adjudication=0 인가를 source/data/fingerprint 단계로) ──────────
+def classify_adjudication_block_reason(smoke: dict) -> str:
+    """adjudication=0 의 **정확한 원인**을 단계로 분해(순수·결정론·§5). adjudication 0 을 '실패'로 뭉뚱그리지
+    않고 source scarcity / fingerprint / cross-batch / role 로 귀속한다.
+
+    반환 값:
+      - `db_not_reached`              : offline(DB 미접근·adjudications None)
+      - `none`                        : adjudication 발생(차단 아님)
+      - `semantic_link_without_adjudication` : semantic 후보 link 는 있으나 미판정(예: persist=False)
+      - `non_publishable_role`        : 발행 가능 anchor 부재(community/market/catalog only)
+      - `no_fingerprint_overlap`      : publishable 이나 fingerprint 없음(generic 제목·시점 불명 → fingerprint None)
+      - `no_cross_batch_overlap`      : fingerprint 는 있으나 같은 fingerprint 의 기존 Event 부재(단일소스·distinct event)
+    """
+    adj = smoke.get("adjudications")
+    if adj is None:
+        return "db_not_reached"
+    if adj > 0:
+        return "none"
+    semantic_links = smoke.get("semantic_cross_batch_candidates", 0) or 0
+    if semantic_links > 0:
+        return "semantic_link_without_adjudication"
+    fp = smoke.get("semantic_fingerprint_candidates", 0) or 0
+    non_pub = (smoke.get("failures_by_stage") or {}).get("non_publishable_role", 0)
+    clusters = smoke.get("clusters", 0) or 0
+    if fp == 0:
+        if non_pub > 0 and non_pub >= clusters:
+            return "non_publishable_role"
+        return "no_fingerprint_overlap"
+    return "no_cross_batch_overlap"
+
+
 # ── §4 activation report 병합(preflight + smoke) ──────────────────────────────────────
 def assemble_activation_report(
     smoke: dict, *, run_mode: str, app_env: str, database_url: str,
@@ -159,6 +190,10 @@ def assemble_activation_report(
     matrix = build_source_quality_matrix(records or [], failures_by_source=failures_by_source)
     return {
         "run_mode": run_mode,                       # fake | live_network | live_db
+        # smoke_mode: offline | single_source | time_series_replay(artificial). offline 은 DB 미도달.
+        "smoke_mode": smoke.get("smoke_mode") or ("offline" if smoke.get("created_events") is None else "single_source"),
+        "artificial_replay": bool(smoke.get("artificial_replay", False)),
+        "batches": smoke.get("batches"),
         "db_target_classification": classification["classification"],
         "db_target_consistent": classification["consistent"],
         "is_production_target": classification["is_production_target"],
@@ -172,6 +207,11 @@ def assemble_activation_report(
         "clusters": smoke.get("clusters"),
         "singletons_dropped": smoke.get("singletons_dropped"),
         "semantic_fingerprint_candidates": smoke.get("semantic_fingerprint_candidates"),
+        # §5: 실 link reason 분포 + semantic 후보 link 수 + adjudication status 분포 + 차단 원인.
+        "semantic_cross_batch_candidates": smoke.get("semantic_cross_batch_candidates"),
+        "identity_link_reason_distribution": smoke.get("identity_link_reason_distribution"),
+        "adjudication_status_distribution": smoke.get("adjudication_status_distribution"),
+        "adjudication_block_reason": classify_adjudication_block_reason(smoke),
         "created_events": smoke.get("created_events"),
         "held_events": smoke.get("held_events"),
         "withheld_events": smoke.get("withheld_events"),
@@ -197,10 +237,16 @@ def _next_actions(smoke: dict, run_mode: str) -> list[str]:
     out: list[str] = []
     if run_mode == "fake":
         out.append("run --live-network for real key-free official fetch (opt-in·CI 아님)")
-    if (smoke.get("identity_links") in (None, 0)) and smoke.get("singletons_dropped", 0) > 0:
-        out.append("source scarcity: identity link 위해 동일사건 다중소스/시계열 cross-batch 필요")
-    if smoke.get("adjudications") in (None, 0):
-        out.append("stage③ adjudication backlog 0 — possible-link 누적 후 backfill 필요")
+    if smoke.get("smoke_mode") == "time_series_replay":
+        # replay 가 substrate(cross-batch→adjudication)를 닫음을 입증해도 **실 source behavior 가 아니다**.
+        if (smoke.get("adjudications") or 0) > 0:
+            out.append("artificial replay 가 cross-batch adjudication substrate 입증 — 다음은 **실** 동일사건 다중소스 fetch")
+        out.append("artificial replay ≠ production 검증: 실 cross-source/시계열 fetch 로 재확인 필요")
+    elif (smoke.get("adjudications") in (None, 0)):
+        block = classify_adjudication_block_reason(smoke)
+        if (smoke.get("identity_links") in (None, 0)) and smoke.get("singletons_dropped", 0) > 0:
+            out.append("source scarcity: identity link 위해 동일사건 다중소스/시계열 cross-batch 필요")
+        out.append(f"stage③ adjudication 0 (block={block}) — time-series replay 또는 동일사건 다중소스로 cross-batch 후보 발생 필요")
     if smoke.get("packet_eligible") in (None, 0):
         out.append("packet eligible 0 — adjudication 존재 후 reviewer export 가능")
     out.append("production 가동(운영 DB 배포·scheduler persist·gold/MERGE_GATE)은 명시적 승인 전 금지")

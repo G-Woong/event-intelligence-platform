@@ -1693,3 +1693,51 @@ async def test_live_list_events_excludes_held_degenerate(session):
     ).bindparams(c=core_id))).scalar_one()
     assert await tl.get_public_event(session, held_id) is None   # held degenerate 단건 우회 차단
     assert await tl.get_event(session, held_id) is not None      # 내부 get_event 는 그대로(게이트 없음)
+
+
+# ── time-series replay smoke 오케스트레이션 래퍼 (ADR#56) ────────────────────────────
+async def test_live_time_series_replay_smoke_produces_semantic_adjudication(session):
+    # ADR#56: run_time_series_replay_smoke(artificial 2-배치·같은 사건·다른 URL·교차배치) 가 cross-batch
+    # semantic_cross_batch_candidate link + stage③ likely_same adjudication 을 생성하고, 분포/차단원인을
+    # 정확히 보고한다. **자동 병합 0**(배치당 1 CREATE → event_count 정확히 +2).
+    from backend.app.tools.real_source_identity_smoke import (
+        build_replay_batches, run_time_series_replay_smoke)
+    before = await _count(session, "events")
+    out = await run_time_series_replay_smoke(
+        session, build_replay_batches(), persist=True,
+        app_env="test", database_url=_LIVE_PG_URL)
+    assert out["smoke_mode"] == "time_series_replay" and out["artificial_replay"] is True
+    assert out["batches"] == 2 and out["created_events"] == 2
+    assert out["event_count_before"] == before and out["event_count_after"] == before + 2
+    # cross-batch semantic 후보 link 1 + stage③ likely_same adjudication 1.
+    assert out["semantic_cross_batch_candidates"] == 1
+    assert out["identity_link_reason_distribution"].get("semantic_cross_batch_candidate") == 1
+    assert out["adjudications"] == 1
+    assert out["adjudication_status_distribution"].get("likely_same_event") == 1
+    assert out["no_auto_merge"] is True
+    # 자동 병합 0 재확인 — events 2개 그대로(병합으로 줄지 않음).
+    assert await _count(session, "events") == before + 2
+
+
+async def test_live_time_series_replay_block_reason_none_when_adjudicated(session):
+    # ADR#56(§5): replay 가 adjudication 을 생성하면 block reason='none'(차단 아님). 단일소스였다면
+    # no_cross_batch_overlap 이었을 것 — report 가 차단원인을 정확히 귀속.
+    from backend.app.tools.real_source_identity_smoke import (
+        build_replay_batches, run_time_series_replay_smoke)
+    from backend.app.tools.real_source_smoke_report import classify_adjudication_block_reason
+    out = await run_time_series_replay_smoke(
+        session, build_replay_batches(), persist=True,
+        app_env="test", database_url=_LIVE_PG_URL)
+    assert classify_adjudication_block_reason(out) == "none"
+
+
+async def test_live_time_series_replay_blocks_unsafe_target(session):
+    # ADR#56: replay 도 safe-target gate 통과 — production-like target 은 ingest 전 차단.
+    from backend.app.tools.db_target import UnsafeWriteTargetError
+    from backend.app.tools.real_source_identity_smoke import (
+        build_replay_batches, run_time_series_replay_smoke)
+    with pytest.raises(UnsafeWriteTargetError):
+        await run_time_series_replay_smoke(
+            session, build_replay_batches(), persist=True,
+            app_env="production",
+            database_url="postgresql+asyncpg://u:p@h:5432/event_intel_prod")

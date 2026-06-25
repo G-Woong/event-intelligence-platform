@@ -10,6 +10,7 @@ from backend.app.tools.real_source_smoke_report import (
     agent_readiness_gate,
     assemble_activation_report,
     build_source_quality_matrix,
+    classify_adjudication_block_reason,
 )
 
 _DEV_URL = "postgresql+asyncpg://event_user:event_pass@localhost:5432/event_intel"
@@ -181,3 +182,88 @@ def test_assemble_report_production_target_classified():
 def test_assemble_report_fake_mode_next_actions_suggest_live_network():
     r = assemble_activation_report(_smoke(), run_mode="fake", app_env="dev", database_url=_DEV_URL)
     assert any("live-network" in a for a in r["next_actions"])
+
+
+# ── §5 adjudication block-reason 분해(ADR#56) ──────────────────────────────────────────
+def test_block_reason_db_not_reached_when_offline():
+    assert classify_adjudication_block_reason({"adjudications": None}) == "db_not_reached"
+
+
+def test_block_reason_none_when_adjudication_present():
+    assert classify_adjudication_block_reason({"adjudications": 1}) == "none"
+
+
+def test_block_reason_semantic_link_without_adjudication():
+    # semantic 후보 link 는 있으나 미판정(persist=False 등).
+    out = classify_adjudication_block_reason(
+        {"adjudications": 0, "semantic_cross_batch_candidates": 2})
+    assert out == "semantic_link_without_adjudication"
+
+
+def test_block_reason_no_cross_batch_overlap_single_source():
+    # publishable·fingerprint 있으나 같은 fingerprint 의 기존 Event 부재(단일소스 federal_register 케이스).
+    out = classify_adjudication_block_reason(
+        {"adjudications": 0, "semantic_cross_batch_candidates": 0,
+         "semantic_fingerprint_candidates": 1, "clusters": 1})
+    assert out == "no_cross_batch_overlap"
+
+
+def test_block_reason_non_publishable_role():
+    out = classify_adjudication_block_reason(
+        {"adjudications": 0, "semantic_cross_batch_candidates": 0,
+         "semantic_fingerprint_candidates": 0, "clusters": 1,
+         "failures_by_stage": {"non_publishable_role": 1}})
+    assert out == "non_publishable_role"
+
+
+def test_block_reason_no_fingerprint_overlap_generic_title():
+    # publishable 이나 fingerprint 0(generic 제목·시점 불명) — non_publishable 아님.
+    out = classify_adjudication_block_reason(
+        {"adjudications": 0, "semantic_cross_batch_candidates": 0,
+         "semantic_fingerprint_candidates": 0, "clusters": 1,
+         "failures_by_stage": {"non_publishable_role": 0}})
+    assert out == "no_fingerprint_overlap"
+
+
+# ── time-series replay report fields(ADR#56·§4/§5) ─────────────────────────────────────
+def _replay_smoke(**kw):
+    base = {
+        "mode": "live_db", "smoke_mode": "time_series_replay", "artificial_replay": True,
+        "real_fetch": False, "batches": 2, "records_per_batch": [2, 2],
+        "source_count": 4, "source_ids": ["wire_alpha", "wire_beta", "wire_gamma", "wire_delta"],
+        "created_events": 2, "appended_events": 0, "held_events": 0,
+        "semantic_cross_batch_candidates": 1,
+        "identity_link_reason_distribution": {"semantic_cross_batch_candidate": 1},
+        "adjudications": 1, "adjudication_status_distribution": {"likely_same_event": 1},
+        "event_count_before": 0, "event_count_after": 2, "no_auto_merge": True,
+    }
+    base.update(kw)
+    return base
+
+
+def test_assemble_report_replay_fields_and_block_none():
+    r = assemble_activation_report(
+        _replay_smoke(), run_mode="live_db", app_env="test", database_url=_DEV_URL)
+    assert r["smoke_mode"] == "time_series_replay" and r["artificial_replay"] is True
+    assert r["batches"] == 2
+    assert r["semantic_cross_batch_candidates"] == 1
+    assert r["identity_link_reason_distribution"] == {"semantic_cross_batch_candidate": 1}
+    assert r["adjudication_status_distribution"] == {"likely_same_event": 1}
+    assert r["adjudication_block_reason"] == "none"          # adjudication 발생(차단 아님)
+    assert r["no_auto_merge"] is True
+    # event_count 정확히 +2(배치당 1 CREATE·자동 병합 0).
+    assert r["event_count_after"] - r["event_count_before"] == 2
+
+
+def test_assemble_report_replay_next_actions_flag_artificial():
+    r = assemble_activation_report(
+        _replay_smoke(), run_mode="live_db", app_env="test", database_url=_DEV_URL)
+    # artificial replay 가 production 검증으로 과장되지 않도록 경고가 next_actions 에 포함.
+    assert any("artificial replay" in a for a in r["next_actions"])
+
+
+def test_assemble_report_offline_smoke_mode_is_offline():
+    # offline(DB 미도달·created None) → smoke_mode='offline'·block='db_not_reached'.
+    r = assemble_activation_report(_smoke(), run_mode="fake", app_env="dev", database_url=_DEV_URL)
+    assert r["smoke_mode"] == "offline"
+    assert r["adjudication_block_reason"] == "db_not_reached"
