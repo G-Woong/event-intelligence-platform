@@ -200,3 +200,43 @@ def test_compose_scheduler_single_instance_no_replicas():
     replicas = (svc.get("deploy") or {}).get("replicas")
     assert replicas in (None, 1)
     assert str(svc.get("restart", "no")) in ("no", "false", "False")
+
+
+# ── backend 이미지 import 무결성 (ADR#53: 실 docker dry-run 이 발견한 ModuleNotFoundError 회귀 잠금) ──
+# scheduler 서비스는 backend 이미지를 재사용하고, 그 import 체인은
+#   run_semantic_backfill_scheduler → backend.app.tools.backfill_semantic_adjudications
+#   → backend.app.services.semantic_identity_adjudicator
+#   → ingestion.orchestration.cross_source_dedup (결정적 토큰 헬퍼: _jaccard/_title_tokens/_MIN_SEMANTIC_TOKENS)
+# 를 탄다. backend/Dockerfile 이 ingestion/ 을 COPY 안 하면 compose config·5개 정적 테스트·build 는
+# 전부 통과하지만 컨테이너 **런타임**에 ModuleNotFoundError 로 죽는다(ADR#53 docker dry-run 으로만 발견·수정).
+# 이 회귀를 정적으로 잠근다(배선됨 != 동작함 — 정적 config 만으로 docker 검증 완료라고 착각 금지).
+def _backend_dockerfile_copies() -> set:
+    path = Path(__file__).resolve().parents[2] / "backend" / "Dockerfile"
+    srcs = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        s = line.strip()
+        if s.startswith("COPY ") and not s.startswith("COPY --"):
+            parts = s.split()
+            if len(parts) >= 3:
+                srcs.add(parts[1])
+    return srcs
+
+
+def test_backend_image_copies_ingestion_for_adjudicator():
+    srcs = _backend_dockerfile_copies()
+    # semantic adjudication import 체인(backend→ingestion)이 backend 이미지에서 satisfiable 해야 함.
+    assert "ingestion/" in srcs, "backend/Dockerfile must COPY ingestion/ (adjudicator 전이 의존)"
+    assert "backend/" in srcs    # adjudicator/tools/models 본체
+    assert "workers/" in srcs    # scheduler 모듈 경로(workers.tools.run_semantic_backfill_scheduler)
+
+
+def test_scheduler_allow_non_dev_db_overrides_safe_target(monkeypatch):
+    # APP_ENV=staging(비-dev)라도 --allow-non-dev-db 명시면 safe-target 통과(명시 opt-in) → 정상 진행.
+    # (--allow-non-dev-db 없으면 exit 1: test_scheduler_safe_target_block_exit_1 — override 경로를 잠근다.)
+    monkeypatch.setattr(sched.settings, "APP_ENV", "staging")
+
+    async def _ok(**_k):
+        return {"ran": True, "block": None, "preflight": _preflight(),
+                "report": _report(dry_run=False, pending_after=0)}
+    _patch_session(monkeypatch, _ok)
+    assert sched.main(["--once", "--persist", "--allow-non-dev-db"]) == 0
