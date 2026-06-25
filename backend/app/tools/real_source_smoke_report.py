@@ -22,6 +22,77 @@ def _source_type_for_record(rec: dict) -> str:
     return _RECORD_TYPE_TO_SOURCE_TYPE.get(rec.get("record_type"), "unknown")
 
 
+# §8 overlap potential / source role utility(ADR#57): role 별 결정론 라벨 — Agent 가 source 별 처리전략을
+# (anchor / reaction / signal / enrichment) 선택할 substrate. overlap_potential 은 cross-source same-event
+# 가능성(official=문서 distinct·뉴스=wire 다출처). community/market/catalog 는 anchor 아님(역할만 보존).
+_ROLE_UTILITY: dict[str, dict[str, Any]] = {
+    "official": {
+        "overlap_potential": "document_distinct_low_overlap",   # 1문서=1URL=1사건 → cross-source 희소
+        "same_event_discovery_utility": "low_official_distinct",
+        "official_confirmation_utility": "high",
+        "time_series_update_utility": "medium",
+        "agent_utility": "merge_anchor",
+        "community_reaction_layer_eligible": False,
+        "market_signal_utility": "none", "catalog_entity_enrichment_utility": "none",
+    },
+    "article": {
+        "overlap_potential": "wire_syndication_capable",        # 다출처 wire verbatim/paraphrase → overlap 생성원
+        "same_event_discovery_utility": "high_multi_outlet",
+        "official_confirmation_utility": "medium",
+        "time_series_update_utility": "high",
+        "agent_utility": "merge_anchor",
+        "community_reaction_layer_eligible": False,
+        "market_signal_utility": "none", "catalog_entity_enrichment_utility": "none",
+    },
+    "community": {
+        "overlap_potential": "reaction_not_anchor",
+        "same_event_discovery_utility": "none_reaction_layer",
+        "official_confirmation_utility": "none",
+        "time_series_update_utility": "low",
+        "agent_utility": "reaction_layer",
+        "community_reaction_layer_eligible": True,
+        "market_signal_utility": "none", "catalog_entity_enrichment_utility": "none",
+    },
+    "signal": {
+        "overlap_potential": "signal_not_anchor",
+        "same_event_discovery_utility": "none_signal_layer",
+        "official_confirmation_utility": "none",
+        "time_series_update_utility": "high",
+        "agent_utility": "market_signal",
+        "community_reaction_layer_eligible": False,
+        "market_signal_utility": "high", "catalog_entity_enrichment_utility": "none",
+    },
+    "catalog": {
+        "overlap_potential": "enrichment_not_anchor",
+        "same_event_discovery_utility": "none_enrichment_layer",
+        "official_confirmation_utility": "none",
+        "time_series_update_utility": "low",
+        "agent_utility": "entity_enrichment",
+        "community_reaction_layer_eligible": False,
+        "market_signal_utility": "none", "catalog_entity_enrichment_utility": "high",
+    },
+    "search": {
+        "overlap_potential": "url_candidate_not_anchor",
+        "same_event_discovery_utility": "none_url_candidate",
+        "official_confirmation_utility": "none",
+        "time_series_update_utility": "low",
+        "agent_utility": "url_candidate",
+        "community_reaction_layer_eligible": False,
+        "market_signal_utility": "none", "catalog_entity_enrichment_utility": "none",
+    },
+}
+_ROLE_UTILITY_UNKNOWN: dict[str, Any] = {
+    "overlap_potential": "unknown", "same_event_discovery_utility": "unknown",
+    "official_confirmation_utility": "none", "time_series_update_utility": "unknown",
+    "agent_utility": "fail_closed", "community_reaction_layer_eligible": False,
+    "market_signal_utility": "none", "catalog_entity_enrichment_utility": "none",
+}
+
+
+def _role_utilities(role: str) -> dict[str, Any]:
+    return dict(_ROLE_UTILITY.get(role, _ROLE_UTILITY_UNKNOWN))
+
+
 def build_source_quality_matrix(
     records: list[dict], *, failures_by_source: Optional[dict[str, str]] = None,
 ) -> list[dict]:
@@ -45,6 +116,7 @@ def build_source_quality_matrix(
         with_pub = sum(1 for r in recs if r.get("published_at_or_observed_at"))
         body_expected = role in _BODY_EXPECTED_SOURCE_TYPES
         anchor_eligible = role in _PUBLISHABLE_SOURCE_TYPES and with_canon > 0
+        publishable = role in _PUBLISHABLE_SOURCE_TYPES
         rows.append({
             "source_id": sid,
             "source_role": role,
@@ -63,6 +135,15 @@ def build_source_quality_matrix(
             "adjudication_readiness": "ready_on_cross_link" if anchor_eligible else "blocked_non_publishable",
             "packet_readiness": "needs_cross_source_link",   # 단일 bounded fetch → 동일사건 다중소스 필요
             "failure_stage": None,
+            # §8 overlap potential / role utility(ADR#57) — Agent 가 source 처리전략을 선택할 substrate.
+            **_role_utilities(role),
+            # §8 단계별 실패 원인(왜 anchor/adjudication/packet 이 막히는가).
+            "identity_failure_reason": (None if anchor_eligible else (
+                "non_publishable_role" if not publishable else "no_canonical_anchor")),
+            "adjudication_failure_reason": (
+                "needs_cross_batch_overlap" if anchor_eligible else (
+                    "non_publishable_role" if not publishable else "no_canonical_anchor")),
+            "packet_failure_reason": "needs_adjudication",
             "next_action": ("await_same_event_second_source" if anchor_eligible
                             else "keep_as_reaction_or_signal_layer"),
         })
@@ -78,6 +159,9 @@ def build_source_quality_matrix(
             "parser_status": stage, "dedup_clusterability": "n/a", "identity_linkability": "n/a",
             "adjudication_readiness": "n/a", "packet_readiness": "n/a",
             "failure_stage": stage,
+            **_ROLE_UTILITY_UNKNOWN,
+            "identity_failure_reason": stage, "adjudication_failure_reason": stage,
+            "packet_failure_reason": stage,
             "next_action": _failure_next_action(stage),
         })
     return rows

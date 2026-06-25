@@ -92,6 +92,56 @@ def test_matrix_anchor_needs_canonical():
     assert build_source_quality_matrix(recs)[0]["identity_linkability"] == "guard_only"
 
 
+# ── §8 overlap potential / source role utility(ADR#57·시나리오 29-35) ────────────────────────
+def test_matrix_overlap_potential_present_article_vs_official():
+    """29-30: overlap_potential·same_event_discovery_utility 존재 — 뉴스=다출처·공식=문서 distinct."""
+    news = build_source_quality_matrix([_rec("article_candidate", "bbc", canonical="https://b/1", published="d")])[0]
+    off = build_source_quality_matrix([_rec("official_record", "federal_register", canonical="https://f/1", published="d")])[0]
+    assert news["overlap_potential"] == "wire_syndication_capable"
+    assert news["same_event_discovery_utility"] == "high_multi_outlet"
+    assert off["overlap_potential"] == "document_distinct_low_overlap"
+    assert off["same_event_discovery_utility"] == "low_official_distinct"
+
+
+def test_matrix_time_series_and_agent_utility_present():
+    """31-32: time_series_update_utility·agent_utility 존재."""
+    row = build_source_quality_matrix([_rec("article_candidate", "bbc", canonical="https://b/1", published="d")])[0]
+    assert row["time_series_update_utility"] == "high"
+    assert row["agent_utility"] == "merge_anchor"
+
+
+def test_matrix_community_reaction_eligible_market_catalog_guard():
+    """33-34: community reaction 자격·market/catalog guard-only(anchor 아님) 보존."""
+    comm = build_source_quality_matrix([_rec("community_signal", "hacker_news", canonical="https://h/1", published="d")])[0]
+    mkt = build_source_quality_matrix([_rec("structured_signal", "coinbase_market", body="missing")])[0]
+    cat = build_source_quality_matrix([_rec("catalog_metadata", "tmdb")])[0]
+    assert comm["community_reaction_layer_eligible"] is True and comm["agent_utility"] == "reaction_layer"
+    assert mkt["market_signal_utility"] == "high" and mkt["agent_utility"] == "market_signal"
+    assert mkt["community_reaction_layer_eligible"] is False
+    assert cat["catalog_entity_enrichment_utility"] == "high" and cat["agent_utility"] == "entity_enrichment"
+
+
+def test_matrix_failure_reasons_present():
+    """35: identity/adjudication/packet failure reason 존재(왜 막히는가 분해)."""
+    # publishable anchor → adjudication 은 cross-batch 필요.
+    anchor = build_source_quality_matrix([_rec("official_record", "federal_register", canonical="https://f/1", published="d")])[0]
+    assert anchor["identity_failure_reason"] is None
+    assert anchor["adjudication_failure_reason"] == "needs_cross_batch_overlap"
+    assert anchor["packet_failure_reason"] == "needs_adjudication"
+    # community → non_publishable_role 로 막힘.
+    comm = build_source_quality_matrix([_rec("community_signal", "hacker_news", canonical="https://h/1", published="d")])[0]
+    assert comm["identity_failure_reason"] == "non_publishable_role"
+    assert comm["adjudication_failure_reason"] == "non_publishable_role"
+    # publishable 이나 canonical 없음 → role 이 아니라 anchor 부재가 원인(non_publishable_role 오분류 금지).
+    nocanon = build_source_quality_matrix([_rec("official_record", "federal_register", canonical=None, published="d")])[0]
+    assert nocanon["identity_failure_reason"] == "no_canonical_anchor"
+    assert nocanon["adjudication_failure_reason"] == "no_canonical_anchor"
+    # fetch 실패행 → failure stage 가 모든 reason 으로 전파.
+    fail = build_source_quality_matrix([], failures_by_source={"sec_edgar": "network_error"})[0]
+    assert fail["identity_failure_reason"] == "network_error"
+    assert fail["overlap_potential"] == "unknown" and fail["agent_utility"] == "fail_closed"
+
+
 def test_matrix_failure_row_skipped_when_source_has_records():
     # 같은 source 가 일부 record 를 냈으면 fetch_ok 행으로 처리·failures_by_source 중복행 미생성.
     recs = [_rec("official_record", "federal_register", canonical="https://fr/d/1")]
