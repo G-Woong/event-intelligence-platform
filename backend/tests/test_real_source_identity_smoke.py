@@ -1,23 +1,34 @@
-"""ADR#54 — real-source identity smoke 진단 잠금(offline·network 0·DB 0·결정론).
+"""ADR#54/#55 — real-source identity smoke 진단 잠금(offline·network 0·DB 0·결정론).
 
 fake fixture 가 fetch→cluster→candidate 단계를 거치며 source_role_distribution + failures_by_stage 를
 결정론으로 분류함을 잠근다. DB 단계는 offline 에서 None(정직), live-DB 어댑터는 safe-target gate·순수 매핑만 검증.
+ADR#55: live_network 실 fetch 는 MockTransport(network 0·결정론)로 parser/allowlist/단계별 실패를 잠근다.
 """
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 
 from backend.app.services.event_ingest_pipeline import EventIngestSummary
 from backend.app.tools.db_target import UnsafeWriteTargetError
 from backend.app.tools.real_source_identity_smoke import (
+    DEFAULT_MAX_PER_SOURCE,
     DEFAULT_MAX_RECORDS,
     build_fake_source_records,
+    fetch_real_source_records,
     run_db_identity_smoke,
     run_offline_identity_smoke,
     summarize_db_ingest,
 )
+
+# federal_register payload fixture(network 0·MockTransport 주입용). dup 1개 포함.
+_FR_PAYLOAD = json.dumps({"results": [
+    {"title": "Rule A on import tariffs", "publication_date": "2026-06-20", "document_number": "2026-0001"},
+    {"title": "Notice B on safety standards", "publication_date": "2026-06-21", "document_number": "2026-0002"},
+    {"title": "Rule A on import tariffs", "publication_date": "2026-06-20", "document_number": "2026-0001"},
+]})
 
 
 def test_offline_fake_fixture_deterministic_report():
@@ -107,3 +118,93 @@ def test_db_smoke_blocks_unsafe_target_before_session():
         asyncio.run(run_db_identity_smoke(
             None, app_env="production",
             database_url="postgresql+asyncpg://u:p@h:5432/event_intel_prod"))
+
+
+def test_offline_record_quality_fields_present():
+    r = run_offline_identity_smoke()
+    assert r["records_with_body"] == 7      # 8 중 1개 missing
+    assert r["records_with_canonical_url"] == 8
+    assert r["records_with_published_at"] == 8
+    assert "bbc" in r["source_ids"] and r["source_ids"] == sorted(r["source_ids"])
+
+
+# ── ADR#55 live_network 실 fetch(MockTransport·network 0) ──────────────────────────────
+def test_fetch_real_records_parses_payload_with_canonical_published():
+    recs, failures = fetch_real_source_records(
+        ["federal_register"], transport=lambda url: _FR_PAYLOAD)
+    assert failures == {} and len(recs) == 3
+    r0 = recs[0]
+    assert r0["record_type"] == "official_record" and r0["source_id"] == "federal_register"
+    assert r0["canonical_url"] == "https://www.federalregister.gov/d/2026-0001"
+    assert r0["published_at_or_observed_at"] == "2026-06-20"
+    assert r0["title_or_label"] == "Rule A on import tariffs"
+    # 본문 미저장 — body_state_or_signal 만(raw_payload/body 키 부재).
+    assert "raw_payload" not in r0 and "body" not in r0
+
+
+def test_fetch_real_records_bounded_per_source():
+    big = json.dumps({"results": [
+        {"title": f"Doc {i}", "publication_date": "2026-06-20", "document_number": f"d{i}"}
+        for i in range(20)]})
+    recs, _ = fetch_real_source_records(
+        ["federal_register"], transport=lambda url: big, max_per_source=3)
+    assert len(recs) == 3                    # bounded
+
+
+def test_fetch_real_records_allowlist_blocks_non_official():
+    # community/market/news-HTML 등 allowlist 밖 → source_disabled(network 미접근).
+    recs, failures = fetch_real_source_records(
+        ["hacker_news", "coinbase_market"], transport=lambda url: _FR_PAYLOAD)
+    assert recs == []
+    assert failures == {"hacker_news": "source_disabled", "coinbase_market": "source_disabled"}
+
+
+def test_fetch_real_records_network_error_classified():
+    recs, failures = fetch_real_source_records(
+        ["federal_register"], transport=lambda url: None)     # fetch None = network 실패
+    assert recs == [] and failures == {"federal_register": "network_error"}
+
+
+def test_fetch_real_records_parser_error_classified():
+    recs, failures = fetch_real_source_records(
+        ["federal_register"], transport=lambda url: "<<not json>>")
+    assert recs == [] and failures == {"federal_register": "parser_error"}
+
+
+def test_fetch_real_records_no_records_classified():
+    recs, failures = fetch_real_source_records(
+        ["federal_register"], transport=lambda url: json.dumps({"results": []}))
+    assert recs == [] and failures == {"federal_register": "no_records"}
+
+
+def test_fetch_real_records_missing_document_number_yields_no_canonical():
+    # document_number 결측 official record → canonical None(실패 아님·official 이나 anchor 불가 = guard_only).
+    payload = json.dumps({"results": [
+        {"title": "Rule with no doc number", "publication_date": "2026-06-20"}]})
+    recs, failures = fetch_real_source_records(
+        ["federal_register"], transport=lambda url: payload)
+    assert failures == {} and len(recs) == 1
+    assert recs[0]["canonical_url"] is None and recs[0]["record_type"] == "official_record"
+
+
+def test_fetch_real_records_missing_title_skipped():
+    # title 결측 item 은 skip(헤드라인 없으면 record 아님).
+    payload = json.dumps({"results": [
+        {"publication_date": "2026-06-20", "document_number": "d1"},
+        {"title": "Has title", "publication_date": "2026-06-21", "document_number": "d2"}]})
+    recs, _ = fetch_real_source_records(["federal_register"], transport=lambda url: payload)
+    assert len(recs) == 1 and recs[0]["title_or_label"] == "Has title"
+
+
+def test_fetch_real_records_default_max_per_source_constant():
+    assert DEFAULT_MAX_PER_SOURCE == 5
+
+
+def test_live_network_probe_runs_through_offline_smoke():
+    # 실 fetch(주입)→offline smoke: official 3 record → role_distribution official, body/canonical/published 충족.
+    recs, _ = fetch_real_source_records(["federal_register"], transport=lambda url: _FR_PAYLOAD)
+    r = run_offline_identity_smoke(probe=lambda: recs)
+    assert r["real_fetch"] is True and r["source_count"] == 1
+    assert r["source_role_distribution"] == {"official": 3}
+    assert r["records_with_canonical_url"] == 3 and r["records_with_published_at"] == 3
+    assert r["no_auto_merge"] is True

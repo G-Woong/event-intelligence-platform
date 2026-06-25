@@ -124,7 +124,16 @@
 >
 > **C(created_at index)·D(advisory lock) 계속 DEFER**(ADR#52/#53 근거 유지): preflight 가 persist 요청 시 `created_at_index_deferred`·`single_runner_discipline` warning 으로 표면화(은폐 금지). index 적용은 백로그 유의미 시점(0010)·lock 은 단일 runner 운영 규율(데이터는 PK upsert 멱등 안전).
 
-### RealSourceLoop 단계 상태 (ADR#50/#51/#52/#53/#54 갱신 — fetch→Intelligence Unit)
+### real-source live-db smoke + source quality matrix (ADR#55 · fake→실 fetch→실 DB 한 단계 진전)
+> **live_network 실 fetch**(`python -m backend.app.tools.real_source_identity_smoke --live-network [--source federal_register,...]`·**opt-in·network·CI 아님**): `fetch_real_source_records` 가 key-free official JSON API allowlist(`federal_register`/`sec_edgar` — robots-friendly·canonical+published_at·전부 official_record)만 bounded(source당 ≤5) fetch → payload 다중 record 파싱(`canonical_url`=document_number URL·`published_at`·**headline[:512] 만·본문/raw_payload 미저장**[옵션 B 계약]). 실패는 source별 단계 분류(`source_disabled`/`network_error`/`parser_error`/`no_records`). transport 주입으로 CI 는 network 0 결정론(MockTransport).
+>
+> **live_db smoke**(`--live-db [--live-network] [--persist] [--collect-packet]`·**safe-target gated·test/dev 만**): 실 fetch(or fake) record → `ingest_records_to_events` → DB 단계 도달·`event_count_before/after`(§6 자동병합 0·증분만 입증). **실 federal_register fetch 5 official records → `event_intel_test`(head 0009) 실측: created 1 + identity_link 1(held member·reason `new_event_low_confidence`) · adjudications 0 · packet_eligible 0 · no_auto_merge=True · event_count 4→6.** disposable test DB(live-PG fixture 가 다음 setup 에서 TRUNCATE → 무해)·운영 DB 미사용.
+>
+> **`real_source_smoke_report`(순수·DB/network 0)**: §4 activation report(run_mode·db_target_classification·records_with_body/canonical/published·created/held/withheld·identity_links·adjudications·packet_eligible·reviewer_packet_exportable·event_count before/after·failures_by_stage·failures_by_source·next_actions) + **source quality matrix(§9·옵션 E)**(source별 source_role·body/canonical/published_at quality·dedup_clusterability·identity_linkability[official+canonical=`anchor_eligible`·community/market/catalog=`guard_only`]·adjudication/packet readiness·failure_stage·next_action) + **agent readiness 9조건(§8·단일 출처)**.
+>
+> **정직 분해(Q13·Q19·Q20)**: adjudications 0 은 held-member link 의 reason 이 `new_event_low_confidence` 이지 `semantic_cross_batch_candidate` 가 아니라서(stage③ shadow 는 semantic 후보 link 만 처리) — 실 Event 는 형성되나 **cross-batch adjudication substrate** 는 동일사건 다중소스/시계열 fingerprint 중첩이 필요(single bounded single-source = **source scarcity**). identity link 부재 원인 = (a)source scarcity (b)fingerprint 약함(`no_semantic_fingerprint`) (c)dedup 약함(강신호 미일치). **다음 hard blocker = 실 fetch 커버리지/볼륨**(동일사건 다중소스)→운영 DB 배포→reviewer/gold.
+
+### RealSourceLoop 단계 상태 (ADR#50/#51/#52/#53/#54/#55 갱신 — fetch→Intelligence Unit)
 > BUILT=코드 존재·TEST=deterministic/단위 검증·LIVE=실 Postgres/실 fetch 검증·PARTIAL=일부·BLOCKED=선결 미충족·NOT BUILT=미구현.
 
 | # | 단계 | 상태 | 근거 |
@@ -132,8 +141,8 @@
 | 1 | source fetch | **LIVE**(news/official) / **PARTIAL**(비뉴스) | ADR#29 keyless 10소스 411 records·official probe(R-RealSourceLoopUnproven) |
 | 2 | record/candidate | **LIVE** | cross_source_dedup→candidate(실 fetch) |
 | 3 | Event/HOLD/WITHHELD | **LIVE** | ADR#29 CREATE 2+HOLD 3·source-type gate(ADR#33~37) |
-| 4 | identity link(②) | **TEST**(live-PG) | event_identity_candidate→event_links(possible)·실 fetch 누적 0 |
-| 5 | stage③ adjudication | **TEST**(live-PG) | ingest flag-gated 자동(ADR#48)·incremental(ADR#49)·운영 자동 누적 0(DB 0003·flag off) |
+| 4 | identity link(②) | **TEST**(live-PG) / **실 fetch→live_db 1회 도달**(ADR#55) | event_identity_candidate→event_links(possible)·**ADR#55 실 federal_register fetch→event_intel_test ingest: identity_link 1(held member)·semantic fingerprint candidate 1**·단 cross-source identity link 희소(source scarcity) |
+| 5 | stage③ adjudication | **TEST**(live-PG) / **실데이터 adjudications 0**(ADR#55) | ingest flag-gated 자동(ADR#48)·incremental(ADR#49)·운영 자동 누적 0(DB 0003·flag off)·**ADR#55 실 ingest adjudications 0**(held-member link reason ≠`semantic_cross_batch_candidate`·cross-batch fingerprint 중첩 필요) |
 | 6 | backfill / scheduler | **TEST**(능력) / scheduler **PARTIAL**(docker scaffold·profile-gated·**build/up dry-run 검증됨**·미가동) | ADR#49 backfill tool·ADR#50 keyset CLI·ADR#51 preflight/exit-code/created_at cursor·ADR#52 docker `semantic-backfill-scheduler`(profile-gated·dry-run default·entrypoint override)·**ADR#53 docker build/up dry-run 실측**(build 성공·run 3경로 exit 2/1/0·ingestion COPY 버그 수정·**live-PG 91p 재실행**·실행성 입증·실가동 0) |
 | 7 | labeling packet | **TEST**(live-PG) | build_live_identity_labeling_packet(ADR#47)·exclusion/eligible report·실 reviewer 0 |
 | 8 | reviewer agreement | **PARTIAL**(protocol/packet 코드만) | ADR#45+#46·실 합의 0(R-ReviewerAgreement) |
@@ -142,7 +151,7 @@
 | 11 | semantic merge(④) | **NOT BUILT** | 실 병합 0(R-SemanticIdentityAdjudicator·gate 선결) |
 | 12 | Intelligence Unit | **NOT BUILT** | curated synthesis 미구축(`INTELLIGENCE_UNIT_CONTRACT` 계약만) |
 
-**정직 경계:** 1~3 은 실 웹 데이터 LIVE, 4~7 은 live-PG TEST(능력)이나 **운영 DB 미배포+실 fetch 누적 0 → production 백로그 0**, 8~12 는 실 데이터/구현 잔여. backfill/scheduler(6)는 merge safety substrate 의 운영 준비이지 그 자체가 public 단위가 아니다. **ADR#54:** 6 가동 전 `production_activation_preflight`(통합 점검·can_persist 게이트)·1~5 진단은 `real_source_identity_smoke`(기본 fake·offline·단계별 실패 분류) — **둘 다 점검/진단이지 가동/실 fetch 아님**(real_fetch 0·DB offline None·production 백로그 0 불변).
+**정직 경계:** 1~3 은 실 웹 데이터 LIVE, 4~7 은 live-PG TEST(능력)이나 **운영 DB 미배포+실 fetch 누적 0 → production 백로그 0**, 8~12 는 실 데이터/구현 잔여. backfill/scheduler(6)는 merge safety substrate 의 운영 준비이지 그 자체가 public 단위가 아니다. **ADR#54:** 6 가동 전 `production_activation_preflight`(통합 점검·can_persist 게이트)·1~5 진단은 `real_source_identity_smoke`(기본 fake·offline·단계별 실패 분류) — **둘 다 점검/진단이지 가동/실 fetch 아님**(real_fetch 0·DB offline None·production 백로그 0 불변). **ADR#55:** smoke 가 **live_network**(실 federal_register fetch)+**live_db**(disposable event_intel_test)로 1~5 를 **실데이터 1회 도달**(created 1·identity_link 1·adjudications 0) — 단 **live_network=opt-in tool·live_db=disposable test DB≠production**·실 cross-source 비뉴스 Event·실 adjudication backlog·reviewer/gold/merge 여전히 잔여(production 백로그 0 불변·완전종결 금지).
 
 ## Phase 4 — Search API expansion layer (tiered + budget + gate + Change Detection)
 - Goal: provider-agnostic tiered router(무료→유료), event 트리거 enrichment. **LAYER P(LLM 확장쿼리) → LAYER G(게이트) → LAYER F(fetch)** 분리(ADR#14).
