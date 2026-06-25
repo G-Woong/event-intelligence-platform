@@ -88,3 +88,46 @@ def check_gcp_credentials() -> dict[str, str]:
             "path_exists" if Path(path_val).exists() else "path_not_found"
         )
     }
+
+
+def env_example_declares(var_name: str, example_path: Optional[Path] = None) -> bool:
+    """`.env.example`(실값 없는 안전 템플릿)에 `var_name=` 선언이 있는지 — **이름만** 확인(값 미반환).
+
+    `.env.example` 만 읽는다(`.env` 는 열지 않는다). 라인의 키 토큰이 정확히 일치할 때만 True.
+    """
+    if example_path is None:
+        example_path = _find_repo_root() / ".env.example"
+    if not example_path.exists():
+        return False
+    for line in example_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        if stripped.partition("=")[0].strip() == var_name:
+            return True
+    return False
+
+
+def probe_env_var(
+    var_name: str,
+    env_path: Optional[Path] = None,
+    example_path: Optional[Path] = None,
+) -> dict[str, object]:
+    """단일 env var 의 secret-safe readiness probe. **boolean/present-missing 만** 반환 — 값 미반환·미로그.
+
+    구분(§ADR#63): credential 부재 시 `.env` 파일 자체가 없으면(env_not_loaded) 와 파일은 있으나 키 미설정
+    (missing_credentials) 을 분리하기 위한 신호를 제공한다. 모두 값 비열람:
+      - credential_present: `env_status` (present/missing·값 0)
+      - env_file_present:   `.env` 의 `Path.exists()` 만 (내용 미열람)
+      - declared_in_example: `.env.example` 이름 선언만
+    """
+    root = _find_repo_root()
+    if env_path is None:
+        env_path = root / ".env"
+    status = env_status([var_name], env_path=env_path).get(var_name, "missing")
+    return {
+        "var_name": var_name,
+        "credential_present": status == "present",
+        "env_file_present": env_path.exists(),
+        "declared_in_example": env_example_declares(var_name, example_path=example_path),
+    }
