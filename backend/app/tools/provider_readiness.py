@@ -14,10 +14,15 @@ acquisition failure* 였다(분석 §2-Q20). 이 모듈은 그 blocker 를 정�
   - opt-in bounded live query 가 **안전·허용**될 때만 실 fetch 를 시도하고, 산출된 후보를 near-match reviewer
     queue 로 연결한다(§6/§7). 후보가 없으면 empty queue + block_reason + next_action 으로 정직히 노출한다.
 
+ADR#62 보강: ADR#61 이 남긴 fetcher_not_wired 병목을 한 단계 줄인다 — query provider fetch 의 공통 contract
+(ProviderQueryAdapter)를 `provider_query_adapters` 에 두고 첫 실 adapter(guardian·key-required·news)를 wire 한다.
+adapter-wired provider 는 ADR#60 native(gdelt/rss)와 달리 직접 fetch 후 records 주입 경로로 연결한다(fixture 둔갑 0).
+
 재구현 0 — 무거운 일은 전부 기존 단일 출처가 한다:
   - credential presence(secret-safe): `ingestion.core.env_loader.env_status`(present/missing·**값 미노출**·alias 해소)
   - host gate / 429 cooldown 합성: `source_overlap_discovery.gdelt_provider_status`(HostRateGate+in_cooldown·read-only)
   - rate-limit policy: `ingestion.core.rate_limit_policy.load_rate_limit_policy`
+  - query provider fetch(contract adapter): `provider_query_adapters.run_provider_query`(ADR#62·guardian wired·secret-safe)
   - 실 fetch→discover→queue: `targeted_same_event_acquisition.run_targeted_same_event_operating_readiness`(ADR#60)
 
 절대 불변(상속·재확인 — 상용 안전 계약):
@@ -34,6 +39,13 @@ import sys
 from typing import Any, Callable, Optional
 
 from backend.app.tools.near_match_reviewer_queue import EMBEDDING_LLM_ADJUDICATOR_INTERFACE
+from backend.app.tools.provider_query_adapters import (
+    ADAPTER_CONTRACT_VERSION,
+    ADAPTER_WIRED_PROVIDERS,
+    adapter_descriptor,
+    provider_adapter_contract,
+    run_provider_query,
+)
 from backend.app.tools.source_overlap_discovery import gdelt_provider_status
 from backend.app.tools.targeted_same_event_acquisition import (
     _DEFAULT_TARGET_SOURCES,
@@ -184,11 +196,27 @@ _NON_QUERY_KEY_FREE_FLEET: dict = {
     "raw_body_policy": _RAW_BODY_POLICY, "enabled": True, "category": "rss_feed",
 }
 
-# 이번 acquisition 경로(targeted_same_event_acquisition.run_targeted_acquisition)에 **실 fetcher 가 배선된** provider.
-# 코드 사실(catalog 데이터 아님): gdelt(fetch_gdelt_overlap_records)·rss_fleet(fetch_rss_overlap_records)만 존재.
-# 나머지(sec_edgar/federal_register/newsapi/…)는 query-capable 이나 미배선 → live query 시 fixture 로 떨어지지 않게
-# fetcher_not_wired 로 정직 차단(확장 후보).
-_FETCH_WIRED_PROVIDERS = frozenset({"gdelt", "rss_fleet"})
+# 이번 acquisition 경로에 **실 fetcher 가 배선된** provider(코드 사실·catalog 데이터 아님).
+#   - ADR#60 native: gdelt(fetch_gdelt_overlap_records)·rss_fleet(fetch_rss_overlap_records) — run_targeted_acquisition 직접 fetch.
+#   - ADR#62 contract adapter: ADAPTER_WIRED_PROVIDERS(guardian) — provider_query_adapters.run_provider_query 로 fetch 후
+#     ADR#60 운영경로에 records 주입. ADR#60 은 gdelt/rss 만 native → provider= 로 넘기면 fixture 로 silent 낙하(rss_fleet seam)
+#     하므로 adapter-wired 는 반드시 records= 주입 경로를 탄다(run_optional_live_query 가 분기).
+# 나머지(sec_edgar/federal_register/newsapi/…)는 query-capable 이나 미배선 → live query 시 fixture 둔갑 없이 fetcher_not_wired 차단.
+_ADR60_NATIVE_FETCHERS = frozenset({"gdelt", "rss_fleet"})
+_FETCH_WIRED_PROVIDERS = _ADR60_NATIVE_FETCHERS | ADAPTER_WIRED_PROVIDERS
+
+# adapter ProviderQueryResult.status → §6 live query 분류(LQ_*) 정규화.
+_ADAPTER_STATUS_MAP = {
+    "missing_credentials": LQ_MISSING_CREDENTIALS,
+    "rate_limited": LQ_PROVIDER_RATE_LIMITED,
+    "host_gate_blocked": LQ_HOST_GATE_BLOCKED,
+    "fetcher_not_wired": LQ_FETCHER_NOT_IMPLEMENTED,
+    "network_error": LQ_NETWORK_ERROR,
+    "parser_error": LQ_PARSER_ERROR,
+    "no_records": LQ_NO_RECORDS,
+    "disabled": LQ_NO_QUERY_CAPABLE_PROVIDER,
+    "unknown": LQ_NO_QUERY_CAPABLE_PROVIDER,
+}
 
 
 def _default_env_status(keys: list[str]) -> dict[str, str]:
@@ -260,6 +288,27 @@ def _classify_provider(
     fetch_implemented = provider_id in _FETCH_WIRED_PROVIDERS
     rate_limit_policy = _rate_limit_policy(provider_id)
 
+    # adapter wiring 반영(§9). guardian=ADR#62 contract adapter; gdelt/rss_fleet=ADR#60-native fetcher(동일 _rec 계약);
+    # 그 외=미배선(adapter_contract_version=None·queue_integration_status=not_wired). fetch_implemented=True 는 실
+    # parser+fake-transport test 통과 전제(stub 등재 금지) — adapter_module 이 그 출처를 가리킨다.
+    if provider_id in ADAPTER_WIRED_PROVIDERS:
+        adapter_meta = adapter_descriptor(provider_id) or {}
+    elif provider_id in _ADR60_NATIVE_FETCHERS:
+        adapter_meta = {
+            "adapter_contract_version": ADAPTER_CONTRACT_VERSION,
+            "adapter_module": "backend.app.tools.source_overlap_discovery (ADR#57/#60 native fetcher)",
+            "tested_with_fake_transport": True,
+            "parser_contract_status": "implemented",
+            "record_normalization_status": "rec_title_canonical_published_no_body",
+            "queue_integration_status": "wired",
+        }
+    else:
+        adapter_meta = {
+            "adapter_contract_version": None, "adapter_module": None,
+            "tested_with_fake_transport": False, "parser_contract_status": "not_wired",
+            "record_normalization_status": "not_wired", "queue_integration_status": "not_wired",
+        }
+
     host_gate_status = "not_host_gated"
     current_cooldown: Optional[str] = None
     # safe_to_live_query = credential 준비 + (host gate clear) + **실 fetcher 배선**(미배선이면 실 query 불가).
@@ -305,6 +354,19 @@ def _classify_provider(
         "current_cooldown": current_cooldown,
         "robots_tos_status": spec.get("robots_tos_status"),
         "raw_body_policy": spec.get("raw_body_policy"),
+        # ── adapter wiring(§9) — fetch_implemented 의 출처/검증 상태를 정직 표면화 ──
+        "adapter_contract_version": adapter_meta.get("adapter_contract_version"),
+        "adapter_module": adapter_meta.get("adapter_module"),
+        "tested_with_fake_transport": bool(adapter_meta.get("tested_with_fake_transport")),
+        "parser_contract_status": adapter_meta.get("parser_contract_status", "not_wired"),
+        "record_normalization_status": adapter_meta.get("record_normalization_status", "not_wired"),
+        "queue_integration_status": adapter_meta.get("queue_integration_status", "not_wired"),
+        # 키만 있으면 live query 가능한가(= 실 fetcher 배선 + host gate clear). credential 유무와 무관한 능력 신호.
+        "live_query_capable_if_credentials_present": bool(
+            fetch_implemented and host_gate_status in ("ok", "not_host_gated")),
+        "missing_credentials_next_action": (
+            f"set_env:{','.join(k for k in required if env_present.get(k) != 'present')}"
+            if (auth_required and not credential_ready) else None),
         "safe_to_live_query": bool(safe),
         "classification": classification,
         "next_action": next_action,
@@ -321,6 +383,11 @@ def _unknown_provider_row(provider_id: str) -> dict:
         "rate_limit_policy": {}, "host_gate_supported": False,
         "host_gate_status": "unknown", "current_cooldown": None,
         "robots_tos_status": "unknown_requires_legal_review", "raw_body_policy": _RAW_BODY_POLICY,
+        "adapter_contract_version": None, "adapter_module": None,
+        "tested_with_fake_transport": False, "parser_contract_status": "not_wired",
+        "record_normalization_status": "not_wired", "queue_integration_status": "not_wired",
+        "live_query_capable_if_credentials_present": False,
+        "missing_credentials_next_action": None,
         "safe_to_live_query": False, "classification": CLASS_UNKNOWN_POLICY,
         "next_action": _next_action(
             classification=CLASS_UNKNOWN_POLICY, provider_id=provider_id, credential_ready=False,
@@ -400,6 +467,10 @@ def build_provider_readiness_report(
             r["provider_id"]: r["host_gate_status"] for r in rows if r["host_gate_supported"]},
         "rate_limit_policy": {r["provider_id"]: r["rate_limit_policy"] for r in rows},
         "next_actions": {r["provider_id"]: r["next_action"] for r in rows},
+        # 실 fetcher 가 배선된 provider(gdelt/rss_fleet native + adapter wired) 와 adapter contract 표면.
+        "wired_providers": sorted(r["provider_id"] for r in rows if r["fetch_implemented"]),
+        "adapter_wired_providers": sorted(ADAPTER_WIRED_PROVIDERS),
+        "provider_adapter_contract": provider_adapter_contract(),
         # 실 live query 가 지금 가능한 provider 가 하나라도 있는가(key-free ready OR key-required+credential).
         "any_live_query_ready": bool(key_free_ready or key_required_ready),
         "no_merge_without_gold": True,
@@ -417,6 +488,7 @@ def run_optional_live_query(
     env_status_fn: Optional[Callable[[list[str]], dict[str, str]]] = None,
     rss_transport: Optional[Callable[[str, str], Optional[str]]] = None,
     gdelt_transport: Optional[Callable[[str], Optional[str]]] = None,
+    provider_transport: Optional[Callable[[str], Optional[str]]] = None,
     host_gate: Any = None, reviewers: Optional[list[str]] = None,
     packet_id: str = "live_near_match_pkt",
 ) -> dict:
@@ -460,38 +532,61 @@ def run_optional_live_query(
     if not live_query_allowed:
         block_reasons.append(skipped_reason)
     else:
-        # ADR#60 단일 진입 재사용 — live_network=True + transport(테스트 시 주입=network 0). fixture 둔갑 없음:
-        # 실 fetch 가 0 후보면 ADR#60 이 block_reason 으로 노출하고 real_fetch 를 유지한다. provider 토큰은 ADR#60
-        # 이 인식하는 형태로 정규화(rss_fleet→rss) — 미정규화 시 else 분기에서 synthetic fixture 로 silent 낙하.
-        acq_provider = _ACQ_PROVIDER_ALIAS.get(provider, provider)
-        out = run_targeted_same_event_operating_readiness(
-            topic=topic, topic_key=topic_key, time_window=time_window, provider=acq_provider,
-            source_ids=source_ids, live_network=True, rss_transport=rss_transport,
-            gdelt_transport=gdelt_transport, host_gate=host_gate, reviewers=reviewers,
-            packet_id=packet_id)
-        rep = out["report"]
-        candidate_count = rep["candidate_count"]
-        near = rep["near_positive_count"]
-        hard = rep["hard_negative_count"]
-        fp = rep["fingerprint_overlap_count"]
-        dataset_source = rep["dataset_source"]
-        queue_population = len(out["queue"].get("queue_pair_ids") or [])
-        if rep.get("block_reason"):
-            block_reasons.append(_FETCH_REASON_MAP.get(rep["block_reason"], rep["block_reason"]))
-        elif candidate_count == 0:
-            block_reasons.append(LQ_NO_NEAR_MATCH)
-        result = {
-            "attempted": True,
-            "provider_status": ("live_derived" if rep.get("real_fetch") else provider_status_str),
-            "records_count": out["acquisition"].get("acquired_record_count", 0),
-            "near_match_count": near,
-            "hard_negative_count": hard,
-            "fingerprint_overlap_count": fp,
-            "reviewer_queue_population_count": queue_population,
-            "packet_exportable": rep["reviewer_packet_exportable"],
-            "production_gold_count": 0,
-            "merge_allowed": False,
-        }
+        out: Optional[dict] = None
+        if provider in ADAPTER_WIRED_PROVIDERS:
+            # ADR#62 contract adapter(guardian 등): adapter 로 governed fetch 후 ADR#60 운영경로에 records 주입.
+            # ADR#60 은 gdelt/rss 만 native fetch → provider= 로 넘기면 fixture 로 silent 낙하(rss_fleet seam) 하므로
+            # 반드시 records=(+real_fetch=True·synthetic marker 부재) 주입 → live_derived 보존·fixture 둔갑 0.
+            qres = run_provider_query(
+                provider, topic=topic, time_window=time_window, transport=provider_transport,
+                env_status_fn=env_status_fn, host_gate=host_gate)
+            if qres.status == "ok":
+                out = run_targeted_same_event_operating_readiness(
+                    topic=topic, topic_key=topic_key, time_window=time_window, provider=provider,
+                    records=list(qres.records), real_fetch=True, reviewers=reviewers,
+                    packet_id=packet_id)
+            else:
+                # 실 fetch 시도했으나 provider-blocked — fixture 둔갑 없이 status→LQ_* 정직 노출(dataset_source=None).
+                block_reasons.append(_ADAPTER_STATUS_MAP.get(qres.status, qres.status))
+                result = {
+                    "attempted": True, "provider_status": qres.status,
+                    "records_count": qres.records_count, "near_match_count": 0,
+                    "hard_negative_count": 0, "fingerprint_overlap_count": 0,
+                    "reviewer_queue_population_count": 0, "packet_exportable": False,
+                    "production_gold_count": 0, "merge_allowed": False,
+                }
+        else:
+            # ADR#60 native(gdelt·rss_fleet→rss): provider 토큰 정규화 후 live_network governed fetch.
+            acq_provider = _ACQ_PROVIDER_ALIAS.get(provider, provider)
+            out = run_targeted_same_event_operating_readiness(
+                topic=topic, topic_key=topic_key, time_window=time_window, provider=acq_provider,
+                source_ids=source_ids, live_network=True, rss_transport=rss_transport,
+                gdelt_transport=gdelt_transport, host_gate=host_gate, reviewers=reviewers,
+                packet_id=packet_id)
+        if out is not None:
+            rep = out["report"]
+            candidate_count = rep["candidate_count"]
+            near = rep["near_positive_count"]
+            hard = rep["hard_negative_count"]
+            fp = rep["fingerprint_overlap_count"]
+            dataset_source = rep["dataset_source"]
+            queue_population = len(out["queue"].get("queue_pair_ids") or [])
+            if rep.get("block_reason"):
+                block_reasons.append(_FETCH_REASON_MAP.get(rep["block_reason"], rep["block_reason"]))
+            elif candidate_count == 0:
+                block_reasons.append(LQ_NO_NEAR_MATCH)
+            result = {
+                "attempted": True,
+                "provider_status": ("live_derived" if rep.get("real_fetch") else provider_status_str),
+                "records_count": out["acquisition"].get("acquired_record_count", 0),
+                "near_match_count": near,
+                "hard_negative_count": hard,
+                "fingerprint_overlap_count": fp,
+                "reviewer_queue_population_count": queue_population,
+                "packet_exportable": rep["reviewer_packet_exportable"],
+                "production_gold_count": 0,
+                "merge_allowed": False,
+            }
     return {
         "provider": provider,
         "live_query_allowed": live_query_allowed,
@@ -522,12 +617,15 @@ def build_provider_readiness_agent_schema(readiness: dict, live: dict) -> dict:
     LLM 호출 0·embedding/LLM adjudicator 는 No-Go 유지."""
     return {
         "agent_can_plan": [
-            "provider_readiness_review", "recommended_provider_setup", "source_pair_plan",
+            "provider_readiness_review", "provider_adapter_readiness_review",
+            "recommended_provider_setup", "source_pair_plan",
             "topic_window_plan", "reviewer_queue_population_plan", "hard_negative_sampling_plan",
             "expected_gold_value", "next_fetch_action"],
         "agent_cannot": [
             "provider secret 추측/생성", "같은 사건 확정", "merge 실행", "public Intelligence Unit 생성",
             "community reaction 을 event anchor 로 사용", "market/catalog 를 event anchor 로 사용"],
+        "provider_adapter_contract": provider_adapter_contract(),
+        "wired_providers": sorted(_FETCH_WIRED_PROVIDERS),
         "provider_readiness": {
             "query_capable": readiness["query_capable_providers"],
             "key_free_ready": readiness["key_free_ready"],
@@ -558,9 +656,10 @@ def run_provider_acquisition_readiness(
     env_status_fn: Optional[Callable[[list[str]], dict[str, str]]] = None,
     rss_transport: Optional[Callable[[str, str], Optional[str]]] = None,
     gdelt_transport: Optional[Callable[[str], Optional[str]]] = None,
+    provider_transport: Optional[Callable[[str], Optional[str]]] = None,
     host_gate: Any = None, reviewers: Optional[list[str]] = None,
 ) -> dict:
-    """ADR#61 단일 진입 — provider readiness(A) → optional live query(B) → near-match queue population(D).
+    """ADR#61/#62 단일 진입 — provider readiness(A) → optional live query(B·adapter wired) → near-match queue(D).
 
     기본 live_query=False → readiness report 만(network 0). provider 가 안전·허용 + opt-in 이면 bounded live query
     를 시도하고 후보를 queue 로 연결한다. 병합·LLM·운영 DB 0. §4 필수 output 을 단일 dict 로 산출."""
@@ -570,7 +669,7 @@ def run_provider_acquisition_readiness(
         provider=provider, topic=topic, topic_key=topic_key, time_window=time_window,
         source_ids=source_ids, live_query=live_query, readiness=readiness,
         env_status_fn=env_status_fn, rss_transport=rss_transport, gdelt_transport=gdelt_transport,
-        host_gate=host_gate, reviewers=reviewers)
+        provider_transport=provider_transport, host_gate=host_gate, reviewers=reviewers)
     agent_schema = build_provider_readiness_agent_schema(readiness, live)
     return {
         "provider_readiness_report": readiness,
@@ -593,6 +692,8 @@ def run_provider_acquisition_readiness(
         "provenance": live["provenance"],
         "block_reasons": live["block_reasons"],
         "next_actions": readiness["next_actions"],
+        "wired_providers": readiness["wired_providers"],
+        "provider_adapter_contract": readiness["provider_adapter_contract"],
         "agent_schema": agent_schema,
         "no_merge_without_gold": True,
         "no_public_intelligence_unit": True,
@@ -617,7 +718,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     ns = parser.parse_args(sys.argv[1:] if argv is None else argv)
 
     host_gate = None
-    if ns.live_query and ns.provider == "rss_fleet":
+    # gdelt 는 gdelt_provider_status 가 내부적으로 host gate 를 합성 — 그 외 wired provider(rss_fleet·adapter)는
+    # shared host gate 를 주입해 cross-process host floor 에 참여(no-bypass).
+    if ns.live_query and ns.provider != "gdelt" and ns.provider in _FETCH_WIRED_PROVIDERS:
         try:
             from pathlib import Path as _P
 

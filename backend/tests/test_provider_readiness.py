@@ -17,6 +17,7 @@ from backend.app.services.identity_human_labeling import (
     SOURCE_LIVE,
     SOURCE_SYNTHETIC,
 )
+from backend.app.tools.provider_query_adapters import run_provider_query
 from backend.app.tools.provider_readiness import (
     _PROVIDER_CATALOG,
     CLASS_BLOCKED_RATE_LIMITED,
@@ -463,6 +464,105 @@ def test_45_rss_fleet_source_ids_match_real_fetch_fleet():
     from backend.app.tools.targeted_same_event_acquisition import _DEFAULT_TARGET_SOURCES
     rss = _row(_ok_report(), "rss_fleet")
     assert rss["source_ids"] == list(_DEFAULT_TARGET_SOURCES)
+
+
+# ══ Section G — ADR#62 guardian adapter wiring + adapter-to-queue (§12 21-35) ════════════════════════════
+def _guardian_payload():
+    """Guardian Content API 형태(공식 shape) — 같은 사건 wire/para/diff 다른 URL·같은 날(live cross-source overlap)."""
+    return json.dumps({"response": {"status": "ok", "results": [
+        {"webTitle": WIRE, "webUrl": "https://www.theguardian.com/a",
+         "webPublicationDate": "2026-06-22T12:00:00Z"},
+        {"webTitle": WIRE, "webUrl": "https://www.theguardian.com/b",
+         "webPublicationDate": "2026-06-22T13:00:00Z"},
+        {"webTitle": PARA, "webUrl": "https://www.theguardian.com/c",
+         "webPublicationDate": "2026-06-22T14:00:00Z"},
+        {"webTitle": DIFF, "webUrl": "https://www.theguardian.com/d",
+         "webPublicationDate": "2026-06-22T15:00:00Z"},
+    ]}})
+
+
+def _guardian_transport(_url):
+    return _guardian_payload()
+
+
+def test_46_guardian_adapter_live_query_live_derived_to_queue():
+    # §12 21-25: adapter records → discover → near-match reviewer queue, dataset_source live_derived(실 fetch 만).
+    rep = _ok_report(env_status_fn=env_present)
+    lq = run_optional_live_query(provider="guardian", live_query=True, readiness=rep,
+                                 env_status_fn=env_present, provider_transport=_guardian_transport)
+    assert lq["live_query_allowed"] is True and lq["live_query_attempted"] is True
+    assert lq["dataset_source"] == SOURCE_LIVE                      # 실 adapter fetch → live_derived(fixture 둔갑 0).
+    assert lq["dataset_source"] != SOURCE_SYNTHETIC
+    assert lq["near_match_count"] >= 1
+    assert lq["reviewer_queue_population_count"] >= 1               # 후보가 queue 로 연결.
+    assert lq["live_query_result"]["provider_status"] == "live_derived"
+    assert lq["live_query_result"]["production_gold_count"] == 0    # §12 28.
+    assert lq["live_query_result"]["merge_allowed"] is False        # §12 29.
+
+
+def test_47_guardian_fetch_implemented_adapter_fields():
+    # §12 30·33-34: fetch_implemented True 는 adapter+test 존재 시에만 + adapter contract/queue 필드 표면.
+    row = _row(_ok_report(env_status_fn=env_present), "guardian")
+    assert row["fetch_implemented"] is True
+    assert row["adapter_contract_version"] == "1.0"
+    assert row["adapter_module"].endswith(":guardian")
+    assert row["tested_with_fake_transport"] is True
+    assert row["queue_integration_status"] == "wired"
+    assert row["live_query_capable_if_credentials_present"] is True
+
+
+def test_48_newsapi_credentialed_but_fetcher_not_wired():
+    # §12 32: credential-ready 여도 fetcher 미배선이면 not_wired(fixture 둔갑 0·차단).
+    row = _row(_ok_report(env_status_fn=env_present), "newsapi")
+    assert row["credential_ready"] is True
+    assert row["fetch_implemented"] is False
+    assert row["queue_integration_status"] == "not_wired"
+    assert row["live_query_capable_if_credentials_present"] is False
+
+
+def test_49_wired_providers_includes_guardian_only_among_key_required():
+    rep = _ok_report(env_status_fn=env_present)
+    assert "guardian" in rep["wired_providers"]
+    assert "gdelt" in rep["wired_providers"] and "rss_fleet" in rep["wired_providers"]
+    assert "newsapi" not in rep["wired_providers"] and "nyt" not in rep["wired_providers"]
+    assert rep["adapter_wired_providers"] == ["guardian"]
+
+
+def test_50_agent_schema_includes_adapter_contract():
+    # §12 41: Agent schema 가 adapter readiness/contract 를 포함.
+    out = run_provider_acquisition_readiness(provider="guardian", live_query=False,
+                                             env_status_fn=env_present)
+    sch = out["agent_schema"]
+    assert "provider_adapter_contract" in sch
+    assert "provider_adapter_readiness_review" in sch["agent_can_plan"]
+    assert "guardian" in sch["wired_providers"]
+    assert out["provider_adapter_contract"]["contract_version"] == "1.0"
+
+
+def test_51_guardian_adapter_to_queue_hides_prediction_no_body():
+    # §12 27·4: adapter records → ADR#60 queue → reviewer packet 은 predicted_status 숨김·raw body 부재.
+    qr = run_provider_query("guardian", topic="fed", transport=_guardian_transport,
+                            env_status_fn=env_present, today="2026-06-22")
+    assert qr.status == "ok"
+    out = run_targeted_same_event_operating_readiness(
+        records=list(qr.records), real_fetch=True, provider="guardian")
+    assert out["report"]["dataset_source"] == SOURCE_LIVE          # §12 25.
+    chk = out["reviewer_operating_checklist"]
+    assert chk["hidden_prediction_verified"] is True
+    assert chk["raw_body_absent_verified"] is True
+    # packet row 에 verdict 누출 0(predicted_status 숨김의 구조적 확인).
+    for r in out["queue"].get("packet_rows") or []:
+        assert not (set(r) & _PACKET_FORBIDDEN_VERDICT_KEYS)
+
+
+def test_52_guardian_missing_creds_dataset_source_none():
+    # §12 26: fixture 둔갑 0 — credential 없으면 dataset_source None(synthetic 으로 안 떨어짐).
+    rep = _ok_report(env_status_fn=env_missing)
+    lq = run_optional_live_query(provider="guardian", live_query=True, readiness=rep,
+                                 env_status_fn=env_missing, provider_transport=_boom_transport)
+    assert lq["skipped_reason"] == LQ_MISSING_CREDENTIALS
+    assert lq["dataset_source"] is None
+    assert lq["provenance"] == "none"
 
 
 if __name__ == "__main__":

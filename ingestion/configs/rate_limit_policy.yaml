@@ -33,3 +33,10 @@ per_source:
     cooldown_on_429_seconds: 3600
     max_retries_on_429: 0
     cache_ttl_seconds: 7200
+  # ADR#62 guardian query adapter — free tier 5000/day. host floor(5s) 위 보수적 per-source 간격 + 429 cooldown
+  # 600s(no tight retry). adapter(provider_query_adapters)가 in_cooldown/record_rate_limited 로 honor.
+  guardian:
+    min_interval_seconds: 5
+    cooldown_on_429_seconds: 600
+    max_retries_on_429: 1
+    cache_ttl_seconds: 0
