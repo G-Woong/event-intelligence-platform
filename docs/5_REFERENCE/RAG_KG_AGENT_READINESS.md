@@ -21,7 +21,7 @@
 | 8 | LLM router 실배선 | **PARTIAL** | `source_supervisor` allowlist·judge 프레임 O, `llm_propose`=테스트 람다, `LLM_PROVIDER` 기본 **mock**; unsafe 제안 audit=TODO |
 | 9 | Event→확장수집 plan agent | **NOT BUILT** | `query_generator`=NotImplementedError; event-reactive expansion 없음 |
 | 10 | instruction pipeline | **NOT BUILT** | 고정 DAG 만(event_processing_graph) |
-| 11 | 주기 auto re-collection scheduler | **NOT BUILT** | 주기 수집 auto-trigger 미배선(Celery 설치만·task/beat 0). 단 `workers/tools/run_recovery_scheduler`(`--interval-sec`/`--once`·docker `recovery-scheduler`)·Redis stream consumer 가동 — **주기-드라이버 idiom 존재**(ADR#50 backfill `--once` 재사용·ADR#51 `run_semantic_backfill_scheduler.py`[backfill 주기·preflight gated·dry-run default]·**ADR#52 docker `semantic-backfill-scheduler`**[profile-gated 기본 미기동·backend 이미지·entrypoint override·**미가동**]·**ADR#53 docker build/up dry-run 실측**[실행성 입증·3경로 exit 2/1/0·ingestion COPY 버그 수정·**여전히 미가동**]·운영 DB migration 후 게이트) |
+| 11 | 주기 auto re-collection scheduler | **NOT BUILT** | 주기 수집 auto-trigger 미배선(Celery 설치만·task/beat 0). 단 `workers/tools/run_recovery_scheduler`(`--interval-sec`/`--once`·docker `recovery-scheduler`)·Redis stream consumer 가동 — **주기-드라이버 idiom 존재**(ADR#50 backfill `--once` 재사용·ADR#51 `run_semantic_backfill_scheduler.py`[backfill 주기·preflight gated·dry-run default]·**ADR#52 docker `semantic-backfill-scheduler`**[profile-gated 기본 미기동·backend 이미지·entrypoint override·**미가동**]·**ADR#53 docker build/up dry-run 실측**[실행성 입증·3경로 exit 2/1/0·ingestion COPY 버그 수정·**여전히 미가동**]·**ADR#54 production activation preflight**[가동 전 통합 점검·can_persist 게이트·read-only]·운영 DB migration 후 게이트) |
 | 12 | Event substrate 안정성 | **PARTIAL→견고(쓰기/발행)** | events/updates/map/links/cards + read API + **live-PG 30/30**; heat·domains·auto-snapshot·cross-batch identity 는 미완 |
 
 ## 3. 소스군 orchestration 상태 (ADR#39 재감사)
@@ -61,3 +61,19 @@
 ## 6. Go / No-Go
 - **No-Go(현재):** RAG/KG/Agent 본격 구현. 이유 = mock-default + substrate 차단 gate 2개 open.
 - **Go 조건:** §4 의 R-CrossBatchEventIdentity·R-SourceCatalogFidelity 종결 + 실 embedding 배선(#2) + heat/ranking(#12) → 그 다음 vector RAG baseline(#1~#4) → 입증 후 KG(#5~#7).
+
+## 6b. LLM / Agent 진입 조건 (ADR#54 — substrate gate, 본경로 구현 아직 0)
+> 이 제품의 최종 주관 엔진은 LLM/Agent 다(여러 source 관측을 사건 단위로 묶어 연관도·공식성·커뮤니티 반응·시장 신호·카탈로그/엔티티 맥락·시계열 변화·불확실성을 정제한 **Intelligence Unit** 생성). 그러나 **raw source 를 즉시 요약해 public output 을 만드는 방식은 금지** — LLM 판단은 orchestration loop **내부**에서 evidence/guard 에 묶여야 한다. 아래 9조건이 **모두** 충족되기 전엔 LLM/Agent 본경로 진입 금지(현재 No-Go).
+
+**LLM/Agent 진입 전 최소 조건(9):**
+1. **production backlog > 0** — 운영 DB 0009 배포 + flag on + 실 fetch 누적(현재 0·R-LiveIdentityBacklog).
+2. **source role guard** — official/news=publishable·community=reaction·market=signal·catalog=entity·search=URL·unknown=fail-closed (코드 강제됨·`real_source_identity_smoke` 가 role distribution 진단).
+3. **semantic identity candidate/adjudication 존재** — `event_links(possible)`+`event_identity_adjudication`(shadow·자동 병합 0).
+4. **reviewer/gold 또는 최소 eval gate** — gold(review_status='gold')·현 adjudicator precision 0.57 < gate(미달).
+5. **MERGE_GATE policy** — precision≥0.98·FPR≤0.01·hard-neg FP=0·KO≥0.98·live gold≥200·KO≥50 (`auto_merge_enabled=False` 불변).
+6. **raw/public output 분리** — public 단위는 Event(향후 curated IU)·raw source 직노출 금지(§4b 계약).
+7. **uncertainty field** — 불확실성·미확인 지점 은폐 금지(IU 필수 필드).
+8. **community reaction layer 분리** — community 는 사실 근거가 아니라 reaction layer·merge anchor 금지(`non_publishable_role` guard).
+9. **time-series update substrate** — event_updates/timeline(시계열 변화 추적 토대).
+
+**Agent 최종 역할(진입 후):** event core 이해 → source별 증거 연결 → community reaction 분리 해석 → market/catalog/entity signal enrichment → 시간 변화/업데이트 추적 → 불확실성 명시 → **Intelligence Unit 생성**. 단 evidence/source role/identity/gold/MERGE_GATE/uncertainty **밖에서 임의 병합 금지**. (현재: 9조건 중 1·4·5 미충족 → 진입 금지·docs 설계만·본경로 구현 0.)

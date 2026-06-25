@@ -17,6 +17,8 @@ _DEV_ENVS = frozenset({"dev", "test"})
 # dbname 에 이 마커가 보이면 APP_ENV 와 무관하게 거부 — APP_ENV 단일 신뢰 회피
 # (APP_ENV=dev 오설정 + DATABASE_URL→prod 우회 차단, 2차 방어).
 _PROD_DB_MARKERS = ("prod", "production")
+# staging 마커 — classify_write_target(ADR#54) 의 named 분류용(차단 정책 아님·진단/경고용).
+_STAGING_DB_MARKERS = ("staging", "stg")
 
 
 class UnsafeWriteTargetError(RuntimeError):
@@ -74,3 +76,49 @@ def assert_safe_write_target(
             f"pass allow_non_dev / --allow-non-dev-db to override"
         )
     return label
+
+
+# named 환경 분류 severity(높을수록 위험) — classification 은 APP_ENV/URL 둘 중 더 위험한 쪽을 채택.
+_TARGET_SEVERITY = {"unknown": 0, "dev": 1, "test": 1, "unmarked": 1, "staging": 2, "production": 3}
+
+
+def classify_write_target(*, app_env: str, database_url: str) -> dict:
+    """APP_ENV + DATABASE_URL dbname → **named 환경 분류**(dev/test/staging/production/unknown) + 일치성(ADR#54).
+
+    `assert_safe_write_target` 는 dev/test 허용·그외 차단의 **binary** 가드다(차단이 핵심). 이 함수는 그 위에서
+    운영 activation preflight 용 **이름붙은 분류**와 APP_ENV↔URL **불일치 경고**를 제공한다(자격증명 미노출·차단 아님).
+    분류는 보수적 — URL dbname 의 prod/staging 마커가 APP_ENV 보다 위험하면 그쪽을 채택(APP_ENV=dev 오설정 +
+    prod-like URL 같은 위험 조합을 가장 위험한 쪽으로 표면화). 일치성:
+      - env=dev/test 인데 URL=staging/production → **위험한 불일치**(env 가 '안전'이라 거짓 안심 가능).
+      - env=staging/production 인데 URL=unmarked(prod/staging 마커 없음) → 경고(운영인데 dev-like URL — 오설정 가능).
+    """
+    env_class = app_env if app_env in ("dev", "test", "staging", "production") else "unknown"
+    dbname = _dbname(database_url)
+    if any(m in dbname for m in _PROD_DB_MARKERS):
+        url_class = "production"
+    elif any(m in dbname for m in _STAGING_DB_MARKERS):
+        url_class = "staging"
+    else:
+        url_class = "unmarked"   # prod/staging 마커 없음(전형적 dev 이름)
+    # 최종 분류 = 더 위험한 쪽. URL 마커가 prod/staging 이면 APP_ENV 보다 우선(오설정 방어).
+    classification = url_class if _TARGET_SEVERITY[url_class] > _TARGET_SEVERITY[env_class] else env_class
+    if classification == "unmarked":   # unmarked 가 살아남는 경우(env=unknown) → unknown 으로 환원.
+        classification = env_class if env_class != "unknown" else "unknown"
+    # 일치성 = URL tier 가 APP_ENV tier 와 맞는가(모든 cross-tier 불일치를 빠짐없이 — dev/test→unmarked,
+    # staging→staging, production→production 만 일치). env=unknown 은 검증 불가라 항상 불일치(fail toward flag).
+    if env_class in ("dev", "test"):
+        consistent = url_class == "unmarked"
+    elif env_class == "staging":
+        consistent = url_class == "staging"
+    elif env_class == "production":
+        consistent = url_class == "production"
+    else:   # unknown env(오타·미지) — 어떤 URL 과도 일치 단정 불가.
+        consistent = False
+    return {
+        "classification": classification,
+        "env_class": env_class,
+        "url_class": url_class,
+        "consistent": consistent,
+        "is_dev_target": classification in ("dev", "test"),
+        "is_production_target": classification == "production",
+    }
