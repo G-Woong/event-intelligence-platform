@@ -34,6 +34,12 @@ _ROLE_UTILITY: dict[str, dict[str, Any]] = {
         "agent_utility": "merge_anchor",
         "community_reaction_layer_eligible": False,
         "market_signal_utility": "none", "catalog_entity_enrichment_utility": "none",
+        # ADR#58 §9: overlap acquisition 관점(실측 근거). official 은 문서 distinct → pairability 낮음.
+        "title_paraphrase_risk": "low_distinct_document",
+        "overlap_acquisition_utility": "low_official_distinct",
+        "cross_source_pairability": "distinct_low_pairable",
+        "same_event_likelihood": "low_structurally_distinct",
+        "body_policy": "store_headline_canonical_only_no_body",
     },
     "article": {
         "overlap_potential": "wire_syndication_capable",        # 다출처 wire verbatim/paraphrase → overlap 생성원
@@ -43,6 +49,13 @@ _ROLE_UTILITY: dict[str, dict[str, Any]] = {
         "agent_utility": "merge_anchor",
         "community_reaction_layer_eligible": False,
         "market_signal_utility": "none", "catalog_entity_enrichment_utility": "none",
+        # ADR#58 §9: 실측(RSS 다출처 55 record·same-beat 30 record → title overlap 0) — paraphrase 지배·
+        # untargeted feed 는 overlap 희소. targeting(topic/time/same-event query) 필요.
+        "title_paraphrase_risk": "high_paraphrase_dominant",
+        "overlap_acquisition_utility": "high_but_requires_targeting",
+        "cross_source_pairability": "multi_outlet_pairable",
+        "same_event_likelihood": "targeted_high_untargeted_low",
+        "body_policy": "store_headline_canonical_only_no_body",
     },
     "community": {
         "overlap_potential": "reaction_not_anchor",
@@ -52,6 +65,11 @@ _ROLE_UTILITY: dict[str, dict[str, Any]] = {
         "agent_utility": "reaction_layer",
         "community_reaction_layer_eligible": True,
         "market_signal_utility": "none", "catalog_entity_enrichment_utility": "none",
+        "title_paraphrase_risk": "n/a_reaction_layer",
+        "overlap_acquisition_utility": "none_reaction_not_anchor",
+        "cross_source_pairability": "not_pairable_anchor_forbidden",
+        "same_event_likelihood": "n/a_reaction_layer",
+        "body_policy": "reaction_signal_no_body_anchor",
     },
     "signal": {
         "overlap_potential": "signal_not_anchor",
@@ -61,6 +79,11 @@ _ROLE_UTILITY: dict[str, dict[str, Any]] = {
         "agent_utility": "market_signal",
         "community_reaction_layer_eligible": False,
         "market_signal_utility": "high", "catalog_entity_enrichment_utility": "none",
+        "title_paraphrase_risk": "n/a_structured_signal",
+        "overlap_acquisition_utility": "none_signal_not_anchor",
+        "cross_source_pairability": "not_pairable_anchor_forbidden",
+        "same_event_likelihood": "n/a_signal_layer",
+        "body_policy": "structured_metadata_no_body",
     },
     "catalog": {
         "overlap_potential": "enrichment_not_anchor",
@@ -70,6 +93,11 @@ _ROLE_UTILITY: dict[str, dict[str, Any]] = {
         "agent_utility": "entity_enrichment",
         "community_reaction_layer_eligible": False,
         "market_signal_utility": "none", "catalog_entity_enrichment_utility": "high",
+        "title_paraphrase_risk": "n/a_catalog_metadata",
+        "overlap_acquisition_utility": "none_enrichment_not_anchor",
+        "cross_source_pairability": "not_pairable_anchor_forbidden",
+        "same_event_likelihood": "n/a_enrichment_layer",
+        "body_policy": "structured_metadata_no_body",
     },
     "search": {
         "overlap_potential": "url_candidate_not_anchor",
@@ -79,6 +107,11 @@ _ROLE_UTILITY: dict[str, dict[str, Any]] = {
         "agent_utility": "url_candidate",
         "community_reaction_layer_eligible": False,
         "market_signal_utility": "none", "catalog_entity_enrichment_utility": "none",
+        "title_paraphrase_risk": "downstream_resolved",
+        "overlap_acquisition_utility": "url_candidate_pre_resolution",
+        "cross_source_pairability": "post_resolution_only",
+        "same_event_likelihood": "downstream_resolved",
+        "body_policy": "url_candidate_no_body_until_resolved",
     },
 }
 _ROLE_UTILITY_UNKNOWN: dict[str, Any] = {
@@ -86,7 +119,44 @@ _ROLE_UTILITY_UNKNOWN: dict[str, Any] = {
     "official_confirmation_utility": "none", "time_series_update_utility": "unknown",
     "agent_utility": "fail_closed", "community_reaction_layer_eligible": False,
     "market_signal_utility": "none", "catalog_entity_enrichment_utility": "none",
+    "title_paraphrase_risk": "unknown", "overlap_acquisition_utility": "unknown",
+    "cross_source_pairability": "unknown", "same_event_likelihood": "unknown",
+    "body_policy": "fail_closed_no_body",
 }
+
+
+# ADR#58 §9: source-level acquisition 제약(provider/rate-limit/robots). role 로 일반화 못 하는 운영 사실은
+# **하드 근거가 있는 source 만** 명시하고 나머지는 unknown(fabrication 0). 근거: rate_limit_policy.yaml(gdelt
+# 429·min 60s·cooldown 900s), source_registry auth=none(key-free), source_strategy_memory(gdelt no_bypass).
+_ACQUISITION_PROFILE: dict[str, dict[str, str]] = {
+    "gdelt": {
+        "provider_accessibility": "key_free_but_rate_limited",
+        "rate_limit_risk": "high_provider_429",            # 실측·rate_limit_policy gdelt cooldown 900s
+        "robots_tos_status": "public_api_no_bypass",
+    },
+    "rss": {                                                # key-free RSS 함대(bbc/aljazeera/yna/…·auth=none)
+        "provider_accessibility": "key_free_rss",
+        "rate_limit_risk": "low_bounded_feed",             # 실측: 실 RSS smoke 429 0
+        "robots_tos_status": "public_feed_bounded",
+    },
+    "federal_register": {
+        "provider_accessibility": "key_free_rest",
+        "rate_limit_risk": "low",
+        "robots_tos_status": "public_api",
+    },
+}
+_ACQUISITION_UNKNOWN: dict[str, str] = {
+    "provider_accessibility": "unknown", "rate_limit_risk": "unknown",
+    "robots_tos_status": "unknown_requires_legal_review",   # 신규 source 는 legal-safety review 전까지 unknown.
+}
+
+
+def _acquisition_profile(source_id: Optional[str]) -> dict[str, str]:
+    """source_id → 운영 acquisition 제약(하드 근거만·없으면 unknown). 'rss:'/'gdelt:' prefix·정확 id 매칭."""
+    sid = (source_id or "").strip()
+    base = sid.split(":", 1)[0] if ":" in sid else sid
+    prof = _ACQUISITION_PROFILE.get(base) or _ACQUISITION_PROFILE.get(sid)
+    return dict(prof) if prof else dict(_ACQUISITION_UNKNOWN)
 
 
 def _role_utilities(role: str) -> dict[str, Any]:
@@ -137,6 +207,9 @@ def build_source_quality_matrix(
             "failure_stage": None,
             # §8 overlap potential / role utility(ADR#57) — Agent 가 source 처리전략을 선택할 substrate.
             **_role_utilities(role),
+            # ADR#58 §9: source-level acquisition 제약(provider/rate-limit/robots·하드 근거만).
+            **_acquisition_profile(sid),
+            "agent_next_action": _agent_next_action(role, anchor_eligible),
             # §8 단계별 실패 원인(왜 anchor/adjudication/packet 이 막히는가).
             "identity_failure_reason": (None if anchor_eligible else (
                 "non_publishable_role" if not publishable else "no_canonical_anchor")),
@@ -160,11 +233,26 @@ def build_source_quality_matrix(
             "adjudication_readiness": "n/a", "packet_readiness": "n/a",
             "failure_stage": stage,
             **_ROLE_UTILITY_UNKNOWN,
+            **_acquisition_profile(sid),
+            "agent_next_action": "fail_closed_investigate",
             "identity_failure_reason": stage, "adjudication_failure_reason": stage,
             "packet_failure_reason": stage,
             "next_action": _failure_next_action(stage),
         })
     return rows
+
+
+def _agent_next_action(role: str, anchor_eligible: bool) -> str:
+    """role → Agent 의 다음 처리 action(merge anchor 만 cross-source 수집·나머지는 layer 분리·anchor 금지)."""
+    if role in _PUBLISHABLE_SOURCE_TYPES:
+        return ("collect_same_event_second_source_then_adjudicate" if anchor_eligible
+                else "resolve_canonical_then_recheck_anchor")
+    return {
+        "community": "attach_as_reaction_layer_no_anchor",
+        "signal": "attach_as_market_signal_no_anchor",
+        "catalog": "attach_as_entity_enrichment_no_anchor",
+        "search": "resolve_url_candidate_then_route_by_role",
+    }.get(role, "fail_closed_investigate")
 
 
 def _failure_next_action(stage: str) -> str:

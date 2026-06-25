@@ -317,3 +317,84 @@ def test_assemble_report_offline_smoke_mode_is_offline():
     r = assemble_activation_report(_smoke(), run_mode="fake", app_env="dev", database_url=_DEV_URL)
     assert r["smoke_mode"] == "offline"
     assert r["adjudication_block_reason"] == "db_not_reached"
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# ADR#58 §9 — source quality matrix 고도화(overlap acquisition·provider·robots) (25-32)
+# ════════════════════════════════════════════════════════════════════════════════
+def _q_rec(record_type, sid, **kw):
+    base = {"record_type": record_type, "source_id": sid, "title_or_label": "headline text here now",
+            "canonical_url": "http://a.test/x", "published_at_or_observed_at": "2026-06-22",
+            "body_state_or_signal": "present"}
+    base.update(kw)
+    return base
+
+
+def test_matrix_article_paraphrase_and_acquisition_fields():
+    """article(뉴스): title_paraphrase_risk=high·overlap_acquisition_utility=targeting 필요·multi_outlet_pairable."""
+    m = build_source_quality_matrix([_q_rec("article_candidate", "rss:bbc")])
+    row = m[0]
+    assert row["title_paraphrase_risk"] == "high_paraphrase_dominant"
+    assert row["overlap_acquisition_utility"] == "high_but_requires_targeting"
+    assert row["cross_source_pairability"] == "multi_outlet_pairable"
+    assert row["body_policy"] == "store_headline_canonical_only_no_body"
+
+
+def test_matrix_official_distinct_low_pairability():
+    """official(공식): 문서 distinct → paraphrase 낮음·pairability 낮음(1문서=1URL=1사건)."""
+    m = build_source_quality_matrix([_q_rec("official_record", "federal_register")])
+    row = m[0]
+    assert row["title_paraphrase_risk"] == "low_distinct_document"
+    assert row["cross_source_pairability"] == "distinct_low_pairable"
+
+
+def test_matrix_source_level_acquisition_profile_grounded():
+    """provider_accessibility/rate_limit_risk/robots_tos_status — 하드 근거 source(gdelt/rss/federal_register)만 명시."""
+    rss = build_source_quality_matrix([_q_rec("article_candidate", "rss:aljazeera")])[0]
+    assert rss["provider_accessibility"] == "key_free_rss"
+    assert rss["rate_limit_risk"] == "low_bounded_feed"        # 실 RSS smoke 429 0.
+    fr = build_source_quality_matrix([_q_rec("official_record", "federal_register")])[0]
+    assert fr["provider_accessibility"] == "key_free_rest"
+
+
+def test_matrix_gdelt_rate_limit_risk_surfaced():
+    """gdelt prefix → rate_limit_risk=high_provider_429·no_bypass(실측·rate_limit_policy cooldown 900s)."""
+    m = build_source_quality_matrix([_q_rec("article_candidate", "gdelt:wire_ap")])
+    row = m[0]
+    assert row["rate_limit_risk"] == "high_provider_429"
+    assert row["robots_tos_status"] == "public_api_no_bypass"
+
+
+def test_matrix_unknown_source_acquisition_is_unknown_not_fabricated():
+    """근거 없는 source → provider/rate-limit/robots=unknown(fabrication 0·legal review 전 unknown)."""
+    m = build_source_quality_matrix([_q_rec("article_candidate", "some_new_blog")])
+    row = m[0]
+    assert row["provider_accessibility"] == "unknown"
+    assert row["robots_tos_status"] == "unknown_requires_legal_review"
+
+
+def test_matrix_community_reaction_guard_and_agent_action():
+    """community: anchor 금지(reaction layer)·agent_next_action=attach_as_reaction_layer_no_anchor."""
+    m = build_source_quality_matrix([_q_rec("community_signal", "hn", body_state_or_signal="missing")])
+    row = m[0]
+    assert row["community_reaction_layer_eligible"] is True
+    assert row["cross_source_pairability"] == "not_pairable_anchor_forbidden"
+    assert row["agent_next_action"] == "attach_as_reaction_layer_no_anchor"
+
+
+def test_matrix_market_catalog_guard_only():
+    """signal/catalog: anchor 아님(market_signal/entity_enrichment)·pairability not_pairable."""
+    sig = build_source_quality_matrix([_q_rec("structured_signal", "binance_market", body_state_or_signal="missing")])[0]
+    cat = build_source_quality_matrix([_q_rec("catalog_metadata", "tmdb", body_state_or_signal="missing")])[0]
+    assert sig["agent_next_action"] == "attach_as_market_signal_no_anchor"
+    assert cat["agent_next_action"] == "attach_as_entity_enrichment_no_anchor"
+    assert sig["cross_source_pairability"] == "not_pairable_anchor_forbidden"
+
+
+def test_matrix_failure_row_acquisition_unknown():
+    """fetch 실패 source(0 record) → role utility unknown + acquisition unknown(하드 근거 있으면 명시)."""
+    m = build_source_quality_matrix([], failures_by_source={"gdelt": "rate_limited"})
+    row = m[0]
+    assert row["fetch_ok"] is False
+    assert row["rate_limit_risk"] == "high_provider_429"      # gdelt 는 하드 근거 → 명시.
+    assert row["agent_next_action"] == "fail_closed_investigate"
