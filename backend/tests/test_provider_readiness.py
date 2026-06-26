@@ -520,12 +520,13 @@ def test_48_newsapi_credentialed_but_fetcher_not_wired():
     assert row["live_query_capable_if_credentials_present"] is False
 
 
-def test_49_wired_providers_includes_guardian_only_among_key_required():
+def test_49_wired_providers_includes_guardian_and_nyt_among_key_required():
+    # ADR#64: NYT 2nd adapter wired(cross-source pair with Guardian). newsapi/gnews 는 여전히 미배선.
     rep = _ok_report(env_status_fn=env_present)
-    assert "guardian" in rep["wired_providers"]
+    assert "guardian" in rep["wired_providers"] and "nyt" in rep["wired_providers"]
     assert "gdelt" in rep["wired_providers"] and "rss_fleet" in rep["wired_providers"]
-    assert "newsapi" not in rep["wired_providers"] and "nyt" not in rep["wired_providers"]
-    assert rep["adapter_wired_providers"] == ["guardian"]
+    assert "newsapi" not in rep["wired_providers"] and "gnews" not in rep["wired_providers"]
+    assert rep["adapter_wired_providers"] == ["guardian", "nyt"]
 
 
 def test_50_agent_schema_includes_adapter_contract():

@@ -18,6 +18,7 @@ from backend.app.tools.provider_query_adapters import (
     ProviderQueryResult,
     adapter_descriptor,
     parse_guardian_items,
+    parse_nyt_items,
     provider_adapter_contract,
     run_provider_query,
 )
@@ -245,7 +246,7 @@ def test_21_adapter_descriptor_wired_only():
     assert d["queue_integration_status"] == "wired"
     assert d["parser_contract_status"] == "implemented"
     assert adapter_descriptor("newsapi") is None   # 미배선 → descriptor 없음.
-    assert sorted(ADAPTER_WIRED_PROVIDERS) == ["guardian"]
+    assert sorted(ADAPTER_WIRED_PROVIDERS) == ["guardian", "nyt"]   # ADR#64: NYT 2nd adapter wired.
 
 
 def test_22_max_records_zero_respected_not_default():
@@ -257,6 +258,122 @@ def test_22_max_records_zero_respected_not_default():
                             env_status_fn=env_present)
     assert qr.records_count == 0
     assert qr.status == "no_records"
+
+
+# ══ Section D — NYT 2nd adapter (ADR#64 · cross-source pair with Guardian) ════════════════════════════════
+def _nyt_payload(results=None):
+    if results is None:
+        results = [
+            {"headline": {"main": WIRE}, "web_url": "https://www.nytimes.com/a",
+             "pub_date": "2026-06-22T12:00:00+0000"},
+            {"headline": {"main": PARA}, "web_url": "https://www.nytimes.com/b",
+             "pub_date": "2026-06-22T13:00:00+0000"},
+            {"headline": {"main": DIFF}, "web_url": "https://www.nytimes.com/c",
+             "pub_date": "2026-06-22T14:00:00+0000"},
+        ]
+    return json.dumps({"status": "OK", "response": {"docs": results}})
+
+
+def _nyt_transport(_url):
+    return _nyt_payload()
+
+
+def test_23_nyt_adapter_wired():
+    d = adapter_descriptor("nyt")
+    assert d is not None and d["fetch_implemented"] is True
+    assert d["queue_integration_status"] == "wired" and d["parser_contract_status"] == "implemented"
+    assert "nyt" in ADAPTER_WIRED_PROVIDERS
+
+
+def test_24_nyt_records_normalized_rec_shape():
+    recs = parse_nyt_items(_nyt_payload())
+    assert len(recs) == 3
+    r = recs[0]
+    for k in ("record_type", "source_id", "title_or_label", "canonical_url",
+              "published_at_or_observed_at", "body_state_or_signal"):
+        assert k in r, f"record missing {k}"
+    assert r["source_id"] == "nyt"
+    assert r["title_or_label"] == WIRE
+    assert r["canonical_url"] == "https://www.nytimes.com/a"
+    assert r["published_at_or_observed_at"] == "2026-06-22"   # pub_date ISO→date bucket 정규화.
+    assert not ({"body", "content", "raw_payload", "text", "abstract", "lead_paragraph"} & set(r))
+
+
+def test_25_nyt_missing_credentials_before_network():
+    qr = run_provider_query("nyt", topic="x", transport=_boom_transport, env_status_fn=env_missing)
+    assert qr.status == "missing_credentials" and qr.records_count == 0
+    assert "NYT_API_KEY" in (qr.next_action or "")
+    assert _SECRET not in (qr.next_action or "")
+
+
+def test_26_nyt_fake_transport_success_returns_records():
+    qr = run_provider_query("nyt", topic="fed", transport=_nyt_transport,
+                            env_status_fn=env_present, today="2026-06-22")
+    assert qr.status == "ok" and qr.records_count == 3 and qr.provenance == "live_derived"
+    assert [r["title_or_label"] for r in qr.records] == [WIRE, PARA, DIFF]
+    assert all(r["source_id"] == "nyt" for r in qr.records)
+    assert qr.raw_body_stored is False
+
+
+def test_27_nyt_parser_error_on_bad_status():
+    # status != OK → None → parser_error(잘못된 결과를 records 로 둔갑 안 함).
+    bad = json.dumps({"status": "ERROR", "response": {"docs": []}})
+    qr = run_provider_query("nyt", topic="x", transport=lambda _u: bad, env_status_fn=env_present)
+    assert qr.status == "parser_error"
+    qr2 = run_provider_query("nyt", topic="x", transport=lambda _u: "not json", env_status_fn=env_present)
+    assert qr2.status == "parser_error"
+
+
+def test_28_nyt_network_error_and_no_records():
+    assert run_provider_query("nyt", topic="x", transport=lambda _u: None,
+                              env_status_fn=env_present).status == "network_error"
+    empty = json.dumps({"status": "OK", "response": {"docs": []}})
+    assert run_provider_query("nyt", topic="x", transport=lambda _u: empty,
+                              env_status_fn=env_present).status == "no_records"
+
+
+def test_29_nyt_max_records_bounded():
+    many = [{"headline": {"main": f"t{i}"}, "web_url": f"https://nyt.test/{i}",
+             "pub_date": "2026-06-22T12:00:00+0000"} for i in range(30)]
+    qr = run_provider_query("nyt", topic="x", max_records=3,
+                            transport=lambda _u: _nyt_payload(results=many), env_status_fn=env_present)
+    assert qr.status == "ok" and qr.records_count == 3
+
+
+def test_30_nyt_url_keyless_and_date_yyyymmdd():
+    # NYT date 형식 YYYYMMDD(대시 제거)·api-key 는 URL 에 절대 없음(keyless·httpx params 전용).
+    captured = {}
+
+    def cap_transport(url):
+        captured["url"] = url
+        return _nyt_payload()
+
+    qr = run_provider_query("nyt", topic="fed rate", transport=cap_transport,
+                            env_status_fn=env_present, time_window="7d", today="2026-06-22")
+    assert qr.status == "ok" and qr.secret_exposed is False
+    url = captured["url"]
+    assert "api-key" not in url and _SECRET not in url
+    assert "begin_date=20260615" in url and "end_date=20260622" in url   # YYYYMMDD·대시 제거.
+    assert "q=fed+rate" in url or "q=fed%20rate" in url
+
+
+def test_31_nyt_headline_string_or_missing_or_malformed_handled():
+    # headline 이 문자열/누락/**malformed(list·숫자)**여도 크래시 없이 안전(빈 title 은 skip).
+    # code-review MEDIUM: headline 이 list/int 면 `.strip()` AttributeError 가 run_provider_query 까지 전파되던 것 방지.
+    results = [
+        {"headline": "Plain string headline form", "web_url": "https://nyt.test/s",
+         "pub_date": "2026-06-22T00:00:00+0000"},
+        {"headline": {"main": ""}, "web_url": "https://nyt.test/empty", "pub_date": "2026-06-22"},
+        {"web_url": "https://nyt.test/nohl", "pub_date": "2026-06-22"},
+        {"headline": ["a", "b"], "web_url": "https://nyt.test/list", "pub_date": "2026-06-22"},
+        {"headline": 123, "web_url": "https://nyt.test/int", "pub_date": "2026-06-22"},
+    ]
+    recs = parse_nyt_items(_nyt_payload(results=results))   # malformed 도 예외 없이 skip.
+    assert len(recs) == 1 and recs[0]["title_or_label"] == "Plain string headline form"
+    # run_provider_query 경로에서도 malformed doc 이 전체 쿼리를 깨지 않음(graceful).
+    qr = run_provider_query("nyt", topic="x", transport=lambda _u: _nyt_payload(results=results),
+                            env_status_fn=env_present)
+    assert qr.status == "ok" and qr.records_count == 1
 
 
 if __name__ == "__main__":

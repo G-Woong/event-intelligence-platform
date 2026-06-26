@@ -93,7 +93,26 @@ GUARDIAN_ADAPTER = ProviderQueryAdapter(
     host_min_spacing_seconds=_GUARDIAN_HOST_MIN_SPACING_SECONDS,
 )
 
-_ADAPTERS: dict[str, ProviderQueryAdapter] = {"guardian": GUARDIAN_ADAPTER}
+# ── 2nd 실 adapter: NYT Article Search API(ADR#64·key-required·news·topic+time_window) ──────────────────
+# ADR#63 가 실 key 로 입증한 한계: Guardian 단일 source same-event overlap 0(no_title_overlap·구조적). 다음 unblock
+# 은 cross-source — Guardian 과 같은 영문 quality **단일 publisher** 를 붙여 다출처 같은 사건 near-match 를 만든다
+# (aggregator(newsapi/gnews)는 Guardian 자기기사 재유입=same-source 오염 위험 → 단일 publisher NYT 가 깨끗). NYT 는
+# auth=query_param `api-key`(Guardian 과 동일) → run_provider_query 의 params 전달 **무수정 재사용**. robots/tos: 무료
+# 500/day·비상업(별도 라이선스 시 상업)·본 adapter 는 headline+web_url+pub_date 만 near-match 탐지용으로 쓰고 **본문
+# 미저장·public IU 미생성** → 재배포 아님(Guardian 과 동일 ToS 경계). date 형식만 YYYYMMDD(_nyt_url 가 변환).
+_NYT_HOST = "api.nytimes.com"
+_NYT_HOST_MIN_SPACING_SECONDS = 12   # NYT 5 req/min 권고 → 12s shared-gate floor(no-bypass·free 500/day 보수).
+
+NYT_ADAPTER = ProviderQueryAdapter(
+    provider_id="nyt", query_capable=True, auth_required=True,
+    required_env_vars=("NYT_API_KEY",), fetch_implemented=True,
+    supports_topic_query=True, supports_time_window=True, supports_source_pair=False,
+    max_records=_DEFAULT_MAX_RECORDS, rate_limit_policy_id="nyt",
+    host=_NYT_HOST, host_gate_key=_NYT_HOST,
+    host_min_spacing_seconds=_NYT_HOST_MIN_SPACING_SECONDS,
+)
+
+_ADAPTERS: dict[str, ProviderQueryAdapter] = {"guardian": GUARDIAN_ADAPTER, "nyt": NYT_ADAPTER}
 # 이 모듈의 contract adapter 로 fetch 되는 provider(= ADR#60 native gdelt/rss 가 **아닌** 신규 wired provider).
 ADAPTER_WIRED_PROVIDERS = frozenset(_ADAPTERS)
 
@@ -213,8 +232,63 @@ def parse_guardian_items(
     return recs
 
 
-_URL_BUILDERS: dict[str, Callable[..., str]] = {"guardian": _guardian_url}
-_PARSERS: dict[str, Callable[..., Optional[list[dict]]]] = {"guardian": parse_guardian_items}
+def _nyt_url(
+    endpoint: str, *, topic: str, from_date: str, to_date: str, max_records: int,
+) -> str:
+    """NYT Article Search /articlesearch.json URL(q·begin_date·end_date·sort=newest). **api-key 는 URL 에 넣지 않는다**
+    — keyless(secret hygiene·Guardian 과 동일); 실 network 경로는 key 를 httpx `params` 로만 전달(run_provider_query).
+    NYT date 형식은 YYYYMMDD(대시 제거). page-size 파라미터 없음(고정 10/page) — max_records 는 parser 가 cap."""
+    return endpoint + "?" + urlencode({
+        "q": topic, "begin_date": from_date.replace("-", ""), "end_date": to_date.replace("-", ""),
+        "sort": "newest",
+    })
+
+
+def parse_nyt_items(
+    payload: str, *, max_records: int = _DEFAULT_MAX_RECORDS,
+) -> Optional[list[dict]]:
+    """NYT Article Search JSON → `_rec`(title≤512=headline.main·canonical=web_url·published=pub_date·**본문 미저장**).
+
+    공식 shape: {"status":"OK","response":{"docs":[{"headline":{"main"},"web_url","pub_date", ...}]}}.
+    파싱 실패/status!=OK/docs 부재 → None(parser_error). 같은 사건을 Guardian 과 다른 매체·다른 URL 로 보도 →
+    cross-source near_match_below_fingerprint(reviewer-zone)의 생성원. record_type=article_candidate → role=article(publishable)."""
+    try:
+        data = json.loads(payload)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    if data.get("status") and data.get("status") != "OK":
+        return None
+    resp = data.get("response")
+    if not isinstance(resp, dict):
+        return None
+    docs = resp.get("docs")
+    if not isinstance(docs, list):
+        return None
+    recs: list[dict] = []
+    for art in docs[:max_records]:
+        if not isinstance(art, dict):
+            continue
+        hl = art.get("headline")
+        # headline 은 보통 {"main": ...}; 일부 응답은 문자열. dict/str 외(list/숫자 등 malformed)는 빈 title 로
+        # 강등해 skip(code-review MEDIUM: `.strip()` AttributeError 가 run_provider_query 까지 전파되는 것 방지).
+        title = hl.get("main") if isinstance(hl, dict) else hl
+        title = (title if isinstance(title, str) else "").strip()
+        url = (art.get("web_url") or "").strip()
+        if not title or not url:
+            continue
+        recs.append(_rec(
+            record_type="article_candidate", source_id="nyt",
+            title_or_label=title[:512], canonical_url=url, source_url_or_evidence=url,
+            published_at_or_observed_at=_iso_date(art.get("pub_date")),
+            body_state_or_signal="present"))
+    return recs
+
+
+_URL_BUILDERS: dict[str, Callable[..., str]] = {"guardian": _guardian_url, "nyt": _nyt_url}
+_PARSERS: dict[str, Callable[..., Optional[list[dict]]]] = {
+    "guardian": parse_guardian_items, "nyt": parse_nyt_items}
 
 
 # ── 공통 governed live query(opt-in·network·CI 아님; transport 주입 시 결정론·network 0) ──────────────────
