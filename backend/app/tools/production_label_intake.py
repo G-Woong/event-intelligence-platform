@@ -471,6 +471,7 @@ def run_production_label_intake(
         "negative_gold_count": negative_gold_count,
         "agreement_rate": agreement_rate,
         "conflict_rate": conflict_rate,
+        "conflict_count": conflict_count,   # ADR#69 additive 노출 — reviewer_followup_ops 의 conflict_pair_count 소스.
         "korean_gold_count": korean_gold_count,
         "korean_calibration_target": GOLD_MERGE_MIN_KOREAN_GOLD,
         "hard_negative_count": manifest["hard_negative_count"],
