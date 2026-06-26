@@ -419,11 +419,17 @@ def fetch_rss_overlap_records(
 def discover_overlap(
     records: list[dict], *, discovery_mode: str = "captured_fixture",
     real_fetch: bool = False, near_jaccard: float = DEFAULT_NEAR_JACCARD,
+    emit_candidate_pairs: bool = False,
 ) -> dict:
     """record 목록 → 다입도 pairwise overlap 수치화(write-free·no-merge·§4/§5 fields).
 
     overlap 을 ①fingerprint 정확일치(deterministic 검출) ②near_match_below_fingerprint(adjudicator/LLM 영역)
-    로 분해해 "어디까지 deterministic 이 잡고 어디부터 adjudicator 영역인가"를 정직하게 가른다. 병합하지 않는다."""
+    로 분해해 "어디까지 deterministic 이 잡고 어디부터 adjudicator 영역인가"를 정직하게 가른다. 병합하지 않는다.
+
+    emit_candidate_pairs(ADR#65·additive·기본 off=ADR#57/#64 frozen 불변): True 면 **near floor 와 무관하게**
+    전 publishable·cross-URL·same-date pair 를 `candidate_pairs`(band 태그: fingerprint/near_match/hard_negative/
+    below_floor)로 노출한다. deterministic near band 가 떨군 paraphrase 후보(ADR#64 cross_source_pair 100 중
+    title-Jaccard<floor)를 **semantic candidate scorer 가 직접 점수화**하도록 입력을 제공하기 위함(병합·단정 0·점수 0)."""
     n = len(records)
     by_source: dict[str, int] = {}
     for r in records:
@@ -438,6 +444,7 @@ def discover_overlap(
     possible_same_event: list[tuple[str, str, str]] = []   # (canonical_i, canonical_j, granularity)
     near_match_pairs: list[dict] = []      # near(adjudicator-zone) pair 전체 정보(reviewer route 입력·병합 아님)
     hard_negative_pairs: list[dict] = []   # hard-negative band pair(reviewer/gold 음성 floor·calibration·라벨은 reviewer)
+    candidate_pairs: list[dict] = []       # ADR#65: 전 publishable cross-URL same-date pair(band 태그·scorer 입력·emit_candidate_pairs 시만)
     pair_matrix: dict[tuple[str, str], dict[str, int]] = {}
     publishable_pairs = 0
     publishable_same_date_pairs = 0
@@ -466,12 +473,15 @@ def discover_overlap(
         pkey = tuple(sorted((ra.get("source_id") or "unknown", rb.get("source_id") or "unknown")))
         slot = pair_matrix.setdefault(pkey, {"same_date": 0, "fingerprint": 0, "near": 0, "hard_neg": 0, "possible": 0})
         slot["same_date"] += 1
+        band = "below_floor"   # ADR#65 candidate band(near floor 미만 — deterministic 가 떨군 paraphrase 후보 포함)
         if fa is not None and fa == fb:
+            band = "fingerprint"
             fingerprint_overlap += 1
             slot["fingerprint"] += 1
             slot["possible"] += 1
             possible_same_event.append((ca, cb, "fingerprint"))
         elif jac >= near_jaccard:
+            band = "near_match"
             near_only += 1
             slot["near"] += 1
             slot["possible"] += 1
@@ -480,9 +490,15 @@ def discover_overlap(
         elif jac >= _HARD_NEG_FLOOR:
             # overlap 은 있으나 near 미만 — 같은 사건 후보 아님(possible 미가산). 다른 사건이 비슷한 어휘를 쓰는
             # "헷갈릴 만한 음성"(hard negative) — reviewer/gold 음성 floor·calibration 으로만 보냄(병합·단정 0).
+            band = "hard_negative"
             hard_neg_band += 1
             slot["hard_neg"] += 1
             hard_negative_pairs.append(_near_pair_record(ra, rb, a, b, jac, prefix="hn"))
+        if emit_candidate_pairs:
+            # band 무관·전 publishable cross-URL same-date pair → scorer 입력(점수 0·병합 0). order-invariant pair_id=cp:i-j.
+            cp = _near_pair_record(ra, rb, a, b, jac, prefix="cp")
+            cp["band"] = band
+            candidate_pairs.append(cp)
 
     block_reasons = _block_reasons(
         records, possible=len(possible_same_event), fingerprint=fingerprint_overlap, near=near_only,
@@ -512,6 +528,7 @@ def discover_overlap(
         "near_match_pairs": near_match_pairs,        # adjudicator-zone pair 전체 정보(reviewer route 입력·병합 아님)
         "hard_negative_band_pairs": hard_neg_band,   # [floor,near) overlap·different-event lean(reviewer 음성 후보 수)
         "hard_negative_pairs": hard_negative_pairs,  # hard-negative band pair 전체 정보(reviewer/gold calibration·병합 아님)
+        "candidate_pairs": candidate_pairs,          # ADR#65: 전 publishable cross-URL same-date pair(band 태그·scorer 입력·emit_candidate_pairs 시만·기본 [])
         # write-free — DB 단계는 미도달(정직). live-db escalation 시 real_source_identity_smoke 가 채운다.
         "semantic_cross_batch_candidates": None,
         "adjudications": None,

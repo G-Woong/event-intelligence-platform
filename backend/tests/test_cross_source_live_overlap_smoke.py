@@ -408,3 +408,33 @@ def test_30_cli_json_output_secret_free(monkeypatch, capsys):
     parsed = json.loads(out)
     assert parsed["smoke_name"] == "cross_source_live_overlap"
     assert parsed["credential_value_exposed"] is False
+
+
+# ── ADR#65 semantic scoring wiring (additive·기본 off=ADR#64 동작 보존) ───────────────────────────────
+def test_31_semantic_scoring_off_by_default_preserves_adr64():
+    """semantic_scoring 미지정 → semantic_scoring None·requested False(커밋 ADR#64 동작 보존)."""
+    r = _both_ok()
+    assert r["semantic_scoring_requested"] is False
+    assert r["semantic_scoring"] is None
+
+
+def test_32_semantic_scoring_wired_when_opt_in():
+    """semantic_scoring=True + 양 provider ok → scorer 결과 부착(병합 0·LLM 0·embedding 실호출 0·score 숨김)."""
+    r = _both_ok(semantic_scoring=True)
+    assert r["semantic_scoring_requested"] is True
+    s = r["semantic_scoring"]
+    assert s is not None
+    assert s["scorer_mode"] == "deterministic_scaffold"
+    assert s["input_pair_count"] >= 1            # cross-source candidate pair 가 scorer 입력으로 들어감.
+    assert s["merge_allowed"] is False and s["production_gold_count"] == 0
+    assert s["llm_invoked"] is False and s["embedding_invoked"] is False
+    assert s["labeler_prediction_hidden"] is True and s["score_hidden_from_labeler"] is True
+
+
+def test_33_semantic_scoring_skipped_when_single_provider():
+    """provider_b 실패(single-source) → cross-source 미인정 → semantic_scoring None(둔갑 0)."""
+    r = run_cross_source_live_overlap_smoke(
+        live_query=True, env_probe_fn=_probe(True), transport_a=_guardian_tr,
+        transport_b=_nyt_empty_tr, semantic_scoring=True)
+    assert r["semantic_scoring"] is None
+    assert "no_records_provider_b" in r["block_reasons"]

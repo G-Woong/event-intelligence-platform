@@ -40,6 +40,11 @@ from backend.app.tools.provider_query_adapters import (
     NYT_ADAPTER,
     run_provider_query,
 )
+from backend.app.tools.semantic_candidate_scorer import (
+    DEFAULT_TOP_K,
+    MODE_DETERMINISTIC,
+    run_semantic_candidate_scoring,
+)
 from backend.app.tools.source_overlap_discovery import discover_overlap
 
 _SMOKE_NAME = "cross_source_live_overlap"
@@ -140,6 +145,8 @@ def run_cross_source_live_overlap_smoke(
     env_probe_fn: Optional[Callable[[str], dict]] = None,
     host_gate: Any = None, reviewers: Optional[list[str]] = None,
     packet_id: str = "cross_source_near_match_pkt",
+    semantic_scoring: bool = False, scorer_mode: str = MODE_DETERMINISTIC,
+    scorer_top_k: int = DEFAULT_TOP_K,
 ) -> dict:
     """opt-in secret-safe cross-source live overlap smoke(§4 계약). 기본 live_query=False → 시도 0.
 
@@ -169,6 +176,7 @@ def run_cross_source_live_overlap_smoke(
     combined_records: list[dict] = []
     cross_pair = cross_near = cross_hard = cross_fp = 0
     queue_pop = 0
+    semantic_scoring_result: Optional[dict] = None   # ADR#65 opt-in(기본 off=커밋 ADR#64 동작 보존).
     dataset_source: Optional[str] = None
     labeler_prediction_hidden = True
     live_query_attempted = False
@@ -241,6 +249,26 @@ def run_cross_source_live_overlap_smoke(
                 elif cross_near == 0:
                     block_reasons.append("no_near_match")
 
+                # ADR#65 opt-in: deterministic near floor 가 떨군 cross-source pair 를 semantic candidate scorer 로
+                # 점수화(top-k rank·threshold 아님)→ reviewer queue prioritization. 병합·LLM·embedding 실호출·DB 0.
+                # 기본 off(커밋 ADR#64 동작 보존). scorer 는 cross_source_only=True(기본)로 same-source pair 를 제외 —
+                # combined_records(예: guardian 10+nyt 10) 의 same-date publishable pair 중 **cross-source(source_id 상이)
+                # 만** 점수화(guardian×nyt=cross_source_pair_count, same-source C(10,2)×2 는 same_source_pair_excluded·§6/§13).
+                if semantic_scoring:
+                    sem = run_semantic_candidate_scoring(
+                        records=combined_records, scorer_mode=scorer_mode, top_k=scorer_top_k,
+                        topic=topic, time_window=time_window, provider_a=provider_a,
+                        provider_b=provider_b, dataset_source="live_derived",
+                        provenance="live_derived", reviewers=reviewers)
+                    semantic_scoring_result = {k: sem[k] for k in (
+                        "scorer_mode", "input_pair_count", "cross_source_pair_count",
+                        "same_source_pair_excluded", "cross_source_only", "scored_pair_count",
+                        "candidate_count", "above_near_floor_count", "candidate_band_distribution",
+                        "reviewer_queue_population_count", "near_match_count", "hard_negative_count",
+                        "score_distribution", "labeler_prediction_hidden", "score_hidden_from_labeler",
+                        "merge_allowed", "production_gold_count", "no_merge_without_gold", "db_write",
+                        "llm_invoked", "embedding_invoked", "block_reasons")}
+
     next_actions = [_next_action_for(br, env_var_by_provider) for br in block_reasons]
     return {
         "smoke_name": _SMOKE_NAME,
@@ -267,6 +295,8 @@ def run_cross_source_live_overlap_smoke(
         "hard_negative_count": cross_hard,
         "reviewer_queue_population_count": queue_pop,
         "labeler_prediction_hidden": labeler_prediction_hidden,
+        "semantic_scoring_requested": bool(semantic_scoring),
+        "semantic_scoring": semantic_scoring_result,   # ADR#65 opt-in 결과(off/미도달 시 None·커밋 ADR#64 동작 보존).
         "dataset_source_by_provider": dataset_source_by_provider,
         "dataset_source": dataset_source,
         "provenance": dataset_source or "none",   # cross-source 후보/records 0이면 fixture 둔갑 금지 — provenance 없음.
@@ -296,6 +326,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     parser.add_argument("--time-window", default="1d", help="time window(1d/7d).")
     parser.add_argument("--live-query", action="store_true",
                         help="실 governed fetch opt-in(network·CI 아님). 양 provider credential 필요. key 값 미노출.")
+    parser.add_argument("--semantic-scoring", action="store_true",
+                        help="ADR#65 opt-in: cross-source pair 를 semantic candidate scorer 로 점수화(병합 0·LLM 0·embedding 실호출 0).")
     parser.add_argument("--json", action="store_true", help="§4 smoke report 를 JSON 으로 출력.")
     ns = parser.parse_args(sys.argv[1:] if argv is None else argv)
 
@@ -312,7 +344,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     out = run_cross_source_live_overlap_smoke(
         provider_b=ns.provider_b, topic=ns.topic, time_window=ns.time_window,
-        live_query=ns.live_query, host_gate=host_gate)
+        live_query=ns.live_query, host_gate=host_gate, semantic_scoring=ns.semantic_scoring)
 
     if ns.json:
         print(json.dumps(out, ensure_ascii=False, indent=2))
@@ -329,6 +361,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     print(f"- cross-source: fingerprint={out['fingerprint_overlap_count']} near={out['near_match_count']} "
           f"hard={out['hard_negative_count']} queue_pop={out['reviewer_queue_population_count']}")
     print(f"- dataset_source={out['dataset_source']} provenance={out['provenance']}")
+    if out.get("semantic_scoring"):
+        s = out["semantic_scoring"]
+        print(f"- semantic_scoring[{s['scorer_mode']}]: input={s['input_pair_count']} "
+              f"cross_source={s['cross_source_pair_count']} same_source_excluded={s['same_source_pair_excluded']} "
+              f"scored={s['scored_pair_count']} candidates={s['candidate_count']} "
+              f"above_near_floor={s['above_near_floor_count']} queue_pop={s['reviewer_queue_population_count']} "
+              f"merge_allowed={s['merge_allowed']} llm_invoked={s['llm_invoked']}")
     print(f"- block_reasons={out['block_reasons']}")
     print(f"- next_actions={out['next_actions']}")
     print(f"- production_gold={out['production_gold_count']} merge_allowed={out['merge_allowed']} "
