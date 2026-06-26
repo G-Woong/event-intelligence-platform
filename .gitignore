@@ -77,6 +77,9 @@ ingestion/logs/errors/
 !ingestion/outputs/**/.gitkeep
 !ingestion/logs/**/.gitkeep
 
+# reviewer batch label intake (ADR#67/#68) — real reviewer labels carry reviewer_id/rationale PII; never commit
+outputs/reviewer_batch/
+
 # GCP service account keys (never commit)
 gcp-service-account-key.json
 *service-account*.json
