@@ -716,6 +716,33 @@ OpsReviewBatchStatus (internal ops UI seed):
 - flags: { no_merge, no_public_iu, pii_safe, no_llm, no_db_write }   # 전부 True
 ```
 
+### §19.2 reviewer pilot **execution** status contract (ADR#71, internal ops dashboard execution 축)
+
+ADR#71 `reviewer_pilot_execution` 가 ADR#70 OpsReviewBatchStatus 위에 **pilot 실행 추적** 축을 더한다. handoff readiness(번들 배포 가능)와 **실 pilot 실행**(operator 가 실제로 reviewer 에게 contact 했는가·첫 returned label 이 들어왔는가)을 분리하는 별도 contract:
+
+```
+InternalOpsPilotExecutionStatus (internal ops UI · execution 축):
+- contract: "InternalOpsPilotExecutionStatus"
+- batch_id
+- pilot_status            (ADR#70 8-state)
+- execution_status        (8-state: not_started/awaiting_operator_contact/
+                           contacted_waiting_return/partial_returned/invalid_returned/
+                           conflict_pending/calibration_pending/
+                           labels_returned_ready_for_merge_gate_review)
+- contact_evidence_present
+- real_reviewers_contacted   (roster ∩ contact_status=contacted 만·evidence 없으면 0)
+- returned_label_count / missing_label_count / invalid_label_count / invalid_file_count
+- conflict_pair_count / overdue_count
+- production_gold_count / synthetic_gold_count
+- production_gold_provenance_verified   (현재 False·선언 기반)
+- calibration_ready / merge_gate_ready
+- next_action            (operator 한 줄 액션)
+- flags: { internal_only, no_public_truth, no_merge, no_public_iu,
+           pii_safe, no_llm, no_db_write, gold_provenance_verified }   # 전부 True 또는 안전쪽
+```
+
+**execution 축의 정직성**: `execution_status` 는 pilot_status 의 "회수 경로" 축과 **직교**한다 — operator contact evidence(operator 가 수동으로 수행한 접촉의 *기록*·시스템 전송 0)가 없으면 `awaiting_operator_contact` 를 정직하게 유지하고, `real_reviewers_contacted` 는 `contact_status=contacted` evidence(roster 내)만 카운트한다(prepared/declined/unavailable 분리·둔갑 차단). `internal_only`/`no_public_truth` flags 와 same_event/label/verdict truth 미노출로 R-OpsUIPrematureTruth 를 가드한다. **단 contact evidence 는 자기보고(self-attested)** — 실 contact 의 독립 확인은 returned label 회수가 사후 실증(R-ContactEvidenceIntegrity).
+
 **착수 게이트(§20 web UI 시점)**: internal ops dashboard 는 이 contract 위에서 **지금 착수 가능**하다 — workflow state(누가 무엇을 빠뜨렸는지·회수 진행)를 시각화할 뿐 unverified truth 를 노출하지 않기 때문이다(`flags.no_public_iu=True`·pseudonym only·PII-safe). 반면 **public Intelligence Unit UI 는 여전히 No-Go** — source identity/gold/MERGE_GATE(`RAG_KG_AGENT_READINESS` 9조건 중 1·4·5·7 미충족)를 통과하기 전까지 raw source→즉시 public output 은 금지다. **위험**: ops UI 필드(pilot_status·gold_count 등)가 public truth 로 오인될 수 있음(R-OpsUIPrematureTruth) → internal/public surface 물리적·시각적 분리가 구현 시 강제되어야 한다.
 
 ## §20. 단계별 "정의된 완료(Definition of Done)"
