@@ -5,8 +5,9 @@ import assert from "node:assert/strict";
 // 잠근다. 본 helper 의 1차 보증은 서버측(Python _assert_pii_safe + Pydantic 화이트리스트 + API forbidden-field
 // 테스트). 이 테스트는 표시층이 forbidden 필드를 re-introduce 하지 않는다는 2차 lock 이다.
 const FORBIDDEN_OPS_FIELDS = [
-  "score", "rationale", "predicted_status", "same_event", "raw_body",
-  "reviewer_name", "reviewer_email", "reviewer_phone", "email", "phone", "secret", "api_key",
+  "score", "model_score", "rationale", "predicted_status", "same_event", "raw_body", "body",
+  "reviewer_name", "name", "reviewer_email", "reviewer_phone", "email", "phone", "secret", "api_key",
+  "provider_secret", "hidden_rank", "source_hidden_rank",
 ];
 
 const OPS_NO_GO_COPY = {
@@ -122,5 +123,114 @@ describe("OPS_NO_GO_COPY", () => {
     assert.ok(OPS_NO_GO_COPY.notPublicTruth.includes("Not public truth"));
     assert.ok(OPS_NO_GO_COPY.noMerge.includes("No merge"));
     assert.ok(OPS_NO_GO_COPY.requiresMergeGate.includes("MERGE_GATE"));
+  });
+});
+
+// ── ADR#73 preflight view(auth/deploy posture + R1~R7 readiness) — inline 재선언 lock ──
+const OPS_PREFLIGHT_COPY = {
+  externalInputRequired: "Awaiting actual returned labels — external reviewer input required",
+  unsafeExposure: "UNSAFE: dashboard enabled without auth in a non-production environment",
+  misconfigured: "Misconfigured: dashboard enabled without admin token in a prod-like environment",
+  deploymentUnproven: "Deployment boundary not proven (per-user auth absent — internal only)",
+};
+
+function toPreflightDisplayRows(p) {
+  return [
+    { label: "Preflight status", value: p.preflight_status },
+    { label: "Auth boundary", value: p.auth_boundary_status },
+    { label: "App env", value: p.app_env },
+    { label: "Admin token configured", value: String(p.admin_token_configured) },
+    { label: "Dashboard flag enabled", value: String(p.feature_flag_enabled) },
+    { label: "Deployment proven", value: String(p.deployment_proven) },
+    { label: "Actual input status", value: p.actual_input_status },
+    { label: "External input required", value: String(p.external_input_required) },
+    { label: "Production gold (unverified)", value: `${p.production_gold_count}` },
+    { label: "Merge gate ready", value: String(p.merge_gate_ready) },
+  ];
+}
+
+function preflightWarnings(p) {
+  const out = [];
+  if (p.preflight_status === "unsafe_public_exposure") out.push(OPS_PREFLIGHT_COPY.unsafeExposure);
+  if (p.preflight_status === "misconfigured") out.push(OPS_PREFLIGHT_COPY.misconfigured);
+  if (p.external_input_required) out.push(OPS_PREFLIGHT_COPY.externalInputRequired);
+  if (!p.deployment_proven) out.push(OPS_PREFLIGHT_COPY.deploymentUnproven);
+  return out;
+}
+
+const SAMPLE_PREFLIGHT = {
+  contract: "InternalOpsPreflightStatus",
+  preflight_status: "disabled_safe",
+  auth_boundary_status: "hardened_partial",
+  app_env: "dev",
+  admin_token_required: true,
+  admin_token_configured: false,
+  feature_flag_required: true,
+  feature_flag_enabled: false,
+  frontend_server_env_required: true,
+  public_nav_exposed: false,
+  deployment_proven: false,
+  actual_input_status: "no_actual_input",
+  external_input_required: true,
+  production_gold_count: 0,
+  calibration_ready: false,
+  merge_gate_ready: false,
+  r1_r7_readiness_matrix_ready: true,
+  r1_r7_stages: [
+    { stage: "R1", goal: "production gold floor", current_status: "FAIL",
+      blocker: "actual returned labels", next_action: "collect labels" },
+    { stage: "R7", goal: "Agent synthesis / Intelligence Unit", current_status: "No-Go",
+      blocker: "R1-R6 gates unmet", next_action: "gated synthesis only after all gates" },
+  ],
+  flags: {
+    internal_only: true, no_public_truth: true, no_merge: true, no_public_iu: true,
+    pii_safe: true, no_llm: true, no_db_write: true, gold_provenance_verified: false,
+  },
+  block_reasons: ["dashboard_disabled"],
+  next_actions: ["keep INTERNAL_OPS_DASHBOARD_ENABLED off unless internal operator access is needed"],
+};
+
+describe("preflight view", () => {
+  it("passes the forbidden-field guard (no score/rationale/predicted_status/PII/token)", () => {
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_PREFLIGHT));
+  });
+
+  it("never exposes an admin token value (only the configured bool)", () => {
+    const blob = JSON.stringify(SAMPLE_PREFLIGHT);
+    assert.ok(!/token['"]?\s*[:=]\s*['"][A-Za-z0-9]/.test(blob)); // no token value pattern.
+    assert.equal(SAMPLE_PREFLIGHT.admin_token_configured, false);
+  });
+
+  it("maps posture to string rows only", () => {
+    const rows = toPreflightDisplayRows(SAMPLE_PREFLIGHT);
+    const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]));
+    assert.equal(byLabel["Preflight status"], "disabled_safe");
+    assert.equal(byLabel["Deployment proven"], "false");
+    assert.equal(byLabel["External input required"], "true");
+    for (const row of rows) assert.equal(typeof row.value, "string");
+  });
+
+  it("derives external-input + deployment-unproven warnings", () => {
+    const w = preflightWarnings(SAMPLE_PREFLIGHT);
+    assert.ok(w.includes(OPS_PREFLIGHT_COPY.externalInputRequired));
+    assert.ok(w.includes(OPS_PREFLIGHT_COPY.deploymentUnproven));
+  });
+
+  it("flags unsafe_public_exposure prominently", () => {
+    const w = preflightWarnings({ ...SAMPLE_PREFLIGHT, preflight_status: "unsafe_public_exposure" });
+    assert.ok(w.includes(OPS_PREFLIGHT_COPY.unsafeExposure));
+  });
+
+  it("throws if a forbidden field is re-introduced into the preflight contract", () => {
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_PREFLIGHT, r1_r7_stages: [{ stage: "R1", score: 0.9 }] }),
+      /forbidden field: score/,
+    );
+  });
+
+  it("carries R1–R7 readiness stages (gated, no anchor)", () => {
+    assert.equal(SAMPLE_PREFLIGHT.r1_r7_readiness_matrix_ready, true);
+    assert.equal(SAMPLE_PREFLIGHT.r1_r7_stages[0].stage, "R1");
+    assert.equal(SAMPLE_PREFLIGHT.r1_r7_stages[0].current_status, "FAIL");
   });
 });

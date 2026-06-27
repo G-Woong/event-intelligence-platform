@@ -13,7 +13,11 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from backend.app.core.config import settings
-from backend.app.schemas.internal_ops import InternalOpsPilotExecutionStatus
+from backend.app.schemas.internal_ops import (
+    InternalOpsPilotExecutionStatus,
+    InternalOpsPreflightStatus,
+)
+from backend.app.tools.internal_ops_preflight import run_internal_ops_preflight
 from backend.app.tools.reviewer_actual_input_gate import run_actual_input_gate
 
 router = APIRouter()
@@ -38,3 +42,22 @@ def get_pilot_execution_status() -> InternalOpsPilotExecutionStatus:
         raise HTTPException(
             status_code=503, detail="internal ops status temporarily unavailable") from None
     return InternalOpsPilotExecutionStatus(**gate["internal_ops_contract"])
+
+
+@router.get("/preflight", response_model=InternalOpsPreflightStatus)
+def get_preflight_status() -> InternalOpsPreflightStatus:
+    """ADR#73 — internal ops auth/deploy posture + R1~R7 readiness(read-only). flag off → 404(미노출).
+
+    preflight 는 settings(admin token **존재 여부만**)로 5-state posture 를 평가하고, actual input 을 재확인하며,
+    R1~R7 gated roadmap 을 sanitized 로 표면화한다. admin token **값**은 응답 스키마에 필드 자체가 없다(secret 0).
+    operator 입력 파일이 깨졌으면 경로/내용 누출 없이 503.
+    """
+    if not settings.INTERNAL_OPS_DASHBOARD_ENABLED:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        out = run_internal_ops_preflight()
+    except (ValueError, OSError) as exc:   # malformed operator 입력 파일 등 — detail 에 경로/내용 미포함.
+        logger.warning("internal ops preflight unavailable: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=503, detail="internal ops preflight temporarily unavailable") from None
+    return InternalOpsPreflightStatus(**out["preflight_contract"])

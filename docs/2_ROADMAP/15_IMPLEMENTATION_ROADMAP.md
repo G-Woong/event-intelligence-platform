@@ -253,6 +253,16 @@
 > - **cross-source live + scoring**: `python -m backend.app.tools.cross_source_live_overlap_smoke --live-query --semantic-scoring --topic "<주제>" --time-window 7d --json` → 양 provider 성공 시 combined_records(예: 100쌍) 가 scorer 입력으로 흘러 top-k reviewer queue prioritization 산출(병합 0·score labeler 숨김).
 > - **정직 경계**: deterministic_scaffold 는 ADR#64 의 0 신호와 동일(100쌍 대부분 sub-floor→score_distribution 0.0-0.2 band·recall 개선 0). fake_semantic 은 paraphrase 에 관대한 결정론 proxy 로 **배관**을 입증하나 실 embedding 아님·검증된 recall 아님. embedding_opt_in 실호출(`create_embedding_client` seam)·gold calibration·MERGE_GATE 는 다음 턴(No-Go 유지).
 
+> **ADR#73 — internal ops auth/deploy preflight + R1~R7 readiness matrix + product bridge**
+>
+> **선행**: ADR#72 안정 기준점 커밋(`c1c23c0`·22파일·제공 메시지 그대로·NO UPSTREAM).
+>
+> **문제(§2)**: ADR#72 internal ops API/UI 는 이중 게이트+server-env+nav 미노출이나, "이 배포가 실제 안전한가"(auth/deploy posture)를 한 곳에서 명시·테스트로 봉인하는 preflight 부재 — `APP_ENV=dev+flag=true+무토큰=무인증 reachable` 조합을 단일 신호로 못 잡음. R1~R7 은 prose 만(gate 연결 약함).
+>
+> **옵션 결정(§3)**: **A(actual input re-check)+B(internal ops auth/deploy preflight)+C(internal ops UI product refinement·제한적)+D(R1~R7 readiness matrix: docs+머신리더블) 채택·E(embedding/LLM runtime)/F(production merge·DB·public IU) 금지.** ADR#73 기록.
+>
+> **구현/검증**: 신규 `internal_ops_preflight.py`(`evaluate_internal_ops_posture` 순수 5-state[disabled_safe/enabled_internal_safe/**unsafe_public_exposure**/misconfigured/unknown·admin token **존재 여부만**·값 미열람·`deployment_proven=False` 불변]·`R1_R7_READINESS` 7-stage 머신리더블·`SOURCE_ROLE_INVARIANTS`·`run_internal_ops_preflight`)+`schemas/internal_ops.py`(+`InternalOpsPreflightStatus`/`InternalOpsReadinessStage`)+`api/internal_ops.py`(+`GET /api/internal/ops/preflight`·이중 게이트·read-only·503 sanitize·기존 `/pilot-execution` 무변경)+frontend(types +2·opsPilotExecutionView +toPreflightDisplayRows/preflightWarnings·page +posture/warnings/R1~R7/next-action·node:test +7)+`RAG_KG_AGENT_READINESS` R1~R7 matrix table. 신규 backend 테스트 **25**(preflight 19+API 6)·frontend **+7**·ruff(E/F/I/B/W−E501) **0**·ingestion **1353p**·frontend tsc0/lint0/test26·backend 비-live **1315p/101skip/0fail**·**production_gold_count 0**·merge/전송/입력 날조/secret 값 노출 0. RAG/KG/Entity=gated roadmap **R1~R7 matrix**(docs+머신리더블·merge No-Go). 신규 RISK 1(R-RagKgPrematureBuild LOW). adversarial PROCEED-WITH-FIXES(R1/R2 live status·unknown-env open·forbidden-list 수정)·code-review LGTM-WITH-NITS.
+
 > **ADR#72 — actual reviewer input gate + internal ops dashboard bridge**
 >
 > **선행**: ADR#71 안정 기준점 커밋(`86949e5`·11파일·제공 메시지 그대로·NO UPSTREAM).

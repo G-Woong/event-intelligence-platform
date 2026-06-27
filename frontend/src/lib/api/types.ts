@@ -139,3 +139,37 @@ export interface InternalOpsPilotExecutionStatus {
   next_action: string;
   flags: InternalOpsFlags;
 }
+
+// ── ADR#73: internal ops auth/deploy preflight + R1~R7 readiness — backend sanitized contract 와 1:1 ──
+// admin token **값**은 필드 자체가 없고 admin_token_configured(존재 여부)만. public truth 아님·read-only.
+export interface InternalOpsReadinessStage {
+  stage: string;
+  goal: string;
+  current_status: string;
+  blocker: string;
+  next_action: string;
+}
+
+export interface InternalOpsPreflightStatus {
+  contract: string;
+  preflight_status: string;
+  auth_boundary_status: string;
+  app_env: string;
+  admin_token_required: boolean;
+  admin_token_configured: boolean;
+  feature_flag_required: boolean;
+  feature_flag_enabled: boolean;
+  frontend_server_env_required: boolean;
+  public_nav_exposed: boolean;
+  deployment_proven: boolean;
+  actual_input_status: string;
+  external_input_required: boolean;
+  production_gold_count: number;
+  calibration_ready: boolean;
+  merge_gate_ready: boolean;
+  r1_r7_readiness_matrix_ready: boolean;
+  r1_r7_stages: InternalOpsReadinessStage[];
+  flags: InternalOpsFlags;
+  block_reasons: string[];
+  next_actions: string[];
+}

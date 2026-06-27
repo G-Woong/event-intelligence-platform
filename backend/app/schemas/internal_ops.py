@@ -47,3 +47,46 @@ class InternalOpsPilotExecutionStatus(BaseModel):
     merge_gate_ready: bool
     next_action: str
     flags: InternalOpsFlags
+
+
+class InternalOpsReadinessStage(BaseModel):
+    """R1~R7 gated roadmap 단계(읽기 전용 요약·gold→MERGE_GATE→embedding→entity→KG→GraphRAG→IU).
+
+    안전 roadmap 텍스트만(score/rationale/predicted_status/PII 필드 없음). public IU 는 모든 gate 통과 전 No-Go.
+    """
+    stage: str
+    goal: str
+    current_status: str
+    blocker: str
+    next_action: str
+
+
+class InternalOpsPreflightStatus(BaseModel):
+    """ADR#73 — internal ops auth/deploy preflight + product bridge readiness(read-only·public truth 아님).
+
+    `internal_ops_preflight.run_internal_ops_preflight` 의 sanitized contract 를 미러한다. auth/deploy posture
+    (5-state)·R1~R7 readiness 만 노출한다 — admin token **값**은 필드 자체가 없고 `admin_token_configured`(존재
+    여부 bool)만 표면화한다(secret 0). same_event truth·score·rationale·predicted_status·raw PII 미노출.
+    """
+    contract: str
+    preflight_status: str
+    auth_boundary_status: str
+    app_env: str
+    admin_token_required: bool
+    admin_token_configured: bool
+    feature_flag_required: bool
+    feature_flag_enabled: bool
+    frontend_server_env_required: bool
+    public_nav_exposed: bool
+    deployment_proven: bool
+    actual_input_status: str
+    external_input_required: bool
+    production_gold_count: int
+    calibration_ready: bool
+    merge_gate_ready: bool
+    # 매트릭스 **구조 정합**(7단계)일 뿐 — 단계 통과 아님. 실 단계 상태는 r1_r7_stages[].current_status(R1 현재 FAIL).
+    r1_r7_readiness_matrix_ready: bool
+    r1_r7_stages: list[InternalOpsReadinessStage]
+    flags: InternalOpsFlags
+    block_reasons: list[str]
+    next_actions: list[str]
