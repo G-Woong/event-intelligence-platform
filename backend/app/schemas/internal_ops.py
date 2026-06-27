@@ -90,3 +90,42 @@ class InternalOpsPreflightStatus(BaseModel):
     flags: InternalOpsFlags
     block_reasons: list[str]
     next_actions: list[str]
+
+
+class InternalOpsR1AcquisitionStatus(BaseModel):
+    """ADR#74 — R1 production gold acquisition operating plan(read-only·public truth 아님).
+
+    `r1_gold_acquisition_plan.run_r1_gold_acquisition_plan` 의 sanitized r1_contract 를 미러한다. R1 status
+    (4-state)·gold floor current/required·gap·reviewer 요구·operator next manual action 만 노출한다 — same_event
+    truth·score·rationale·predicted_status·raw PII·secret 은 필드 자체가 없어 구조적 미노출. target floor 는
+    *operating floor* 이지 production truth 가 아니다(R1 satisfied 는 calibration_ready 일 때만).
+    """
+    contract: str
+    r1_status: str
+    actual_input_status: str
+    external_input_required: bool
+    current_production_gold_count: int
+    required_production_gold_count: int
+    current_korean_gold_count: int
+    required_korean_gold_count: int
+    current_positive_gold_count: int
+    current_negative_gold_count: int
+    required_positive_gold_count: int
+    required_negative_gold_count: int
+    current_hard_negative_count: int
+    required_hard_negative_count: int
+    current_reviewer_count: int   # global engaged(contact evidence)·per-pair coverage 증명 아님.
+    reviewer_count_required: int
+    reviewer_duplication_required: int
+    reviewer_agreement_required: bool
+    conflict_adjudication_required: bool
+    label_collection_gap: int
+    korean_gap: int
+    positive_gap: int
+    negative_gap: int
+    hard_negative_gap: int
+    reviewer_gap: int
+    calibration_ready: bool
+    merge_gate_ready: bool
+    next_manual_actions: list[str]
+    flags: InternalOpsFlags

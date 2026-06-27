@@ -214,6 +214,10 @@ def run_actual_input_gate(
         "invalid_label_count": execution["invalid_label_count"],
         "conflict_pair_count": execution["conflict_pair_count"],
         "calibration_gap": execution["calibration_gap"],
+        # ADR#74 additive: granular gold breakdown 표면화(R1 acquisition plan 이 단일 호출로 current
+        # positive/negative/korean count 을 정직 도출). baseline 없이 호출하므로 delta==current(R1 plan 이
+        # before_production_gold_count==0 으로 fail-loud 검증). 카운트/불리언만 — forbidden 필드 0.
+        "calibration_delta": execution["calibration_delta"],
         "production_gold_count": production_gold_count,
         "synthetic_gold_count": execution["synthetic_gold_count"],
         "calibration_ready": execution["calibration_ready"],

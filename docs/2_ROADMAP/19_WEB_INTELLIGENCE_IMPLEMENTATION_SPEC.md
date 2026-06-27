@@ -763,6 +763,16 @@ ADR#73 이 위 4중 게이트의 "선언"을 **테스트 가능한 preflight + r
 - **R1~R7 readiness matrix**(머신리더블 `R1_R7_READINESS` 7-stage·`SOURCE_ROLE_INVARIANTS`): gold→MERGE_GATE→embedding→entity→KG→GraphRAG→IU·각 단계 input/gate/blocker/forbidden_shortcut/next_action/test·community=reaction·market=signal·catalog=enrichment·search=URL·unknown=fail-closed·KG edge=provenance 필수·public IU=No-Go(R1 부터 막힘·gold 0). 상세는 `RAG_KG_AGENT_READINESS §6b-R`.
 - **잔여(R-InternalOpsAuthBoundary·OVERCLAIM 방지)**: preflight 는 config posture 를 봉인할 뿐 **물리 network reachability·per-user auth 는 미증명**(`deployment_proven=False`)·실 배포 경계 검증 전까지 완전종결 금지.
 
+**ADR#74 — R1 gold acquisition operating plan + internal ops R1 gap visibility + source storage strategy:**
+
+ADR#74 가 R1~R7 matrix 의 R1(FAIL) 행을 **실 라벨 수집 운영 plan** 으로 물질화한다. `r1_gold_acquisition_plan.py`(ADR#72 `run_actual_input_gate` 단일 호출·재구현 0):
+
+- **R1 target floor(operating floor≠production truth)**: live decisive gold ≥200 / KO ≥50(canonical `GOLD_MERGE_MIN_LIVE_GOLD`/`GOLD_MERGE_MIN_KOREAN_GOLD` 재사용)·balanced positive ≥67·negative ≥67(ADR#74 파생 = `ceil(200/3)`·balance ratio≥0.5 충족 최소 class)·hard-negative gold ≥20(evaluator floor·FP=0 의미있는 측정 표본)·pair 당 reviewer ≥2(`DEFAULT_REVIEWERS_PER_PAIR`)·two-reviewer agreement+human-only conflict adjudication.
+- **R1 status(4-state)** + **gap 산술**(required−current·label/korean/positive/negative/hard_negative/reviewer): **현재 production_gold_count 0 → blocked_no_labels·모든 gap=전체 target**. R1 satisfied 는 calibration_ready 일 때만·synthetic/test/model→production gold 0.
+- **`GET /api/internal/ops/r1-gold-acquisition`**(이중 게이트·read-only·`response_model=InternalOpsR1AcquisitionStatus`·sanitized)+frontend R1 gap 패널(current/required/gap·operator next manual action·"R1 is blocked by actual returned labels"/"Gold count is 0 until human production labels are imported"/"R2~R7 remain No-Go" copy).
+- **source-specific storage strategy(§6b-S·docs only·runtime No-Go)**: official/news=anchor·community=reaction·market=signal·catalog=enrichment·search=URL·unknown=fail-closed storage shape+KG edge eligibility+risk·모든 KG edge=provenance+confidence+source role 필수·GraphRAG=verified graph 전 금지·storage runtime/schema=R4~R5 gate 전 미구현(R-SourceStoragePrematureSchema).
+- **잔여(R-GoldAcquisitionPlanOnly·OVERCLAIM 방지)**: plan/gap surface 는 *무엇을 모아야 하는가* 를 명시할 뿐 **실 returned labels 를 만들지 않는다**(production_gold_count 0·gate exact passthrough)·실 회수 전까지 완전종결 금지.
+
 ## §20. 단계별 "정의된 완료(Definition of Done)"
 
 각 단계가 "끝났다"의 객관 정의(DIRECTION §8 acceptance를 단계로 분해).

@@ -17,6 +17,7 @@ from backend.app.tools.reviewer_pilot_handoff import _HANDOFF_FORBIDDEN_KEYS
 
 OPS_PATH = "/api/internal/ops/pilot-execution"
 PREFLIGHT_PATH = "/api/internal/ops/preflight"
+R1_PATH = "/api/internal/ops/r1-gold-acquisition"
 
 
 @pytest.fixture()
@@ -181,3 +182,86 @@ def test_preflight_admin_auth_prod_fail_closed(monkeypatch):
     monkeypatch.setattr(settings, "ADMIN_API_TOKEN", "")
     c = TestClient(app)   # lifespan 미실행 — 요청 시점 인증만 검증(이중 게이트의 인증 축).
     assert c.get(PREFLIGHT_PATH).status_code == 503
+
+
+# ── ADR#74 /r1-gold-acquisition 엔드포인트(R1 gold floor gap + operator next action·read-only) ────────────
+def test_r1_flag_off_returns_404(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", False)
+    assert client.get(R1_PATH).status_code == 404
+
+
+def test_r1_flag_on_returns_sanitized_contract(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    r = client.get(R1_PATH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["contract"] == "InternalOpsR1AcquisitionStatus"
+    # 기본(무입력) → honest R1 blocked·gold 0/floor·gap=full target.
+    assert body["r1_status"] == "blocked_no_labels"
+    assert body["current_production_gold_count"] == 0
+    assert body["required_production_gold_count"] == 200
+    assert body["required_korean_gold_count"] == 50
+    assert body["external_input_required"] is True
+
+
+def test_r1_gap_visible_full_when_gold_zero(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_PATH).json()
+    assert body["label_collection_gap"] == 200
+    assert body["korean_gap"] == 50
+    assert body["positive_gap"] == 67 and body["negative_gap"] == 67
+    assert body["hard_negative_gap"] == 20
+    assert body["reviewer_gap"] == 2
+    # operator next manual action 가시(라벨 회수 수준).
+    assert isinstance(body["next_manual_actions"], list) and body["next_manual_actions"]
+
+
+def test_r1_no_go_flags_and_no_merge(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_PATH).json()
+    for k in ("internal_only", "no_public_truth", "no_merge", "no_public_iu", "pii_safe", "no_llm", "no_db_write"):
+        assert body["flags"][k] is True, k
+    assert body["merge_gate_ready"] is False
+    assert body["calibration_ready"] is False
+    assert body["reviewer_agreement_required"] is True
+    assert body["conflict_adjudication_required"] is True
+
+
+def test_r1_no_forbidden_fields_and_no_pii(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_PATH).json()
+    assert _forbidden_keys_in(body) == set()
+    blob = json.dumps(body, ensure_ascii=False)
+    assert "Users" not in blob          # 절대경로 미노출.
+
+
+def test_r1_read_only_post_not_allowed(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    assert client.post(R1_PATH).status_code == 405
+
+
+def test_r1_response_keys_are_sanitized_subset(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_PATH).json()
+    allowed = {
+        "contract", "r1_status", "actual_input_status", "external_input_required",
+        "current_production_gold_count", "required_production_gold_count",
+        "current_korean_gold_count", "required_korean_gold_count",
+        "current_positive_gold_count", "current_negative_gold_count",
+        "required_positive_gold_count", "required_negative_gold_count",
+        "current_hard_negative_count", "required_hard_negative_count",
+        "current_reviewer_count", "reviewer_count_required", "reviewer_duplication_required",
+        "reviewer_agreement_required", "conflict_adjudication_required",
+        "label_collection_gap", "korean_gap", "positive_gap", "negative_gap",
+        "hard_negative_gap", "reviewer_gap", "calibration_ready", "merge_gate_ready",
+        "next_manual_actions", "flags",
+    }
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0.
+
+
+def test_r1_admin_auth_prod_fail_closed(monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "ADMIN_API_TOKEN", "")
+    c = TestClient(app)   # lifespan 미실행 — 요청 시점 인증만 검증(이중 게이트의 인증 축).
+    assert c.get(R1_PATH).status_code == 503

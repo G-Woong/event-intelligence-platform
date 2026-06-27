@@ -16,8 +16,10 @@ from backend.app.core.config import settings
 from backend.app.schemas.internal_ops import (
     InternalOpsPilotExecutionStatus,
     InternalOpsPreflightStatus,
+    InternalOpsR1AcquisitionStatus,
 )
 from backend.app.tools.internal_ops_preflight import run_internal_ops_preflight
+from backend.app.tools.r1_gold_acquisition_plan import run_r1_gold_acquisition_plan
 from backend.app.tools.reviewer_actual_input_gate import run_actual_input_gate
 
 router = APIRouter()
@@ -61,3 +63,23 @@ def get_preflight_status() -> InternalOpsPreflightStatus:
         raise HTTPException(
             status_code=503, detail="internal ops preflight temporarily unavailable") from None
     return InternalOpsPreflightStatus(**out["preflight_contract"])
+
+
+@router.get("/r1-gold-acquisition", response_model=InternalOpsR1AcquisitionStatus)
+def get_r1_gold_acquisition_status() -> InternalOpsR1AcquisitionStatus:
+    """ADR#74 — R1 production gold acquisition gap + operator next manual action(read-only). flag off → 404(미노출).
+
+    R1 plan 은 actual input 을 재확인하고 gold floor(current/required·canonical 200/50/2 + 파생 67/67/20)의 gap 을
+    산출한다. target floor 는 operating floor 이지 production truth 가 아니다(R1 satisfied 는 calibration_ready 일
+    때만). 응답 스키마에 same_event truth·score·rationale·predicted_status·raw PII 필드 자체가 없다(구조적 미노출).
+    operator 입력 파일이 깨졌으면 경로/내용 누출 없이 503.
+    """
+    if not settings.INTERNAL_OPS_DASHBOARD_ENABLED:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        out = run_r1_gold_acquisition_plan()
+    except (ValueError, OSError) as exc:   # malformed operator 입력 파일 등 — detail 에 경로/내용 미포함.
+        logger.warning("internal ops r1 acquisition unavailable: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=503, detail="internal ops r1 acquisition temporarily unavailable") from None
+    return InternalOpsR1AcquisitionStatus(**out["r1_contract"])

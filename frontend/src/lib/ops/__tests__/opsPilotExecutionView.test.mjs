@@ -234,3 +234,118 @@ describe("preflight view", () => {
     assert.equal(SAMPLE_PREFLIGHT.r1_r7_stages[0].current_status, "FAIL");
   });
 });
+
+// ── ADR#74 R1 gold acquisition view(gap + operator next action) — inline 재선언 lock ──
+const OPS_R1_COPY = {
+  blockedByLabels: "R1 is blocked by actual returned labels",
+  goldZeroUntilImport: "Gold count is 0 until human production labels are imported",
+  laddersNoGo: "R2~R7 remain No-Go",
+  internalOnly: "Internal operations only",
+  notPublicTruth: "Not public truth",
+};
+
+function toR1DisplayRows(r) {
+  const cr = (cur, req, gap) => `${cur} / ${req} (gap ${gap})`;
+  return [
+    { label: "R1 status", value: r.r1_status },
+    { label: "Actual input status", value: r.actual_input_status },
+    { label: "Production gold (unverified)", value: cr(r.current_production_gold_count, r.required_production_gold_count, r.label_collection_gap) },
+    { label: "Korean gold", value: cr(r.current_korean_gold_count, r.required_korean_gold_count, r.korean_gap) },
+    { label: "Positive gold", value: cr(r.current_positive_gold_count, r.required_positive_gold_count, r.positive_gap) },
+    { label: "Negative gold", value: cr(r.current_negative_gold_count, r.required_negative_gold_count, r.negative_gap) },
+    { label: "Hard-negative gold", value: cr(r.current_hard_negative_count, r.required_hard_negative_count, r.hard_negative_gap) },
+    { label: "Reviewers engaged (>=2 required)", value: cr(r.current_reviewer_count, r.reviewer_count_required, r.reviewer_gap) },
+    { label: "Reviewer agreement required", value: String(r.reviewer_agreement_required) },
+    { label: "Conflict adjudication required", value: String(r.conflict_adjudication_required) },
+    { label: "Calibration ready", value: String(r.calibration_ready) },
+    { label: "Merge gate ready", value: String(r.merge_gate_ready) },
+  ];
+}
+
+function r1Warnings(r) {
+  const out = [];
+  if (r.r1_status === "blocked_no_labels") out.push(OPS_R1_COPY.blockedByLabels);
+  if (r.current_production_gold_count === 0) out.push(OPS_R1_COPY.goldZeroUntilImport);
+  if (!r.merge_gate_ready) out.push(OPS_R1_COPY.laddersNoGo);
+  return out;
+}
+
+const SAMPLE_R1 = {
+  contract: "InternalOpsR1AcquisitionStatus",
+  r1_status: "blocked_no_labels",
+  actual_input_status: "no_actual_input",
+  external_input_required: true,
+  current_production_gold_count: 0,
+  required_production_gold_count: 200,
+  current_korean_gold_count: 0,
+  required_korean_gold_count: 50,
+  current_positive_gold_count: 0,
+  current_negative_gold_count: 0,
+  required_positive_gold_count: 67,
+  required_negative_gold_count: 67,
+  current_hard_negative_count: 0,
+  required_hard_negative_count: 20,
+  current_reviewer_count: 0,
+  reviewer_count_required: 2,
+  reviewer_duplication_required: 2,
+  reviewer_agreement_required: true,
+  conflict_adjudication_required: true,
+  label_collection_gap: 200,
+  korean_gap: 50,
+  positive_gap: 67,
+  negative_gap: 67,
+  hard_negative_gap: 20,
+  reviewer_gap: 2,
+  calibration_ready: false,
+  merge_gate_ready: false,
+  next_manual_actions: [
+    "recruit >=2 reviewers per pair (pseudonymous ids; raw roster/mapping local-only, never committed)",
+    "two-reviewer agreement required; resolve conflicts by human-only adjudication (no auto-majority gold)",
+  ],
+  flags: {
+    internal_only: true, no_public_truth: true, no_merge: true, no_public_iu: true,
+    pii_safe: true, no_llm: true, no_db_write: true, gold_provenance_verified: false,
+  },
+};
+
+describe("r1 acquisition view", () => {
+  it("passes the forbidden-field guard (no score/rationale/predicted_status/PII)", () => {
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_R1));
+  });
+
+  it("maps gold floor to current/required/gap string rows", () => {
+    const rows = toR1DisplayRows(SAMPLE_R1);
+    const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]));
+    assert.equal(byLabel["R1 status"], "blocked_no_labels");
+    assert.equal(byLabel["Production gold (unverified)"], "0 / 200 (gap 200)");
+    assert.equal(byLabel["Korean gold"], "0 / 50 (gap 50)");
+    assert.equal(byLabel["Positive gold"], "0 / 67 (gap 67)");
+    assert.equal(byLabel["Hard-negative gold"], "0 / 20 (gap 20)");
+    for (const row of rows) assert.equal(typeof row.value, "string");
+  });
+
+  it("derives blocked + gold-zero + R2~R7 No-Go warnings", () => {
+    const w = r1Warnings(SAMPLE_R1);
+    assert.ok(w.includes(OPS_R1_COPY.blockedByLabels));
+    assert.ok(w.includes(OPS_R1_COPY.goldZeroUntilImport));
+    assert.ok(w.includes(OPS_R1_COPY.laddersNoGo));
+  });
+
+  it("carries required no-go copy statements", () => {
+    assert.ok(OPS_R1_COPY.blockedByLabels.includes("blocked by actual returned labels"));
+    assert.ok(OPS_R1_COPY.goldZeroUntilImport.includes("Gold count is 0"));
+    assert.ok(OPS_R1_COPY.laddersNoGo.includes("No-Go"));
+    assert.ok(OPS_R1_COPY.internalOnly.includes("Internal operations only"));
+  });
+
+  it("throws if a forbidden field is re-introduced into the R1 contract", () => {
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_R1, predicted_status: "same_event" }),
+      /forbidden field: predicted_status/,
+    );
+  });
+
+  it("never carries a same_event truth field", () => {
+    assert.throws(() => assertOpsContractSafe({ ...SAMPLE_R1, same_event: true }), /forbidden field: same_event/);
+  });
+});

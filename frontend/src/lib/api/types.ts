@@ -173,3 +173,38 @@ export interface InternalOpsPreflightStatus {
   block_reasons: string[];
   next_actions: string[];
 }
+
+// ── ADR#74: R1 production gold acquisition operating plan — backend sanitized contract 와 1:1 ──
+// R1 status(4-state)·gold floor current/required·gap·reviewer 요구·operator next manual action 만. public truth
+// 아님·read-only. target floor 는 operating floor 이지 production truth 아님(R1 satisfied 는 calibration_ready 일 때만).
+export interface InternalOpsR1AcquisitionStatus {
+  contract: string;
+  r1_status: string;
+  actual_input_status: string;
+  external_input_required: boolean;
+  current_production_gold_count: number;
+  required_production_gold_count: number;
+  current_korean_gold_count: number;
+  required_korean_gold_count: number;
+  current_positive_gold_count: number;
+  current_negative_gold_count: number;
+  required_positive_gold_count: number;
+  required_negative_gold_count: number;
+  current_hard_negative_count: number;
+  required_hard_negative_count: number;
+  current_reviewer_count: number; // global engaged(contact evidence)·per-pair coverage 아님.
+  reviewer_count_required: number;
+  reviewer_duplication_required: number;
+  reviewer_agreement_required: boolean;
+  conflict_adjudication_required: boolean;
+  label_collection_gap: number;
+  korean_gap: number;
+  positive_gap: number;
+  negative_gap: number;
+  hard_negative_gap: number;
+  reviewer_gap: number;
+  calibration_ready: boolean;
+  merge_gate_ready: boolean;
+  next_manual_actions: string[];
+  flags: InternalOpsFlags;
+}

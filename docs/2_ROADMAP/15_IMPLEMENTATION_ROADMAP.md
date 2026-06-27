@@ -263,6 +263,16 @@
 >
 > **구현/검증**: 신규 `internal_ops_preflight.py`(`evaluate_internal_ops_posture` 순수 5-state[disabled_safe/enabled_internal_safe/**unsafe_public_exposure**/misconfigured/unknown·admin token **존재 여부만**·값 미열람·`deployment_proven=False` 불변]·`R1_R7_READINESS` 7-stage 머신리더블·`SOURCE_ROLE_INVARIANTS`·`run_internal_ops_preflight`)+`schemas/internal_ops.py`(+`InternalOpsPreflightStatus`/`InternalOpsReadinessStage`)+`api/internal_ops.py`(+`GET /api/internal/ops/preflight`·이중 게이트·read-only·503 sanitize·기존 `/pilot-execution` 무변경)+frontend(types +2·opsPilotExecutionView +toPreflightDisplayRows/preflightWarnings·page +posture/warnings/R1~R7/next-action·node:test +7)+`RAG_KG_AGENT_READINESS` R1~R7 matrix table. 신규 backend 테스트 **25**(preflight 19+API 6)·frontend **+7**·ruff(E/F/I/B/W−E501) **0**·ingestion **1353p**·frontend tsc0/lint0/test26·backend 비-live **1315p/101skip/0fail**·**production_gold_count 0**·merge/전송/입력 날조/secret 값 노출 0. RAG/KG/Entity=gated roadmap **R1~R7 matrix**(docs+머신리더블·merge No-Go). 신규 RISK 1(R-RagKgPrematureBuild LOW). adversarial PROCEED-WITH-FIXES(R1/R2 live status·unknown-env open·forbidden-list 수정)·code-review LGTM-WITH-NITS.
 
+> **ADR#74 — R1 production gold acquisition operating plan + internal ops R1 gap visibility + source storage strategy**
+>
+> **선행**: ADR#73 안정 기준점 커밋(`63883cf`·18파일·제공 메시지 그대로·NO UPSTREAM).
+>
+> **문제(§2)**: R1~R7 matrix 에서 R1(production gold floor)은 한 행(FAIL)일 뿐 — 실 라벨을 얼마나/어떤 분포로 모아야 하고 지금 무엇이 비었는지를 집계한 운영 plan 부재. actual returned labels 가 R1 의 유일 해제조건이나 그것을 얻을 operator-facing acquisition plan 부재.
+>
+> **옵션 결정(§3)**: **A(actual returned labels re-check)+B(R1 acquisition operating plan)+C(R1 gap API/UI visibility·제한적)+D(source-specific storage strategy docs) 채택·E(embedding/LLM runtime)/F(production merge·DB·public IU) 금지.** ADR#74 기록.
+>
+> **구현/검증**: 신규 `r1_gold_acquisition_plan.py`(target floor=canonical 200/50/2 재사용+파생 67/67/20[balance ratio≥0.5·hard-neg FP=0 표본]·`_r1_status` 4-state[blocked_no_labels/collecting/partially_satisfied/satisfied]·`_current_gold_breakdown`[gold0→0·>0→gate calibration_delta·baseline≠0 fail-loud]·gap 산술·operator next_manual_actions·sanitized r1_contract)+`reviewer_actual_input_gate.py`(+1 additive `calibration_delta` passthrough)+`schemas/internal_ops.py`(+`InternalOpsR1AcquisitionStatus`)+`api/internal_ops.py`(+`GET /api/internal/ops/r1-gold-acquisition`·이중 게이트·read-only·503 sanitize·기존 무변경)+frontend(types +1·opsPilotExecutionView +toR1DisplayRows/r1Warnings/OPS_R1_COPY·page +R1 gap 패널·node:test +6)+`RAG_KG_AGENT_READINESS`(§6b-R1 R1 plan·§6b-S source-role storage strategy). 신규 backend 테스트 **32**(r1 plan 24+API 8)·frontend **+6**·ruff(E/F/I/B/W−E501) **0**·ingestion **1353p**·frontend tsc0/lint0/test32·backend 비-live **1347p/101skip/0fail**·**production_gold_count 0·r1_status blocked_no_labels·gap=전체 target**·merge/전송/입력 날조/secret 값 노출 0. target floor=operating floor≠production truth. 신규 RISK 1(R-GoldAcquisitionPlanOnly LOW). 부분진전 R-ReviewerPilotExecution/R-IdentityHumanLabeling/R-IdentityEvalDataset/R-RagKgPrematureBuild. adversarial PROCEED-WITH-FIXES(MEDIUM 1 reviewer global/per-pair 라벨+LOW 3 수정)·code-review LGTM-WITH-NITS(R1_STATES lock 추가).
+
 > **ADR#72 — actual reviewer input gate + internal ops dashboard bridge**
 >
 > **선행**: ADR#71 안정 기준점 커밋(`86949e5`·11파일·제공 메시지 그대로·NO UPSTREAM).

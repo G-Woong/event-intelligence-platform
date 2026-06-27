@@ -10,13 +10,17 @@ import { adminFetch } from "@/lib/api/server";
 import type {
   InternalOpsPilotExecutionStatus,
   InternalOpsPreflightStatus,
+  InternalOpsR1AcquisitionStatus,
 } from "@/lib/api/types";
 import {
   OPS_NO_GO_COPY,
+  OPS_R1_COPY,
   assertOpsContractSafe,
   preflightWarnings,
+  r1Warnings,
   toOpsDisplayRows,
   toPreflightDisplayRows,
+  toR1DisplayRows,
 } from "@/lib/ops/opsPilotExecutionView";
 
 export const dynamic = "force-dynamic";
@@ -66,14 +70,20 @@ export default async function InternalOpsPilotExecutionPage() {
     await fetchSafe<InternalOpsPilotExecutionStatus>("/api/internal/ops/pilot-execution");
   const { data: preflight, error: preflightError } =
     await fetchSafe<InternalOpsPreflightStatus>("/api/internal/ops/preflight");
+  const { data: r1, error: r1Error } =
+    await fetchSafe<InternalOpsR1AcquisitionStatus>("/api/internal/ops/r1-gold-acquisition");
 
   const banners = [
     OPS_NO_GO_COPY.notPublicTruth,
     OPS_NO_GO_COPY.noMerge,
     OPS_NO_GO_COPY.goldUnverified,
     OPS_NO_GO_COPY.requiresMergeGate,
+    OPS_R1_COPY.internalOnly,
   ];
-  const warnings = preflight ? preflightWarnings(preflight) : [];
+  const warnings = [
+    ...(preflight ? preflightWarnings(preflight) : []),
+    ...(r1 ? r1Warnings(r1) : []),
+  ];
 
   return (
     <div className="space-y-6">
@@ -132,6 +142,28 @@ export default async function InternalOpsPilotExecutionPage() {
       ) : (
         <div className="rounded border border-gray-800 bg-gray-900 p-4 text-sm text-gray-300">
           {OPS_NO_GO_COPY.awaitingReturn} — backend status unavailable ({statusError}).
+        </div>
+      )}
+
+      {r1 ? (
+        <Section title="R1 gold acquisition (production gold floor · gap)">
+          <p className="text-xs text-gray-500">
+            {OPS_R1_COPY.blockedByLabels}. {OPS_R1_COPY.goldZeroUntilImport}. {OPS_R1_COPY.laddersNoGo}. The
+            target floor is an operating floor, not a verified production truth — R1 is satisfied only when
+            calibration is ready. Synthetic / test / model labels never count as production gold.
+          </p>
+          <RowTable rows={toR1DisplayRows(r1)} />
+          {r1.next_manual_actions.length > 0 ? (
+            <ul className="list-disc space-y-1 pl-5 text-sm text-gray-300">
+              {r1.next_manual_actions.map((a, i) => (
+                <li key={i}>{a}</li>
+              ))}
+            </ul>
+          ) : null}
+        </Section>
+      ) : (
+        <div className="rounded border border-gray-800 bg-gray-900 p-4 text-sm text-gray-300">
+          R1 gold acquisition status unavailable ({r1Error}).
         </div>
       )}
 
