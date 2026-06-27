@@ -464,3 +464,118 @@ describe("r1 pilot batch view", () => {
     );
   });
 });
+
+// ── ADR#76 R1 production candidate acquisition view(live · dual-track) — inline 재선언 lock ──
+const OPS_R1_PROD_COPY = {
+  syntheticNotProduction: "Synthetic dry-run batch is not production",
+  requiresLivePairs: "Production candidate batch requires live-derived publishable pairs",
+  worklistNotTruth: "Candidate worklist is not truth",
+  returnedLabelsRequired: "Returned human labels are still required",
+  goldZeroUntilImport: "Production gold remains 0 until human labels are imported",
+  laddersNoGo: "R2~R7 remain No-Go",
+};
+
+function toR1ProdCandidateDisplayRows(p) {
+  return [
+    { label: "Production candidate status", value: p.production_candidate_status },
+    { label: "Synthetic dry-run batch ready", value: String(p.synthetic_dry_run_batch_ready) },
+    { label: "Synthetic batch is non-production", value: String(p.synthetic_batch_not_production) },
+    { label: "Production candidate batch ready", value: String(p.production_candidate_batch_ready) },
+    { label: "Candidate provenance", value: p.candidate_provenance },
+    { label: "Live call performed", value: String(p.live_call_performed) },
+    { label: "Live candidate pairs", value: `${p.live_candidate_count}` },
+    { label: "Publishable pairs", value: `${p.publishable_pair_count}` },
+    { label: "Production frozen pairs (pilot_n)", value: `${p.production_frozen_pair_count} / ${p.required_production_gold_count}` },
+    { label: "Ready for manual launch", value: String(p.ready_for_manual_launch) },
+    { label: "Blocked: no live production candidates", value: String(p.blocked_no_live_production_candidates) },
+    { label: "Production gold (unverified)", value: `${p.production_gold_count} / ${p.required_production_gold_count} (gap ${p.current_r1_gap})` },
+    { label: "R1 status", value: p.r1_status },
+    { label: "R2~R7 No-Go", value: String(p.r2_r7_no_go) },
+  ];
+}
+
+function r1ProdCandidateWarnings(p) {
+  const out = [OPS_R1_PROD_COPY.syntheticNotProduction, OPS_R1_PROD_COPY.worklistNotTruth];
+  if (!p.production_candidate_batch_ready) out.push(OPS_R1_PROD_COPY.requiresLivePairs);
+  if (p.production_gold_count === 0) out.push(OPS_R1_PROD_COPY.returnedLabelsRequired);
+  if (p.production_gold_count === 0) out.push(OPS_R1_PROD_COPY.goldZeroUntilImport);
+  if (p.r2_r7_no_go) out.push(OPS_R1_PROD_COPY.laddersNoGo);
+  return out;
+}
+
+const SAMPLE_R1_PROD = {
+  contract: "InternalOpsR1ProductionCandidateStatus",
+  synthetic_dry_run_batch_ready: true,
+  synthetic_batch_not_production: true,
+  production_candidate_batch_ready: false,
+  production_candidate_status: "blocked_no_live_opt_in",
+  candidate_provenance: "none",
+  live_call_performed: false,
+  live_candidate_count: 0,
+  publishable_pair_count: 0,
+  production_frozen_pair_count: 0,
+  production_batch_id: "",
+  production_batch_signature: "",
+  ready_for_manual_launch: false,
+  blocked_no_live_production_candidates: true,
+  validation_command: "",
+  intake_directory: "",
+  r1_status: "blocked_no_labels",
+  production_gold_count: 0,
+  required_production_gold_count: 200,
+  current_r1_gap: 200,
+  r2_r7_no_go: true,
+  next_manual_action: "credentials are present — explicitly opt in to a bounded live query",
+  flags: {
+    internal_only: true, no_public_truth: true, no_merge: true, no_public_iu: true,
+    pii_safe: true, no_llm: true, no_db_write: true, gold_provenance_verified: false,
+  },
+};
+
+describe("r1 production candidate acquisition view (dual-track)", () => {
+  it("passes the forbidden-field guard (no score/rationale/predicted_status/PII)", () => {
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_R1_PROD));
+  });
+
+  it("separates synthetic dry-run from production-candidate batch (no 둔갑)", () => {
+    const rows = toR1ProdCandidateDisplayRows(SAMPLE_R1_PROD);
+    const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]));
+    assert.equal(byLabel["Production candidate status"], "blocked_no_live_opt_in");
+    assert.equal(byLabel["Synthetic dry-run batch ready"], "true");
+    assert.equal(byLabel["Synthetic batch is non-production"], "true");
+    assert.equal(byLabel["Production candidate batch ready"], "false");
+    assert.equal(byLabel["Candidate provenance"], "none");
+    assert.equal(byLabel["Blocked: no live production candidates"], "true");
+    for (const row of rows) assert.equal(typeof row.value, "string");
+  });
+
+  it("derives synthetic-not-production + worklist-not-truth + live-pairs-required + No-Go warnings", () => {
+    const w = r1ProdCandidateWarnings(SAMPLE_R1_PROD);
+    assert.ok(w.includes(OPS_R1_PROD_COPY.syntheticNotProduction));
+    assert.ok(w.includes(OPS_R1_PROD_COPY.worklistNotTruth));
+    assert.ok(w.includes(OPS_R1_PROD_COPY.requiresLivePairs));
+    assert.ok(w.includes(OPS_R1_PROD_COPY.returnedLabelsRequired));
+    assert.ok(w.includes(OPS_R1_PROD_COPY.laddersNoGo));
+  });
+
+  it("carries required §7 no-go copy statements", () => {
+    assert.ok(OPS_R1_PROD_COPY.syntheticNotProduction.includes("not production"));
+    assert.ok(OPS_R1_PROD_COPY.requiresLivePairs.includes("live-derived publishable pairs"));
+    assert.ok(OPS_R1_PROD_COPY.worklistNotTruth.includes("not truth"));
+    assert.ok(OPS_R1_PROD_COPY.returnedLabelsRequired.includes("Returned human labels"));
+    assert.ok(OPS_R1_PROD_COPY.laddersNoGo.includes("No-Go"));
+  });
+
+  it("does not mark a production candidate batch without live-derived pairs", () => {
+    assert.equal(SAMPLE_R1_PROD.production_candidate_batch_ready, false);
+    assert.equal(SAMPLE_R1_PROD.candidate_provenance, "none");
+    assert.equal(SAMPLE_R1_PROD.production_gold_count, 0);
+  });
+
+  it("throws if a forbidden field is re-introduced into the production candidate contract", () => {
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_R1_PROD, predicted_status: "same_event" }),
+      /forbidden field: predicted_status/,
+    );
+  });
+});

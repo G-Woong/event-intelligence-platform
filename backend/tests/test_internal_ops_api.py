@@ -19,6 +19,7 @@ OPS_PATH = "/api/internal/ops/pilot-execution"
 PREFLIGHT_PATH = "/api/internal/ops/preflight"
 R1_PATH = "/api/internal/ops/r1-gold-acquisition"
 R1_BATCH_PATH = "/api/internal/ops/r1-pilot-batch"
+R1_PROD_PATH = "/api/internal/ops/r1-production-candidates"
 
 
 @pytest.fixture()
@@ -346,3 +347,84 @@ def test_r1_batch_admin_auth_prod_fail_closed(monkeypatch):
     monkeypatch.setattr(settings, "ADMIN_API_TOKEN", "")
     c = TestClient(app)   # lifespan 미실행 — 요청 시점 인증만 검증(이중 게이트의 인증 축).
     assert c.get(R1_BATCH_PATH).status_code == 503
+
+
+# ── ADR#76 /r1-production-candidates 엔드포인트(live acquisition + dual-track readiness·read-only) ─────────
+def test_r1_prod_flag_off_returns_404(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", False)
+    assert client.get(R1_PROD_PATH).status_code == 404
+
+
+def test_r1_prod_flag_on_returns_sanitized_contract(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    r = client.get(R1_PROD_PATH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["contract"] == "InternalOpsR1ProductionCandidateStatus"
+    # read API 는 live_query=False 고정(시도 0) → blocked(credential presence 에 따라 opt_in/credentials 둘 중 하나).
+    assert body["production_candidate_status"] in ("blocked_no_live_opt_in", "blocked_no_credentials")
+    assert body["live_call_performed"] is False
+    assert body["production_candidate_batch_ready"] is False
+    assert body["candidate_provenance"] == "none"
+    assert body["blocked_no_live_production_candidates"] is True
+
+
+def test_r1_prod_dual_track_separation_visible(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_PROD_PATH).json()
+    # synthetic dry-run batch 와 production-candidate batch 가 분리·합성→production 둔갑 0.
+    assert body["synthetic_dry_run_batch_ready"] is True
+    assert body["synthetic_batch_not_production"] is True
+    assert body["production_candidate_batch_ready"] is False
+    assert body["live_candidate_count"] == 0
+    assert body["publishable_pair_count"] == 0
+    assert body["production_frozen_pair_count"] == 0
+    assert body["required_production_gold_count"] == 200
+    assert body["current_r1_gap"] == 200
+    assert body["r2_r7_no_go"] is True
+    assert body["next_manual_action"]
+
+
+def test_r1_prod_no_go_flags_and_no_merge(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_PROD_PATH).json()
+    for k in ("internal_only", "no_public_truth", "no_merge", "no_public_iu", "pii_safe", "no_llm", "no_db_write"):
+        assert body["flags"][k] is True, k
+    assert body["flags"]["gold_provenance_verified"] is False
+    assert body["production_gold_count"] == 0
+
+
+def test_r1_prod_no_forbidden_fields_and_no_pii(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_PROD_PATH).json()
+    assert _forbidden_keys_in(body) == set()
+    blob = json.dumps(body, ensure_ascii=False)
+    assert "Users" not in blob          # 절대경로/사용자명 미노출.
+
+
+def test_r1_prod_read_only_post_not_allowed(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    assert client.post(R1_PROD_PATH).status_code == 405
+
+
+def test_r1_prod_response_keys_are_sanitized_subset(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_PROD_PATH).json()
+    allowed = {
+        "contract", "synthetic_dry_run_batch_ready", "synthetic_batch_not_production",
+        "production_candidate_batch_ready", "production_candidate_status", "candidate_provenance",
+        "live_call_performed", "live_candidate_count", "publishable_pair_count",
+        "production_frozen_pair_count", "production_batch_id", "production_batch_signature",
+        "ready_for_manual_launch", "blocked_no_live_production_candidates", "validation_command",
+        "intake_directory", "r1_status", "production_gold_count", "required_production_gold_count",
+        "current_r1_gap", "r2_r7_no_go", "next_manual_action", "flags",
+    }
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0.
+
+
+def test_r1_prod_admin_auth_prod_fail_closed(monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "ADMIN_API_TOKEN", "")
+    c = TestClient(app)   # lifespan 미실행 — 요청 시점 인증만 검증(이중 게이트의 인증 축).
+    assert c.get(R1_PROD_PATH).status_code == 503

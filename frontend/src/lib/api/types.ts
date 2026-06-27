@@ -237,3 +237,32 @@ export interface InternalOpsR1PilotBatchStatus {
   next_manual_action: string;
   flags: InternalOpsFlags;
 }
+
+// ADR#76 — R1 live production candidate acquisition + dual-track batch readiness(read-only·public truth 아님).
+// synthetic dry-run batch 와 live production-candidate batch 를 분리 표시. same_event truth·score·rationale·
+// predicted_status·raw body·PII·secret 은 필드 자체가 없다(구조적 미노출).
+export interface InternalOpsR1ProductionCandidateStatus {
+  contract: string;
+  synthetic_dry_run_batch_ready: boolean;
+  synthetic_batch_not_production: boolean;
+  production_candidate_batch_ready: boolean;
+  production_candidate_status: string;
+  candidate_provenance: string;
+  live_call_performed: boolean;
+  live_candidate_count: number;
+  publishable_pair_count: number;
+  production_frozen_pair_count: number;
+  production_batch_id: string;
+  production_batch_signature: string;
+  ready_for_manual_launch: boolean;
+  blocked_no_live_production_candidates: boolean;
+  validation_command: string;
+  intake_directory: string;
+  r1_status: string;
+  production_gold_count: number;
+  required_production_gold_count: number;
+  current_r1_gap: number;
+  r2_r7_no_go: boolean;
+  next_manual_action: string;
+  flags: InternalOpsFlags;
+}

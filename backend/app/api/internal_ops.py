@@ -18,9 +18,13 @@ from backend.app.schemas.internal_ops import (
     InternalOpsPreflightStatus,
     InternalOpsR1AcquisitionStatus,
     InternalOpsR1PilotBatchStatus,
+    InternalOpsR1ProductionCandidateStatus,
 )
 from backend.app.tools.internal_ops_preflight import run_internal_ops_preflight
 from backend.app.tools.r1_gold_acquisition_plan import run_r1_gold_acquisition_plan
+from backend.app.tools.r1_production_candidate_acquisition import (
+    run_r1_production_candidate_acquisition,
+)
 from backend.app.tools.r1_reviewer_pilot_batch import run_r1_reviewer_pilot_batch
 from backend.app.tools.reviewer_actual_input_gate import run_actual_input_gate
 
@@ -105,3 +109,25 @@ def get_r1_pilot_batch_status() -> InternalOpsR1PilotBatchStatus:
         raise HTTPException(
             status_code=503, detail="internal ops r1 pilot batch temporarily unavailable") from None
     return InternalOpsR1PilotBatchStatus(**out["r1_pilot_batch_contract"])
+
+
+@router.get("/r1-production-candidates", response_model=InternalOpsR1ProductionCandidateStatus)
+def get_r1_production_candidate_status() -> InternalOpsR1ProductionCandidateStatus:
+    """ADR#76 — R1 live production candidate acquisition + dual-track batch readiness(read-only). flag off → 404(미노출).
+
+    actual input 을 재확인하고, secret-safe credential presence(값 0·network 0)를 본 뒤, live 후보 획득은 **opt-in**
+    (기본 시도 0)으로 blocked_no_credentials/blocked_no_live_opt_in 등을 정직하게 산출한다. synthetic dry-run batch 와
+    live production-candidate batch 를 **분리** 표시한다(합성→production 둔갑 0). 응답 스키마에 same_event truth·
+    score·rationale·predicted_status·raw PII·secret 필드 자체가 없다(구조적 미노출). 입력 파일이 깨졌으면 경로/내용
+    누출 없이 503. **실 live 네트워크 호출은 API 경로에서 수행하지 않는다**(opt-in CLI 전용 — read API 는 시도 0).
+    """
+    if not settings.INTERNAL_OPS_DASHBOARD_ENABLED:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        # read API 는 live_query=False 고정(시도 0). 실 live acquisition 은 operator CLI opt-in 전용.
+        out = run_r1_production_candidate_acquisition(live_query=False)
+    except (ValueError, OSError) as exc:   # malformed operator 입력 파일 등 — detail 에 경로/내용 미포함.
+        logger.warning("internal ops r1 production candidates unavailable: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=503, detail="internal ops r1 production candidates temporarily unavailable") from None
+    return InternalOpsR1ProductionCandidateStatus(**out["r1_production_candidate_contract"])

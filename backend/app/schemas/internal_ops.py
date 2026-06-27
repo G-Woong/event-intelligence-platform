@@ -162,3 +162,38 @@ class InternalOpsR1PilotBatchStatus(BaseModel):
     r2_r7_no_go: bool
     next_manual_action: str
     flags: InternalOpsFlags
+
+
+class InternalOpsR1ProductionCandidateStatus(BaseModel):
+    """ADR#76 — R1 live production candidate acquisition + dual-track batch readiness(read-only·public truth 아님).
+
+    `r1_production_candidate_acquisition.run_r1_production_candidate_acquisition` 의 sanitized dual-track
+    contract 를 미러한다. synthetic dry-run batch 와 live production-candidate batch 를 **명확히 분리**한다 —
+    synthetic_dry_run_batch_ready / synthetic_batch_not_production vs production_candidate_batch_ready /
+    production_candidate_status(6-state) / candidate_provenance / live_candidate_count. same_event truth·score·
+    rationale·predicted_status·raw body·raw PII·secret 은 필드 자체가 없어 구조적 미노출. production-candidate
+    batch 도 reviewer worklist 동결이지 same_event 확정이 아니며 production_gold_count 를 늘리지 않는다.
+    """
+    contract: str
+    synthetic_dry_run_batch_ready: bool
+    synthetic_batch_not_production: bool
+    production_candidate_batch_ready: bool
+    production_candidate_status: str
+    candidate_provenance: str
+    live_call_performed: bool
+    live_candidate_count: int
+    publishable_pair_count: int
+    production_frozen_pair_count: int
+    production_batch_id: str
+    production_batch_signature: str
+    ready_for_manual_launch: bool
+    blocked_no_live_production_candidates: bool
+    validation_command: str
+    intake_directory: str
+    r1_status: str
+    production_gold_count: int
+    required_production_gold_count: int
+    current_r1_gap: int
+    r2_r7_no_go: bool
+    next_manual_action: str
+    flags: InternalOpsFlags

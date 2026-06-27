@@ -8,6 +8,7 @@ import type {
   InternalOpsPreflightStatus,
   InternalOpsR1AcquisitionStatus,
   InternalOpsR1PilotBatchStatus,
+  InternalOpsR1ProductionCandidateStatus,
 } from "@/lib/api/types";
 
 // internal ops dashboard 가 절대 표시하면 안 되는 키(있으면 오염). recursive 검사.
@@ -199,5 +200,51 @@ export function r1BatchWarnings(b: InternalOpsR1PilotBatchStatus): string[] {
   if (b.production_gold_count === 0) out.push(OPS_R1_BATCH_COPY.goldZeroUntilImport);
   if (b.r2_r7_no_go) out.push(OPS_R1_BATCH_COPY.laddersNoGo);
   if (!b.pilot_batch_is_production_candidate) out.push(OPS_R1_BATCH_COPY.syntheticFixture);
+  return out;
+}
+
+// ── ADR#76 R1 live production candidate acquisition + dual-track view helpers ───────────────────────────
+// 필수 copy(§7) — synthetic dry-run batch 와 live production-candidate batch 를 명확히 분리(둔갑 0). production
+// candidate 도 truth 가 아니며, live-derived publishable pair 없이는 production batch 가 ready 되지 않는다.
+export const OPS_R1_PROD_COPY = {
+  syntheticNotProduction: "Synthetic dry-run batch is not production",
+  requiresLivePairs: "Production candidate batch requires live-derived publishable pairs",
+  worklistNotTruth: "Candidate worklist is not truth",
+  returnedLabelsRequired: "Returned human labels are still required",
+  goldZeroUntilImport: "Production gold remains 0 until human labels are imported",
+  laddersNoGo: "R2~R7 remain No-Go",
+} as const;
+
+// production candidate acquisition → dual-track 표시 행(read-only·workflow state 만·둔갑 0).
+export function toR1ProdCandidateDisplayRows(
+  p: InternalOpsR1ProductionCandidateStatus,
+): OpsDisplayRow[] {
+  return [
+    { label: "Production candidate status", value: p.production_candidate_status },
+    { label: "Synthetic dry-run batch ready", value: String(p.synthetic_dry_run_batch_ready) },
+    { label: "Synthetic batch is non-production", value: String(p.synthetic_batch_not_production) },
+    { label: "Production candidate batch ready", value: String(p.production_candidate_batch_ready) },
+    { label: "Candidate provenance", value: p.candidate_provenance },
+    { label: "Live call performed", value: String(p.live_call_performed) },
+    { label: "Live candidate pairs", value: `${p.live_candidate_count}` },
+    { label: "Publishable pairs", value: `${p.publishable_pair_count}` },
+    { label: "Production frozen pairs (pilot_n)", value: `${p.production_frozen_pair_count} / ${p.required_production_gold_count}` },
+    { label: "Ready for manual launch", value: String(p.ready_for_manual_launch) },
+    { label: "Blocked: no live production candidates", value: String(p.blocked_no_live_production_candidates) },
+    { label: "Production gold (unverified)", value: `${p.production_gold_count} / ${p.required_production_gold_count} (gap ${p.current_r1_gap})` },
+    { label: "R1 status", value: p.r1_status },
+    { label: "R2~R7 No-Go", value: String(p.r2_r7_no_go) },
+  ];
+}
+
+// production candidate acquisition → operator 경고 배너(synthetic≠production·live pair 필요·worklist≠truth·라벨 필요·gold 0·No-Go).
+export function r1ProdCandidateWarnings(
+  p: InternalOpsR1ProductionCandidateStatus,
+): string[] {
+  const out: string[] = [OPS_R1_PROD_COPY.syntheticNotProduction, OPS_R1_PROD_COPY.worklistNotTruth];
+  if (!p.production_candidate_batch_ready) out.push(OPS_R1_PROD_COPY.requiresLivePairs);
+  if (p.production_gold_count === 0) out.push(OPS_R1_PROD_COPY.returnedLabelsRequired);
+  if (p.production_gold_count === 0) out.push(OPS_R1_PROD_COPY.goldZeroUntilImport);
+  if (p.r2_r7_no_go) out.push(OPS_R1_PROD_COPY.laddersNoGo);
   return out;
 }

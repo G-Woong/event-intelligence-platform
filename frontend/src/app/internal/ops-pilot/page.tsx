@@ -12,19 +12,23 @@ import type {
   InternalOpsPreflightStatus,
   InternalOpsR1AcquisitionStatus,
   InternalOpsR1PilotBatchStatus,
+  InternalOpsR1ProductionCandidateStatus,
 } from "@/lib/api/types";
 import {
   OPS_NO_GO_COPY,
   OPS_R1_BATCH_COPY,
   OPS_R1_COPY,
+  OPS_R1_PROD_COPY,
   assertOpsContractSafe,
   preflightWarnings,
   r1BatchWarnings,
+  r1ProdCandidateWarnings,
   r1Warnings,
   toOpsDisplayRows,
   toPreflightDisplayRows,
   toR1BatchDisplayRows,
   toR1DisplayRows,
+  toR1ProdCandidateDisplayRows,
 } from "@/lib/ops/opsPilotExecutionView";
 
 export const dynamic = "force-dynamic";
@@ -78,6 +82,8 @@ export default async function InternalOpsPilotExecutionPage() {
     await fetchSafe<InternalOpsR1AcquisitionStatus>("/api/internal/ops/r1-gold-acquisition");
   const { data: r1Batch, error: r1BatchError } =
     await fetchSafe<InternalOpsR1PilotBatchStatus>("/api/internal/ops/r1-pilot-batch");
+  const { data: r1Prod, error: r1ProdError } =
+    await fetchSafe<InternalOpsR1ProductionCandidateStatus>("/api/internal/ops/r1-production-candidates");
 
   const banners = [
     OPS_NO_GO_COPY.notPublicTruth,
@@ -92,6 +98,7 @@ export default async function InternalOpsPilotExecutionPage() {
       ...(preflight ? preflightWarnings(preflight) : []),
       ...(r1 ? r1Warnings(r1) : []),
       ...(r1Batch ? r1BatchWarnings(r1Batch) : []),
+      ...(r1Prod ? r1ProdCandidateWarnings(r1Prod) : []),
     ]),
   ];
 
@@ -195,6 +202,29 @@ export default async function InternalOpsPilotExecutionPage() {
       ) : (
         <div className="rounded border border-gray-800 bg-gray-900 p-4 text-sm text-gray-300">
           R1 pilot batch status unavailable ({r1BatchError}).
+        </div>
+      )}
+
+      {r1Prod ? (
+        <Section title="R1 production candidate acquisition (live · dual-track)">
+          <p className="text-xs text-gray-500">
+            {OPS_R1_PROD_COPY.syntheticNotProduction}. {OPS_R1_PROD_COPY.requiresLivePairs}.{" "}
+            {OPS_R1_PROD_COPY.worklistNotTruth}. {OPS_R1_PROD_COPY.returnedLabelsRequired}.{" "}
+            {OPS_R1_PROD_COPY.laddersNoGo}. The synthetic dry-run batch and the live production-candidate batch are
+            tracked separately — a production candidate batch is ready only from live-derived publishable×publishable
+            pairs, never from the synthetic fixture, and it does not increase production gold or assert same-event truth.
+          </p>
+          <RowTable rows={toR1ProdCandidateDisplayRows(r1Prod)} />
+          <p className="text-sm text-gray-300">
+            <span className="text-gray-500">Next manual action:</span> {r1Prod.next_manual_action}
+          </p>
+          {r1Prod.validation_command ? (
+            <p className="font-mono text-xs text-gray-500">{r1Prod.validation_command}</p>
+          ) : null}
+        </Section>
+      ) : (
+        <div className="rounded border border-gray-800 bg-gray-900 p-4 text-sm text-gray-300">
+          R1 production candidate status unavailable ({r1ProdError}).
         </div>
       )}
 

@@ -438,3 +438,13 @@ def test_33_semantic_scoring_skipped_when_single_provider():
         transport_b=_nyt_empty_tr, semantic_scoring=True)
     assert r["semantic_scoring"] is None
     assert "no_records_provider_b" in r["block_reasons"]
+
+
+def test_34_reviewer_queue_exposed_only_for_live_records():
+    """ADR#76 additive: reviewer_queue 는 둘 다 ok(live_derived)일 때만 dict; 아니면 None(production freeze 소비용)."""
+    not_opted = run_cross_source_live_overlap_smoke(live_query=False)
+    assert "reviewer_queue" in not_opted          # 키 항상 존재(계약 안정).
+    assert not_opted["reviewer_queue"] is None     # 시도 0 → 후보 worklist 없음.
+    ok = _both_ok()
+    assert isinstance(ok["reviewer_queue"], dict)
+    assert ok["reviewer_queue"].get("packet_rows")  # live 후보 worklist 소비 가능.

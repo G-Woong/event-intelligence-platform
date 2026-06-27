@@ -180,6 +180,7 @@ def run_cross_source_live_overlap_smoke(
     dataset_source: Optional[str] = None
     labeler_prediction_hidden = True
     live_query_attempted = False
+    reviewer_queue_obj: Optional[dict] = None   # ADR#76: 실 live 후보 freeze 가 소비할 cross-source reviewer queue(미생성 시 None).
 
     # ── gate ──
     if not live_query:
@@ -236,6 +237,10 @@ def run_cross_source_live_overlap_smoke(
                 cross_disc["near_match_below_fingerprint_pairs"] = len(cross_disc["near_match_pairs"])
                 queue = build_near_match_reviewer_queue(
                     cross_disc, packet_id=packet_id, reviewers=reviewers)
+                # ADR#76: live_derived 후보 worklist freeze 가 소비. **packet_items(LabelingPacketItem) 제외** —
+                # JSON-safe 투영(packet_rows=검증된 dict·validate_labeling_packet 통과·forbidden field 0)만 노출해
+                # report 의 json.dumps 직렬화 계약을 보존(additive·기존 계약 무변).
+                reviewer_queue_obj = {k: v for k, v in queue.items() if k != "packet_items"}
                 gold_seed = build_gold_seed_report(cross_disc, queue)
                 cross_near = queue["near_positive_count"]
                 cross_hard = queue["hard_negative_discovery_count"]
@@ -294,6 +299,9 @@ def run_cross_source_live_overlap_smoke(
         "near_match_count": cross_near,
         "hard_negative_count": cross_hard,
         "reviewer_queue_population_count": queue_pop,
+        # ADR#76: cross-source live 후보 worklist(둘 다 ok·live_derived 일 때만 dict; 아니면 None). production
+        # candidate freeze 가 소비 — score/rationale/predicted_status 부재(near_match queue 가 이미 숨김·additive·계약 무변).
+        "reviewer_queue": reviewer_queue_obj,
         "labeler_prediction_hidden": labeler_prediction_hidden,
         "semantic_scoring_requested": bool(semantic_scoring),
         "semantic_scoring": semantic_scoring_result,   # ADR#65 opt-in 결과(off/미도달 시 None·커밋 ADR#64 동작 보존).
