@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test src/lib/api/__tests__/client.test.mjs src/lib/api/__tests__/timeline.test.mjs src/app/api/admin/__tests__/proxy.test.mjs"
+    "test": "node --test src/lib/api/__tests__/client.test.mjs src/lib/api/__tests__/timeline.test.mjs src/app/api/admin/__tests__/proxy.test.mjs src/lib/ops/__tests__/opsPilotExecutionView.test.mjs"
   },
   "dependencies": {
     "next": "^15.5.18",

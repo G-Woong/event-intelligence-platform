@@ -6,13 +6,26 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.app.api import (
+    admin,
+    ai_replies,
+    comments,
+    events,
+    health,
+    internal,
+    internal_ops,
+    sectors,
+    themes,
+)
 from backend.app.core.config import settings
 from backend.app.core.logging import configure_logging
 from backend.app.core.observability import setup_langsmith
-from backend.app.core.security import require_admin_token, assert_startup_auth_posture
-from backend.app.db import redis as redis_db, milvus as milvus_db, postgres as postgres_db, opensearch as opensearch_db  # noqa: F401
+from backend.app.core.security import assert_startup_auth_posture, require_admin_token
+from backend.app.db import milvus as milvus_db
+from backend.app.db import opensearch as opensearch_db
+from backend.app.db import postgres as postgres_db  # noqa: F401
+from backend.app.db import redis as redis_db
 from backend.app.services import opensearch_index_service
-from backend.app.api import health, events, themes, sectors, comments, ai_replies, admin, internal
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -66,3 +79,6 @@ app.include_router(comments.router)
 app.include_router(ai_replies.router)
 app.include_router(admin.router, dependencies=[Depends(require_admin_token)])
 app.include_router(internal.router, prefix="/api/internal", dependencies=[Depends(require_admin_token)])
+# ADR#72 internal ops dashboard read-only API(reviewer pipeline workflow state·public truth 아님).
+# 이중 게이트: admin-token(아래 dependency·prod fail-closed) + INTERNAL_OPS_DASHBOARD_ENABLED flag(기본 off→404).
+app.include_router(internal_ops.router, prefix="/api/internal/ops", dependencies=[Depends(require_admin_token)])

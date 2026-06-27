@@ -253,6 +253,16 @@
 > - **cross-source live + scoring**: `python -m backend.app.tools.cross_source_live_overlap_smoke --live-query --semantic-scoring --topic "<주제>" --time-window 7d --json` → 양 provider 성공 시 combined_records(예: 100쌍) 가 scorer 입력으로 흘러 top-k reviewer queue prioritization 산출(병합 0·score labeler 숨김).
 > - **정직 경계**: deterministic_scaffold 는 ADR#64 의 0 신호와 동일(100쌍 대부분 sub-floor→score_distribution 0.0-0.2 band·recall 개선 0). fake_semantic 은 paraphrase 에 관대한 결정론 proxy 로 **배관**을 입증하나 실 embedding 아님·검증된 recall 아님. embedding_opt_in 실호출(`create_embedding_client` seam)·gold calibration·MERGE_GATE 는 다음 턴(No-Go 유지).
 
+> **ADR#72 — actual reviewer input gate + internal ops dashboard bridge**
+>
+> **선행**: ADR#71 안정 기준점 커밋(`86949e5`·11파일·제공 메시지 그대로·NO UPSTREAM).
+>
+> **문제(§2)**: ADR#71 ledger 는 인자 기반 순수 — 실 입력이 디스크(gitignored `outputs/reviewer_batch/`)에 있는지 확인·dispatch·없으면 external_input_required 정직, 그리고 external labels 막힌 동안 internal ops read-only MVP(public IU 아님)로 웹 착수할 surface 부재.
+>
+> **옵션 결정(§3)**: **A(actual input gate)+B(internal ops read-only backend API)+C(frontend internal ops seed·제한적)+D(RAG/KG/Entity gated roadmap: docs) 채택·E(embedding/LLM runtime)/F(production merge·DB·public IU) 금지.** backend admin-token 인증 존재로 C 안전 보장. ADR#72 기록.
+>
+> **구현/검증**: 신규 `reviewer_actual_input_gate.py`(gitignored 디렉터리 스캔만·날조 0·5-state actual_input_status·ledger 단일 호출 dispatch·gold exact passthrough)+`schemas/internal_ops.py`+`api/internal_ops.py`(`GET /api/internal/ops/pilot-execution`·**이중 게이트** admin-token(prod fail-closed)+`INTERNAL_OPS_DASHBOARD_ENABLED` flag-404·sanitized contract·read-only)+frontend seed(`/internal/ops-pilot`·server-env gate→notFound()·nav 미노출·**4중 게이트**·no-go 배너)+config flag(`EVENT_TIMELINE_API_ENABLED` 선례). 신규 backend 테스트 **30**(gate 22+API 8)·frontend **+7**·ruff(E/F/I/B/W−E501) **0**·ingestion **1353p**·frontend tsc0/lint0/test19·**production_gold_count 0**·merge/전송/입력 날조 0·**입력 디렉터리 부재→no_actual_input/external_input_required**. RAG/KG/Entity=gated roadmap **R1~R7**(docs·merge No-Go). 신규 RISK 1(R-InternalOpsAuthBoundary LOW).
+
 > **ADR#71 — reviewer pilot execution ledger + first returned-labels monitor**
 >
 > **선행**: ADR#70 안정 기준점 커밋(`e9cd1ff`·11파일·제공 메시지 그대로·NO UPSTREAM).

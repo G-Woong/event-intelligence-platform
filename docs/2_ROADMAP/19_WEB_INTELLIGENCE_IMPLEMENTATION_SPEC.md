@@ -745,6 +745,14 @@ InternalOpsPilotExecutionStatus (internal ops UI · execution 축):
 
 **착수 게이트(§20 web UI 시점)**: internal ops dashboard 는 이 contract 위에서 **지금 착수 가능**하다 — workflow state(누가 무엇을 빠뜨렸는지·회수 진행)를 시각화할 뿐 unverified truth 를 노출하지 않기 때문이다(`flags.no_public_iu=True`·pseudonym only·PII-safe). 반면 **public Intelligence Unit UI 는 여전히 No-Go** — source identity/gold/MERGE_GATE(`RAG_KG_AGENT_READINESS` 9조건 중 1·4·5·7 미충족)를 통과하기 전까지 raw source→즉시 public output 은 금지다. **위험**: ops UI 필드(pilot_status·gold_count 등)가 public truth 로 오인될 수 있음(R-OpsUIPrematureTruth) → internal/public surface 물리적·시각적 분리가 구현 시 강제되어야 한다.
 
+**ADR#72 — 이 contract 의 첫 물질화(actual backend read-only API + frontend seed):**
+
+ADR#72 가 위 contract 를 실제 backend read-only API 와 frontend seed 로 구현한다. `reviewer_actual_input_gate.py`(ADR#71 `run_reviewer_pilot_execution` 단일 호출 dispatch·재구현 0)가 gitignored 입력 디렉터리(`outputs/reviewer_batch/<batch>/`)를 **스캔만**(생성·날조 0)해 실 contact evidence/returned label 유무를 5-state `actual_input_status`(no_actual_input/contact_evidence_only/returned_labels_present/invalid_returned_labels/labels_imported)로 산출하고, 없으면 `external_input_required=production_gold_count==0` 으로 정직히 멈추며, 있으면 intake→followup→handoff end-to-end 로 태운다.
+
+- **backend** `GET /api/internal/ops/pilot-execution`: **이중 게이트** = admin-token(`require_admin_token`·production/staging 토큰 미설정 시 503 fail-closed·dev/test bypass) + `INTERNAL_OPS_DASHBOARD_ENABLED` flag(기본 off→404). read-only·sync `def`(FastAPI threadpool·event loop 미차단)·DB/LLM/embedding/network 0·`response_model=InternalOpsPilotExecutionStatus`(sanitized 화이트리스트 — same_event/score/rationale/predicted_status/raw PII 필드 부재로 구조적 미노출).
+- **frontend** `/internal/ops-pilot`(`app/internal/ops-pilot/page.tsx`): server-only env `INTERNAL_OPS_DASHBOARD_ENABLED` 미설정→`notFound()`(404·**NEXT_PUBLIC 아님**·클라이언트 미전송)·nav(`layout.tsx` 하드코딩) 미노출·데이터는 server-side `adminFetch`(X-Admin-Token)·read-only·no-go 배너("Internal operations status"/"Not public truth"/"No merge allowed"/"Gold not verified yet"/"Requires MERGE_GATE before public IU")·순수 view helper(`opsPilotExecutionView.ts`)의 `FORBIDDEN_OPS_FIELDS` 재귀 가드(표시층이 forbidden 필드 re-introduce 차단).
+- **4중 게이트(R-InternalOpsAuthBoundary)**: admin-token(prod fail-closed) + flag-404 + nav 미노출 + server-env `notFound()`. **internal ops(workflow state·`no_public_truth`) ↔ public IU(verified truth·source identity/gold/MERGE_GATE 통과 후만·No-Go)** 분리 유지. RAG/KG/Entity/LLM 은 `RAG_KG_AGENT_READINESS` 의 gated roadmap(Stage R1~R7)이며 merge 에는 No-Go.
+
 ## §20. 단계별 "정의된 완료(Definition of Done)"
 
 각 단계가 "끝났다"의 객관 정의(DIRECTION §8 acceptance를 단계로 분해).

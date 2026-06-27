@@ -72,6 +72,12 @@ class Settings(BaseSettings):
     # read-only·결정론(LLM/network 0). 기존 /api/events(event_cards) 경로는 무관(항상 동작).
     EVENT_TIMELINE_API_ENABLED: bool = False
 
+    # Internal ops dashboard read API(ADR#72): /api/internal/ops/* read-only 노출 토글. 기본 off —
+    # off 면 endpoint 404(미노출). admin-token(require_admin_token)과 **이중 게이트**(인증 + flag).
+    # public truth 아님(workflow state 만·same_event/score/rationale/predicted_status/raw PII 0).
+    # read-only·결정론(LLM/embedding/DB-write/network 0). reviewer pipeline 의 운영 상태만 노출한다.
+    INTERNAL_OPS_DASHBOARD_ENABLED: bool = False
+
     EMBEDDING_PROVIDER: Literal["mock", "openai"] = "mock"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     EMBEDDING_DIM: int = 1536

@@ -103,3 +103,39 @@ export interface JobStatus {
   updated_at?: string;
   error?: string;
 }
+
+// ── ADR#72: internal ops dashboard (InternalOpsPilotExecutionStatus) — backend sanitized contract 와 1:1 ──
+// internal-only·read-only·public truth 아님. same_event truth/score/rationale/predicted_status/raw PII 는
+// 필드 자체가 없어 구조적 미노출. reviewer pipeline 의 workflow state 만 표현한다.
+export interface InternalOpsFlags {
+  internal_only: boolean;
+  no_public_truth: boolean;
+  no_merge: boolean;
+  no_public_iu: boolean;
+  pii_safe: boolean;
+  no_llm: boolean;
+  no_db_write: boolean;
+  gold_provenance_verified: boolean;
+}
+
+export interface InternalOpsPilotExecutionStatus {
+  contract: string;
+  batch_id: string;
+  pilot_status: string;
+  execution_status: string;
+  contact_evidence_present: boolean;
+  real_reviewers_contacted: number;
+  returned_label_count: number;
+  missing_label_count: number;
+  invalid_label_count: number;
+  invalid_file_count: number;
+  conflict_pair_count: number;
+  overdue_count: number;
+  production_gold_count: number;
+  synthetic_gold_count: number;
+  production_gold_provenance_verified: boolean;
+  calibration_ready: boolean;
+  merge_gate_ready: boolean;
+  next_action: string;
+  flags: InternalOpsFlags;
+}
