@@ -129,3 +129,36 @@ class InternalOpsR1AcquisitionStatus(BaseModel):
     merge_gate_ready: bool
     next_manual_actions: list[str]
     flags: InternalOpsFlags
+
+
+class InternalOpsR1PilotBatchStatus(BaseModel):
+    """ADR#75 — R1 first reviewer pilot batch freeze + launch readiness(read-only·public truth 아님).
+
+    `r1_reviewer_pilot_batch.run_r1_reviewer_pilot_batch` 의 sanitized r1_pilot_batch_contract 를 미러한다.
+    batch frozen 여부·deterministic signature·frozen pair count·expected label files·launch_status·R1 gap·
+    R2~R7 No-Go 만 노출한다 — same_event truth·score·rationale·predicted_status·raw PII·secret 은 필드 자체가
+    없어 구조적 미노출. **candidate_provenance/pilot_batch_is_production_candidate** 가 합성 fixture 를 production
+    후보로 오인하지 못하게 명시(둔갑 0). frozen batch 는 reviewer worklist 동결이지 event truth 가 아니다.
+    """
+    contract: str
+    pilot_batch_id: str
+    batch_frozen: bool
+    batch_signature: str
+    candidate_provenance: str
+    pilot_batch_is_production_candidate: bool
+    frozen_pair_count: int
+    target_pair_count: int
+    expected_label_file_count: int
+    launch_status: str
+    ready_for_manual_launch: bool
+    returned_labels_found: bool
+    returned_label_count: int
+    intake_directory: str
+    validation_command: str
+    r1_status: str
+    production_gold_count: int
+    required_production_gold_count: int
+    current_r1_gap: int
+    r2_r7_no_go: bool
+    next_manual_action: str
+    flags: InternalOpsFlags

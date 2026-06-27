@@ -208,3 +208,32 @@ export interface InternalOpsR1AcquisitionStatus {
   next_manual_actions: string[];
   flags: InternalOpsFlags;
 }
+
+// ── ADR#75: R1 first reviewer pilot batch freeze + launch readiness — backend sanitized contract 와 1:1 ──
+// batch frozen 여부·deterministic signature·frozen pair count·expected files·launch_status·R1 gap·R2~R7 No-Go 만.
+// candidate_provenance/pilot_batch_is_production_candidate 가 합성 fixture 를 production 후보로 오인 차단(둔갑 0).
+// frozen batch 는 reviewer worklist 동결이지 event truth 가 아니다. public truth 아님·read-only.
+export interface InternalOpsR1PilotBatchStatus {
+  contract: string;
+  pilot_batch_id: string;
+  batch_frozen: boolean;
+  batch_signature: string;
+  candidate_provenance: string;
+  pilot_batch_is_production_candidate: boolean;
+  frozen_pair_count: number;
+  target_pair_count: number;
+  expected_label_file_count: number;
+  launch_status: string;
+  ready_for_manual_launch: boolean;
+  returned_labels_found: boolean;
+  returned_label_count: number;
+  intake_directory: string;
+  validation_command: string;
+  r1_status: string;
+  production_gold_count: number;
+  required_production_gold_count: number;
+  current_r1_gap: number;
+  r2_r7_no_go: boolean;
+  next_manual_action: string;
+  flags: InternalOpsFlags;
+}

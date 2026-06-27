@@ -18,6 +18,7 @@ from backend.app.tools.reviewer_pilot_handoff import _HANDOFF_FORBIDDEN_KEYS
 OPS_PATH = "/api/internal/ops/pilot-execution"
 PREFLIGHT_PATH = "/api/internal/ops/preflight"
 R1_PATH = "/api/internal/ops/r1-gold-acquisition"
+R1_BATCH_PATH = "/api/internal/ops/r1-pilot-batch"
 
 
 @pytest.fixture()
@@ -265,3 +266,83 @@ def test_r1_admin_auth_prod_fail_closed(monkeypatch):
     monkeypatch.setattr(settings, "ADMIN_API_TOKEN", "")
     c = TestClient(app)   # lifespan 미실행 — 요청 시점 인증만 검증(이중 게이트의 인증 축).
     assert c.get(R1_PATH).status_code == 503
+
+
+# ── ADR#75 /r1-pilot-batch 엔드포인트(pilot batch freeze + launch readiness·read-only) ────────────────────
+def test_r1_batch_flag_off_returns_404(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", False)
+    assert client.get(R1_BATCH_PATH).status_code == 404
+
+
+def test_r1_batch_flag_on_returns_sanitized_contract(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    r = client.get(R1_BATCH_PATH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["contract"] == "InternalOpsR1PilotBatchStatus"
+    # 기본(무입력) → frozen 합성 pilot·production 후보 둔갑 0·launch ready·R1 blocked.
+    assert body["batch_frozen"] is True
+    assert body["candidate_provenance"] == "synthetic_fixture"
+    assert body["pilot_batch_is_production_candidate"] is False
+    assert body["launch_status"] == "ready_for_manual_launch"
+    assert body["r1_status"] == "blocked_no_labels"
+
+
+def test_r1_batch_launch_readiness_visible(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_BATCH_PATH).json()
+    assert body["frozen_pair_count"] == 5            # captured fixture → 5 near-match pairs.
+    assert body["target_pair_count"] == 200
+    assert body["expected_label_file_count"] == 2
+    assert body["returned_labels_found"] is False
+    assert body["returned_label_count"] == 0
+    assert body["ready_for_manual_launch"] is True
+    assert body["current_r1_gap"] == 200
+    assert body["r2_r7_no_go"] is True
+    assert body["batch_signature"].startswith("sha256:")
+    assert body["validation_command"]
+    assert body["next_manual_action"]
+
+
+def test_r1_batch_no_go_flags_and_no_merge(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_BATCH_PATH).json()
+    for k in ("internal_only", "no_public_truth", "no_merge", "no_public_iu", "pii_safe", "no_llm", "no_db_write"):
+        assert body["flags"][k] is True, k
+    assert body["flags"]["gold_provenance_verified"] is False
+    assert body["production_gold_count"] == 0
+
+
+def test_r1_batch_no_forbidden_fields_and_no_pii(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_BATCH_PATH).json()
+    assert _forbidden_keys_in(body) == set()
+    blob = json.dumps(body, ensure_ascii=False)
+    assert "Users" not in blob          # 절대경로/사용자명 미노출.
+
+
+def test_r1_batch_read_only_post_not_allowed(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    assert client.post(R1_BATCH_PATH).status_code == 405
+
+
+def test_r1_batch_response_keys_are_sanitized_subset(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_BATCH_PATH).json()
+    allowed = {
+        "contract", "pilot_batch_id", "batch_frozen", "batch_signature", "candidate_provenance",
+        "pilot_batch_is_production_candidate", "frozen_pair_count", "target_pair_count",
+        "expected_label_file_count", "launch_status", "ready_for_manual_launch", "returned_labels_found",
+        "returned_label_count", "intake_directory", "validation_command", "r1_status",
+        "production_gold_count", "required_production_gold_count", "current_r1_gap", "r2_r7_no_go",
+        "next_manual_action", "flags",
+    }
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0.
+
+
+def test_r1_batch_admin_auth_prod_fail_closed(monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "ADMIN_API_TOKEN", "")
+    c = TestClient(app)   # lifespan 미실행 — 요청 시점 인증만 검증(이중 게이트의 인증 축).
+    assert c.get(R1_BATCH_PATH).status_code == 503

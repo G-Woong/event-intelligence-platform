@@ -11,15 +11,19 @@ import type {
   InternalOpsPilotExecutionStatus,
   InternalOpsPreflightStatus,
   InternalOpsR1AcquisitionStatus,
+  InternalOpsR1PilotBatchStatus,
 } from "@/lib/api/types";
 import {
   OPS_NO_GO_COPY,
+  OPS_R1_BATCH_COPY,
   OPS_R1_COPY,
   assertOpsContractSafe,
   preflightWarnings,
+  r1BatchWarnings,
   r1Warnings,
   toOpsDisplayRows,
   toPreflightDisplayRows,
+  toR1BatchDisplayRows,
   toR1DisplayRows,
 } from "@/lib/ops/opsPilotExecutionView";
 
@@ -72,6 +76,8 @@ export default async function InternalOpsPilotExecutionPage() {
     await fetchSafe<InternalOpsPreflightStatus>("/api/internal/ops/preflight");
   const { data: r1, error: r1Error } =
     await fetchSafe<InternalOpsR1AcquisitionStatus>("/api/internal/ops/r1-gold-acquisition");
+  const { data: r1Batch, error: r1BatchError } =
+    await fetchSafe<InternalOpsR1PilotBatchStatus>("/api/internal/ops/r1-pilot-batch");
 
   const banners = [
     OPS_NO_GO_COPY.notPublicTruth,
@@ -80,9 +86,13 @@ export default async function InternalOpsPilotExecutionPage() {
     OPS_NO_GO_COPY.requiresMergeGate,
     OPS_R1_COPY.internalOnly,
   ];
+  // dedupe — 여러 패널이 같은 No-Go 문구를 낼 수 있어 React key 충돌 방지(예: "R2~R7 remain No-Go").
   const warnings = [
-    ...(preflight ? preflightWarnings(preflight) : []),
-    ...(r1 ? r1Warnings(r1) : []),
+    ...new Set([
+      ...(preflight ? preflightWarnings(preflight) : []),
+      ...(r1 ? r1Warnings(r1) : []),
+      ...(r1Batch ? r1BatchWarnings(r1Batch) : []),
+    ]),
   ];
 
   return (
@@ -164,6 +174,27 @@ export default async function InternalOpsPilotExecutionPage() {
       ) : (
         <div className="rounded border border-gray-800 bg-gray-900 p-4 text-sm text-gray-300">
           R1 gold acquisition status unavailable ({r1Error}).
+        </div>
+      )}
+
+      {r1Batch ? (
+        <Section title="R1 reviewer pilot batch (freeze · launch readiness)">
+          <p className="text-xs text-gray-500">
+            {OPS_R1_BATCH_COPY.worklistNotTruth}. {OPS_R1_BATCH_COPY.manualLaunchRequired}.{" "}
+            {OPS_R1_BATCH_COPY.goldZeroUntilImport}. {OPS_R1_BATCH_COPY.laddersNoGo}. The frozen batch is built
+            from a synthetic fixture (structural readiness only) — real production gold requires acquiring real
+            candidate pairs from live source overlap and real reviewer labels. The batch does not increase
+            production gold and does not assert same-event truth.
+          </p>
+          <RowTable rows={toR1BatchDisplayRows(r1Batch)} />
+          <p className="text-sm text-gray-300">
+            <span className="text-gray-500">Next manual action:</span> {r1Batch.next_manual_action}
+          </p>
+          <p className="font-mono text-xs text-gray-500">{r1Batch.validation_command}</p>
+        </Section>
+      ) : (
+        <div className="rounded border border-gray-800 bg-gray-900 p-4 text-sm text-gray-300">
+          R1 pilot batch status unavailable ({r1BatchError}).
         </div>
       )}
 

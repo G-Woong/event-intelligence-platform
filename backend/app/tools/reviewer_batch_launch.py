@@ -269,11 +269,13 @@ def build_assignment_manifest(queue: dict, *, batch_id: str) -> dict:
 
 
 # ── §C/§8: intake plan(directory / expected files / validation command) ───────────────────────────────
-def build_intake_plan(batch_id: str, *, pseudonyms: list[str]) -> dict:
+def build_intake_plan(batch_id: str, *, pseudonyms: list[str], intake_dir: Optional[str] = None) -> dict:
     """intake directory 구조·expected label filenames·validation command(운영자가 칠 명령) 정의.
 
-    경로는 outputs/ 하위(commit 제외)다. reviewer 별 expected file = batch_id__<pseudonym>__labels.jsonl."""
-    intake_dir = f"outputs/reviewer_batch/{batch_id}/intake"
+    경로는 outputs/ 하위(commit 제외)다. reviewer 별 expected file = batch_id__<pseudonym>__labels.jsonl.
+    `intake_dir` 미지정 시 canonical(`outputs/reviewer_batch/<batch_id>/intake`); 지정 시 그 경로로
+    validation command/placement 를 정렬한다(게이트 스캔 경로와 단일 경로 수렴 — ADR#75 pilot batch freeze)."""
+    intake_dir = intake_dir if intake_dir is not None else f"outputs/reviewer_batch/{batch_id}/intake"
     expected = [f"{batch_id}__{ps}__labels.jsonl" for ps in sorted(pseudonyms)]
     validation_command = (
         ".\\.venv\\Scripts\\python.exe -m backend.app.tools.reviewer_batch_launch "

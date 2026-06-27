@@ -7,6 +7,7 @@ import type {
   InternalOpsPilotExecutionStatus,
   InternalOpsPreflightStatus,
   InternalOpsR1AcquisitionStatus,
+  InternalOpsR1PilotBatchStatus,
 } from "@/lib/api/types";
 
 // internal ops dashboard 가 절대 표시하면 안 되는 키(있으면 오염). recursive 검사.
@@ -156,5 +157,47 @@ export function r1Warnings(r: InternalOpsR1AcquisitionStatus): string[] {
   if (r.r1_status === "blocked_no_labels") out.push(OPS_R1_COPY.blockedByLabels);
   if (r.current_production_gold_count === 0) out.push(OPS_R1_COPY.goldZeroUntilImport);
   if (!r.merge_gate_ready) out.push(OPS_R1_COPY.laddersNoGo);
+  return out;
+}
+
+// ── ADR#75 R1 pilot batch freeze + launch readiness view helpers ────────────────────────────────────────
+// 필수 copy(§7) — frozen batch 가 truth/production 으로 오인되지 않게(public truth 아님). frozen batch 는
+// reviewer worklist 동결이지 event truth 가 아니며, 합성 fixture 라 production gold 0 유지.
+export const OPS_R1_BATCH_COPY = {
+  worklistNotTruth: "Frozen batch is a reviewer worklist, not truth",
+  manualLaunchRequired: "Manual launch required",
+  returnedLabelsMissing: "Returned labels are still missing",
+  goldZeroUntilImport: "Production gold remains 0 until human labels are imported",
+  laddersNoGo: "R2~R7 remain No-Go",
+  syntheticFixture: "Synthetic fixture pilot — production candidates require live source overlap",
+} as const;
+
+// pilot batch → launch readiness 표시 행(read-only·workflow state 만). production gold 는 "unverified" 라벨 동반.
+export function toR1BatchDisplayRows(b: InternalOpsR1PilotBatchStatus): OpsDisplayRow[] {
+  return [
+    { label: "Pilot batch id", value: b.pilot_batch_id },
+    { label: "Launch status", value: b.launch_status },
+    { label: "Batch frozen", value: String(b.batch_frozen) },
+    { label: "Candidate provenance", value: b.candidate_provenance },
+    { label: "Production candidate", value: String(b.pilot_batch_is_production_candidate) },
+    { label: "Frozen pairs (pilot_n)", value: `${b.frozen_pair_count} / ${b.target_pair_count}` },
+    { label: "Expected label files", value: `${b.expected_label_file_count}` },
+    { label: "Ready for manual launch", value: String(b.ready_for_manual_launch) },
+    { label: "Returned labels found", value: String(b.returned_labels_found) },
+    { label: "Batch signature", value: b.batch_signature },
+    { label: "Production gold (unverified)", value: `${b.production_gold_count} / ${b.required_production_gold_count} (gap ${b.current_r1_gap})` },
+    { label: "R1 status", value: b.r1_status },
+    { label: "R2~R7 No-Go", value: String(b.r2_r7_no_go) },
+  ];
+}
+
+// pilot batch → operator 가 봐야 할 경고 배너(worklist≠truth·수동 실행·라벨 미회수·gold 0·R2~R7 No-Go·합성 fixture).
+export function r1BatchWarnings(b: InternalOpsR1PilotBatchStatus): string[] {
+  const out: string[] = [OPS_R1_BATCH_COPY.worklistNotTruth];
+  if (b.ready_for_manual_launch) out.push(OPS_R1_BATCH_COPY.manualLaunchRequired);
+  if (!b.returned_labels_found) out.push(OPS_R1_BATCH_COPY.returnedLabelsMissing);
+  if (b.production_gold_count === 0) out.push(OPS_R1_BATCH_COPY.goldZeroUntilImport);
+  if (b.r2_r7_no_go) out.push(OPS_R1_BATCH_COPY.laddersNoGo);
+  if (!b.pilot_batch_is_production_candidate) out.push(OPS_R1_BATCH_COPY.syntheticFixture);
   return out;
 }

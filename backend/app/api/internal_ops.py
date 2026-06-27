@@ -17,9 +17,11 @@ from backend.app.schemas.internal_ops import (
     InternalOpsPilotExecutionStatus,
     InternalOpsPreflightStatus,
     InternalOpsR1AcquisitionStatus,
+    InternalOpsR1PilotBatchStatus,
 )
 from backend.app.tools.internal_ops_preflight import run_internal_ops_preflight
 from backend.app.tools.r1_gold_acquisition_plan import run_r1_gold_acquisition_plan
+from backend.app.tools.r1_reviewer_pilot_batch import run_r1_reviewer_pilot_batch
 from backend.app.tools.reviewer_actual_input_gate import run_actual_input_gate
 
 router = APIRouter()
@@ -83,3 +85,23 @@ def get_r1_gold_acquisition_status() -> InternalOpsR1AcquisitionStatus:
         raise HTTPException(
             status_code=503, detail="internal ops r1 acquisition temporarily unavailable") from None
     return InternalOpsR1AcquisitionStatus(**out["r1_contract"])
+
+
+@router.get("/r1-pilot-batch", response_model=InternalOpsR1PilotBatchStatus)
+def get_r1_pilot_batch_status() -> InternalOpsR1PilotBatchStatus:
+    """ADR#75 — R1 first reviewer pilot batch freeze + launch readiness(read-only). flag off → 404(미노출).
+
+    actual input 을 재확인하고, 결정적 후보 worklist 를 동결(deterministic signature)하며, launch_status·R1 gap·
+    R2~R7 No-Go 를 산출한다. candidate_provenance/pilot_batch_is_production_candidate 가 합성 fixture 를 production
+    후보로 오인하지 못하게 명시한다(둔갑 0). 응답 스키마에 same_event truth·score·rationale·predicted_status·raw
+    PII 필드 자체가 없다(구조적 미노출). operator 입력 파일이 깨졌으면 경로/내용 누출 없이 503.
+    """
+    if not settings.INTERNAL_OPS_DASHBOARD_ENABLED:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        out = run_r1_reviewer_pilot_batch()
+    except (ValueError, OSError) as exc:   # malformed operator 입력 파일 등 — detail 에 경로/내용 미포함.
+        logger.warning("internal ops r1 pilot batch unavailable: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=503, detail="internal ops r1 pilot batch temporarily unavailable") from None
+    return InternalOpsR1PilotBatchStatus(**out["r1_pilot_batch_contract"])

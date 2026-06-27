@@ -349,3 +349,118 @@ describe("r1 acquisition view", () => {
     assert.throws(() => assertOpsContractSafe({ ...SAMPLE_R1, same_event: true }), /forbidden field: same_event/);
   });
 });
+
+// ── ADR#75 R1 pilot batch view(freeze + launch readiness) — inline 재선언 lock ──
+const OPS_R1_BATCH_COPY = {
+  worklistNotTruth: "Frozen batch is a reviewer worklist, not truth",
+  manualLaunchRequired: "Manual launch required",
+  returnedLabelsMissing: "Returned labels are still missing",
+  goldZeroUntilImport: "Production gold remains 0 until human labels are imported",
+  laddersNoGo: "R2~R7 remain No-Go",
+  syntheticFixture: "Synthetic fixture pilot — production candidates require live source overlap",
+};
+
+function toR1BatchDisplayRows(b) {
+  return [
+    { label: "Pilot batch id", value: b.pilot_batch_id },
+    { label: "Launch status", value: b.launch_status },
+    { label: "Batch frozen", value: String(b.batch_frozen) },
+    { label: "Candidate provenance", value: b.candidate_provenance },
+    { label: "Production candidate", value: String(b.pilot_batch_is_production_candidate) },
+    { label: "Frozen pairs (pilot_n)", value: `${b.frozen_pair_count} / ${b.target_pair_count}` },
+    { label: "Expected label files", value: `${b.expected_label_file_count}` },
+    { label: "Ready for manual launch", value: String(b.ready_for_manual_launch) },
+    { label: "Returned labels found", value: String(b.returned_labels_found) },
+    { label: "Batch signature", value: b.batch_signature },
+    { label: "Production gold (unverified)", value: `${b.production_gold_count} / ${b.required_production_gold_count} (gap ${b.current_r1_gap})` },
+    { label: "R1 status", value: b.r1_status },
+    { label: "R2~R7 No-Go", value: String(b.r2_r7_no_go) },
+  ];
+}
+
+function r1BatchWarnings(b) {
+  const out = [OPS_R1_BATCH_COPY.worklistNotTruth];
+  if (b.ready_for_manual_launch) out.push(OPS_R1_BATCH_COPY.manualLaunchRequired);
+  if (!b.returned_labels_found) out.push(OPS_R1_BATCH_COPY.returnedLabelsMissing);
+  if (b.production_gold_count === 0) out.push(OPS_R1_BATCH_COPY.goldZeroUntilImport);
+  if (b.r2_r7_no_go) out.push(OPS_R1_BATCH_COPY.laddersNoGo);
+  if (!b.pilot_batch_is_production_candidate) out.push(OPS_R1_BATCH_COPY.syntheticFixture);
+  return out;
+}
+
+const SAMPLE_R1_BATCH = {
+  contract: "InternalOpsR1PilotBatchStatus",
+  pilot_batch_id: "reviewer_pilot_exec_001",
+  batch_frozen: true,
+  batch_signature: "sha256:6c0f451d9d06f03e",
+  candidate_provenance: "synthetic_fixture",
+  pilot_batch_is_production_candidate: false,
+  frozen_pair_count: 5,
+  target_pair_count: 200,
+  expected_label_file_count: 2,
+  launch_status: "ready_for_manual_launch",
+  ready_for_manual_launch: true,
+  returned_labels_found: false,
+  returned_label_count: 0,
+  intake_directory: "outputs/reviewer_batch/reviewer_pilot_exec_001/intake",
+  validation_command: ".\\.venv\\Scripts\\python.exe -m backend.app.tools.reviewer_batch_launch --validate outputs/reviewer_batch/reviewer_pilot_exec_001/intake --batch-id reviewer_pilot_exec_001",
+  r1_status: "blocked_no_labels",
+  production_gold_count: 0,
+  required_production_gold_count: 200,
+  current_r1_gap: 200,
+  r2_r7_no_go: true,
+  next_manual_action: "operator: manually distribute the frozen worklist + instruction + label template",
+  flags: {
+    internal_only: true, no_public_truth: true, no_merge: true, no_public_iu: true,
+    pii_safe: true, no_llm: true, no_db_write: true, gold_provenance_verified: false,
+  },
+};
+
+describe("r1 pilot batch view", () => {
+  it("passes the forbidden-field guard (no score/rationale/predicted_status/PII)", () => {
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_R1_BATCH));
+  });
+
+  it("maps launch readiness to string rows (frozen/provenance/pilot_n/gap)", () => {
+    const rows = toR1BatchDisplayRows(SAMPLE_R1_BATCH);
+    const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]));
+    assert.equal(byLabel["Launch status"], "ready_for_manual_launch");
+    assert.equal(byLabel["Candidate provenance"], "synthetic_fixture");
+    assert.equal(byLabel["Production candidate"], "false");
+    assert.equal(byLabel["Frozen pairs (pilot_n)"], "5 / 200");
+    assert.equal(byLabel["Production gold (unverified)"], "0 / 200 (gap 200)");
+    assert.equal(byLabel["R2~R7 No-Go"], "true");
+    for (const row of rows) assert.equal(typeof row.value, "string");
+  });
+
+  it("derives worklist-not-truth + manual-launch + missing-labels + synthetic warnings", () => {
+    const w = r1BatchWarnings(SAMPLE_R1_BATCH);
+    assert.ok(w.includes(OPS_R1_BATCH_COPY.worklistNotTruth));
+    assert.ok(w.includes(OPS_R1_BATCH_COPY.manualLaunchRequired));
+    assert.ok(w.includes(OPS_R1_BATCH_COPY.returnedLabelsMissing));
+    assert.ok(w.includes(OPS_R1_BATCH_COPY.goldZeroUntilImport));
+    assert.ok(w.includes(OPS_R1_BATCH_COPY.laddersNoGo));
+    assert.ok(w.includes(OPS_R1_BATCH_COPY.syntheticFixture));
+  });
+
+  it("carries required no-go copy statements", () => {
+    assert.ok(OPS_R1_BATCH_COPY.worklistNotTruth.includes("worklist, not truth"));
+    assert.ok(OPS_R1_BATCH_COPY.manualLaunchRequired.includes("Manual launch"));
+    assert.ok(OPS_R1_BATCH_COPY.returnedLabelsMissing.includes("Returned labels are still missing"));
+    assert.ok(OPS_R1_BATCH_COPY.goldZeroUntilImport.includes("Production gold remains 0"));
+    assert.ok(OPS_R1_BATCH_COPY.laddersNoGo.includes("No-Go"));
+  });
+
+  it("marks the synthetic fixture as NOT a production candidate (no 둔갑)", () => {
+    assert.equal(SAMPLE_R1_BATCH.candidate_provenance, "synthetic_fixture");
+    assert.equal(SAMPLE_R1_BATCH.pilot_batch_is_production_candidate, false);
+    assert.equal(SAMPLE_R1_BATCH.production_gold_count, 0);
+  });
+
+  it("throws if a forbidden field is re-introduced into the pilot batch contract", () => {
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_R1_BATCH, same_event: true }),
+      /forbidden field: same_event/,
+    );
+  });
+});
