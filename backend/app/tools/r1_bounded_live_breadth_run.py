@@ -22,6 +22,7 @@ gold 0. provider breadth=acquisition support not truth · date-pin=operator gate
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from typing import Any, Callable, Optional
@@ -35,7 +36,12 @@ from backend.app.tools.r1_production_candidate_acquisition import PROD_BATCH_ID
 from backend.app.tools.r1_provider_breadth_acquisition import (
     run_provider_breadth_named_seed_ko_path,
 )
+from backend.app.tools.reviewer_handoff_bridge import build_reviewer_handoff_bridge
 from backend.app.tools.reviewer_pilot_handoff import _assert_pii_safe
+from backend.app.tools.sanitized_live_snapshot import (
+    build_sanitized_live_snapshot,
+    write_sanitized_live_snapshot,
+)
 
 BOUNDED_OPERATION_NAME = "bounded_live_breadth_run_and_candidate_freeze_attempt"
 DATE_PINNED_OPERATION_NAME = "date_pinned_live_query_and_freeze_attempt"
@@ -240,6 +246,8 @@ def build_date_pinned_live_run_frontier(*, out: dict) -> dict:
         "production_frozen_pair_count": int(out["production_frozen_pair_count"] or 0),
         "candidate_provenance": out["candidate_provenance"] or "none",
         "sanitized_snapshot_status": out["sanitized_snapshot_status"],
+        "date_window_enforced": bool(out["date_window_enforced"]),
+        "reviewer_handoff_ready": bool(out["reviewer_handoff_ready"]),
         "ko_source_lane_status": out["ko_source_lane_status"],
         "ko_named_seed_needed": bool(out["ko_named_seed_needed"]),
         "ko_floor_current": int(out["ko_floor_current"] or 0),
@@ -323,6 +331,12 @@ def _acquisition_next_action(binding: str, *, target: dict, named_seed_selected:
             "pseudonymous reviewers per pair and collect returned label JSONL; production gold stays 0 until labels import")
 
 
+def _snapshot_run_id(target: dict) -> str:
+    """sanitized snapshot run_id(결정론·secret 0) — occurrence_date + query_text 해시(원문 미노출·재현 식별만)."""
+    seed = f"{target.get('occurrence_date')}|{target.get('query_text')}"
+    return "datepin_" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12]
+
+
 def run_bounded_live_breadth_run(
     *, directory: Optional[Any] = None, batch_id: str = PROD_BATCH_ID, as_of: Optional[str] = None,
     live_query: bool = False, operator_event: Optional[dict] = None, pinned_event: Optional[dict] = None,
@@ -335,8 +349,10 @@ def run_bounded_live_breadth_run(
     env_probe_fn: Optional[Callable[[str], dict]] = None, host_gate: Any = None,
     readiness_fn: Optional[Callable[[], dict]] = None, gate_fn: Optional[Callable[..., dict]] = None,
     synthetic_batch_fn: Optional[Callable[..., dict]] = None,
+    persist_snapshot: bool = False,
 ) -> dict:
-    """ADR#82/#83 단일 진입 — base(breadth/seed/KO/actual-input) + date-pin gate + date-pinned live executor + freeze.
+    """ADR#82/#83/#84 단일 진입 — base(breadth/seed/KO/actual-input) + date-pin gate + date-pinned live executor +
+    freeze + reviewer handoff bridge + sanitized snapshot.
 
     operator_event(또는 back-compat pinned_event) 가 valid date-pinned event 이고 live_query 승인 + target.wired 일
     때만 `execute_date_pinned_bounded_live_run` 로 operator query 를 실제 쿼리해 live-derived 후보 freeze 를 시도한다.
@@ -454,11 +470,6 @@ def run_bounded_live_breadth_run(
     # ── ⑥ KO source lane(§8·EN run 과 분리) ──
     ko_lane = build_ko_source_lane(probe_fn=probe_fn)
 
-    # ── ⑦ sanitized snapshot(§F) — 이번 턴 미작성(live 미실행→no_live_run·실행돼도 작성은 별도 ADR 로 이연) ──
-    sanitized_snapshot_status = (
-        "not_written_no_live_run" if not live_executed else "not_written_deferred")
-    sanitized_live_snapshot_written = False
-
     # ── ⑧ binding classifier(§7) + next action ──
     binding_block, live_run_status = _classify_binding(
         operator_event_provided=operator_event_provided, date_pinned=date_pinned, target=target,
@@ -475,6 +486,34 @@ def run_bounded_live_breadth_run(
         ko_lane["ko_next_action"],
         *base_next_actions,
     ]))
+
+    # ── ⑨ sanitized live snapshot(§E·ADR#84) — live 실행 시 build; persist_snapshot 시 outputs/(gitignored) write ──
+    # date_window_enforced: executor 는 enforce_window=True 로 호출(provider 가 out-of-window 기사를 반환해도 adapter 가
+    # [D, D+1] 밖 record 를 drop) — ADR#84 live run 이 plumbing 은 맞으나 provider 가 window 를 무시함을 발견한 데 대한 보정.
+    date_window_enforced = bool(live_eligible)
+    executor_out = {"executed": live_executed, "live_call_count": live_call_count,
+                    "smoke": smoke, "pcand": pcand}
+    snapshot = build_sanitized_live_snapshot(
+        target, executor_out, run_id=_snapshot_run_id(target), live_run_status=live_run_status,
+        date_window_enforced=date_window_enforced)
+    if not live_executed:
+        sanitized_snapshot_status = "not_written_no_live_run"
+        sanitized_live_snapshot_written = False
+        sanitized_live_snapshot_path = ""
+    elif persist_snapshot:
+        w = write_sanitized_live_snapshot(snapshot)
+        sanitized_snapshot_status = w["snapshot_status"]
+        sanitized_live_snapshot_written = w["snapshot_status"] == "written"
+        sanitized_live_snapshot_path = w["snapshot_path"]
+    else:
+        # live 실행됐으나 비-persist(orchestrator 단위 테스트·API read 경로): 작성 안 함(disk side-effect 0).
+        sanitized_snapshot_status = "built_not_persisted"
+        sanitized_live_snapshot_written = False
+        sanitized_live_snapshot_path = ""
+
+    # ── ⑩ reviewer handoff bridge(§7·ADR#84·freeze→contact 직전·전송 0) — freeze 없으면 ready=False(blocker 표면화) ──
+    handoff = build_reviewer_handoff_bridge(pcand or {}, live_run_status=live_run_status)
+    reviewer_handoff_ready = bool(handoff["reviewer_handoff_ready"])
 
     out = {
         "operation_name": BOUNDED_OPERATION_NAME,
@@ -533,10 +572,17 @@ def run_bounded_live_breadth_run(
         "production_batch_id": production_batch_id,
         "production_frozen_pair_count": production_frozen_pair_count,
         "candidate_provenance": candidate_provenance,
-        # sanitized snapshot(§F).
+        # sanitized snapshot(§E·ADR#84) + date window enforcement.
         "sanitized_live_snapshot_written": sanitized_live_snapshot_written,
-        "sanitized_live_snapshot_path": "",
+        "sanitized_live_snapshot_path": sanitized_live_snapshot_path,
         "sanitized_snapshot_status": sanitized_snapshot_status,
+        "date_window_enforced": date_window_enforced,
+        # reviewer handoff bridge(§7·ADR#84·freeze→contact 직전·전송 0·freeze 없으면 ready=False).
+        "reviewer_handoff_ready": reviewer_handoff_ready,
+        "reviewer_handoff_bridge": handoff,
+        "expected_label_files_ready": bool(handoff["expected_label_files_ready"]),
+        "validation_command_ready": bool(handoff["validation_command_ready"]),
+        "placement_guide_ready": bool(handoff["placement_guide_ready"]),
         # KO source lane(§3-E·§8).
         "ko_source_lane_status": ko_lane["ko_source_lane_status"],
         "ko_named_seed_needed": ko_lane["ko_named_seed_needed"],
@@ -622,7 +668,8 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     out = run_bounded_live_breadth_run(
         directory=ns.input_dir, batch_id=ns.batch_id, as_of=ns.as_of,
-        live_query=ns.live_query, operator_event=operator_event, host_gate=host_gate)
+        live_query=ns.live_query, operator_event=operator_event, host_gate=host_gate,
+        persist_snapshot=ns.live_query)
     if ns.json:
         print(json.dumps(out, ensure_ascii=False, indent=2, default=str))
         return 0
@@ -642,7 +689,10 @@ def main(argv: Optional[list[str]] = None) -> int:
           f"frozen={out['production_frozen_pair_count']} ready={out['production_candidate_batch_ready']}")
     print(f"- ko_lane: status={out['ko_source_lane_status']} named_seed_needed={out['ko_named_seed_needed']} "
           f"floor={out['ko_floor_current']}/{out['ko_floor_required']}")
-    print(f"- snapshot: written={out['sanitized_live_snapshot_written']} status={out['sanitized_snapshot_status']}")
+    print(f"- snapshot: written={out['sanitized_live_snapshot_written']} status={out['sanitized_snapshot_status']} "
+          f"date_window_enforced={out['date_window_enforced']}")
+    print(f"- handoff_bridge: ready={out['reviewer_handoff_ready']} "
+          f"actual_sending={out['actual_sending_performed']}")
     print(f"- r1_gap: production_gold={out['production_gold_count']} gap={out['current_r1_gap']} "
           f"r2_r7_no_go={out['r2_r7_no_go']}")
     print(f"- gates: merge={out['merge_allowed']} llm={out['llm_invoked']} embedding={out['embedding_invoked']} "

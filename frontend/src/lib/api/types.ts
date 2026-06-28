@@ -457,6 +457,9 @@ export interface InternalOpsDatePinnedLiveRunFrontier {
   production_frozen_pair_count: number;
   candidate_provenance: string;
   sanitized_snapshot_status: string;
+  // ADR#84: provider out-of-window record drop 강제 + freeze→contact 직전 handoff readiness(freeze 없으면 false).
+  date_window_enforced: boolean;
+  reviewer_handoff_ready: boolean;
   // KO source lane(§8).
   ko_source_lane_status: string;
   ko_named_seed_needed: boolean;

@@ -376,5 +376,51 @@ def test_31_nyt_headline_string_or_missing_or_malformed_handled():
     assert qr.status == "ok" and qr.records_count == 1
 
 
+# ══ Section D — ADR#84 date-pin window enforcement (enforce_window·opt-in·additive) ══════════════════════
+def _guardian_mixed_window_payload():
+    # window [2026-06-25, 2026-06-26]: in-window 2 + out-of-window 2(6/28 최신 — provider 가 date 필터 무시 시 반환).
+    return _guardian_payload(results=[
+        {"webTitle": WIRE, "webUrl": "https://www.theguardian.com/in1",
+         "webPublicationDate": "2026-06-25T09:00:00Z"},
+        {"webTitle": PARA, "webUrl": "https://www.theguardian.com/in2",
+         "webPublicationDate": "2026-06-26T10:00:00Z"},
+        {"webTitle": DIFF, "webUrl": "https://www.theguardian.com/out1",
+         "webPublicationDate": "2026-06-28T11:00:00Z"},
+        {"webTitle": "Unrelated newest world cup live blog", "webUrl": "https://www.theguardian.com/out2",
+         "webPublicationDate": "2026-06-28T12:00:00Z"},
+    ])
+
+
+def test_32_enforce_window_false_keeps_all_records():
+    # 기본 enforce_window=False → ADR#62~#82 동작 보존(provider 반환 전체 유지·필터 0).
+    qr = run_provider_query("guardian", topic="x", transport=lambda _u: _guardian_mixed_window_payload(),
+                            env_status_fn=env_present, today="2026-06-26")
+    assert qr.status == "ok" and qr.records_count == 4
+
+
+def test_33_enforce_window_drops_out_of_window_records():
+    # enforce_window=True → [2026-06-25, 2026-06-26] 밖(6/28) record drop(provider 가 window 무시해도 adapter 강제).
+    qr = run_provider_query("guardian", topic="x", transport=lambda _u: _guardian_mixed_window_payload(),
+                            env_status_fn=env_present, today="2026-06-26", enforce_window=True)
+    assert qr.status == "ok" and qr.records_count == 2
+    for r in qr.records:
+        assert r["published_at_or_observed_at"] in ("2026-06-25", "2026-06-26")
+
+
+def test_34_enforce_window_all_out_of_window_distinct_block_reason():
+    # provider 가 window 밖(최신) 기사만 반환 → enforce_window 가 전부 drop → no_in_window_records(진짜 0 과 구분).
+    out_only = _guardian_payload(results=[
+        {"webTitle": WIRE, "webUrl": "https://www.theguardian.com/o1", "webPublicationDate": "2026-06-28T09:00:00Z"},
+        {"webTitle": DIFF, "webUrl": "https://www.theguardian.com/o2", "webPublicationDate": "2026-06-29T10:00:00Z"},
+    ])
+    qr = run_provider_query("guardian", topic="x", transport=lambda _u: out_only,
+                            env_status_fn=env_present, today="2026-06-26", enforce_window=True)
+    assert qr.status == "no_records" and qr.block_reason == "no_in_window_records"
+    # 진짜 0 records(provider 빈 응답)는 일반 no_records — block_reason 으로 두 사유를 정직 구분.
+    qr2 = run_provider_query("guardian", topic="x", transport=lambda _u: _guardian_payload(results=[]),
+                             env_status_fn=env_present, today="2026-06-26", enforce_window=True)
+    assert qr2.status == "no_records" and qr2.block_reason == "no_records"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

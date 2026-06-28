@@ -269,15 +269,18 @@ def test_real_integration_blocked_no_operator_event_pool_guardian_nyt():
     assert out["source_role_guard_preserved"] is True
 
 
-# ── ⑧ ADR#83 date-pinned live run frontier(30 필드 sanitized + dict==pydantic) ─────────────────────────────────
+# ── ⑧ ADR#83/#84 date-pinned live run frontier(32 필드 sanitized + dict==pydantic) ─────────────────────────────────
 def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     out = run_bounded_live_breadth_run(base_result=_synthetic_base())
     f = out["internal_ops_date_pinned_live_run_frontier"]
     model = InternalOpsDatePinnedLiveRunFrontier(**f)   # raises on missing/type mismatch.
     assert set(f.keys()) == set(InternalOpsDatePinnedLiveRunFrontier.model_fields.keys())
-    assert len(f) == 30
+    assert len(f) == 32
     assert model.r2_r7_no_go is True
     assert model.latest_date_pinned_live_run_status == BLOCKED_MISSING_OPERATOR_EVENT
+    # ADR#84: no live run(synthetic base) → date window 미강제·handoff 미준비(freeze 없음).
+    assert f["date_window_enforced"] is False
+    assert f["reviewer_handoff_ready"] is False
     assert len(f["flags"]) == 7
 
 

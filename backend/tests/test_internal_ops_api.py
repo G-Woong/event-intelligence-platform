@@ -756,8 +756,9 @@ def test_r1_date_pinned_response_keys_are_sanitized_subset(client, monkeypatch):
         "live_query_target_wired", "live_query_approved", "live_query_executed", "live_call_count",
         "providers_used", "comparison_pair_count", "max_recall_probe_score", "newly_routed_count",
         "production_candidate_status", "production_candidate_batch_ready", "production_frozen_pair_count",
-        "candidate_provenance", "sanitized_snapshot_status", "ko_source_lane_status", "ko_named_seed_needed",
+        "candidate_provenance", "sanitized_snapshot_status", "date_window_enforced", "reviewer_handoff_ready",
+        "ko_source_lane_status", "ko_named_seed_needed",
         "ko_floor_current", "ko_floor_required", "blocked_reason", "acquisition_next_action",
         "current_r1_gap", "production_gold_count", "r2_r7_no_go", "required_copy", "flags",
     }
-    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(30 field).
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(32 field).

@@ -173,6 +173,18 @@ def _window_dates(time_window: str, today: Optional[str]) -> tuple[str, str]:
     return (end - timedelta(days=days)).isoformat(), end.isoformat()
 
 
+def _in_window(published_at: Optional[str], from_date: str, to_date: str) -> bool:
+    """record published date(YYYY-MM-DD)가 [from_date, to_date] 안인가(date-pin enforcement·strict).
+
+    ADR#84 근거: Guardian/NYT 는 from-date/to-date 가 URL 에 정확히 들어가도(검증됨) 실 응답에서 그 window 를
+    무시하고 최신(out-of-window) 기사를 반환할 수 있다(또는 in-window 보도 0). 그 경우 date-pin 은 실효 0이 된다.
+    이 가드는 provider 신뢰가 아니라 adapter 가 window 를 강제한다 — 날짜 없음/형식 불명/범위 밖은 제외
+    (strict precision: 같은 pinned window 의 cross-source 후보만 남긴다). ISO date 는 사전식 비교가 날짜 비교와 일치."""
+    if not published_at or len(published_at) < 10:
+        return False
+    return from_date <= published_at[:10] <= to_date
+
+
 def _iso_date(pub: Optional[str]) -> Optional[str]:
     """ISO8601 timestamp(webPublicationDate) → YYYY-MM-DD(date bucket 호환). 실패 시 원문 유지."""
     if not pub:
@@ -298,6 +310,7 @@ def run_provider_query(
     transport: Optional[Callable[[str], Optional[str]]] = None,
     env_status_fn: Optional[Callable[[list[str]], dict[str, str]]] = None,
     host_gate: Any = None, today: Optional[str] = None,
+    enforce_window: bool = False,
 ) -> ProviderQueryResult:
     """contract adapter 로 bounded governed live query. gate 순서(fail-closed): adapter 미배선→fetcher_not_wired;
     credential missing→missing_credentials(**network 전**); rate-limit cooldown→rate_limited; host gate→
@@ -389,7 +402,20 @@ def run_provider_query(
         return ProviderQueryResult(
             provider, ST_PARSER_ERROR, block_reason="parser_error",
             next_action="unexpected payload shape")
+    # 6b) date-pin window enforcement(opt-in·additive·ADR#84): provider 가 from-date/to-date 를 무시하고
+    # out-of-window 기사를 반환해도 [from_date, to_date] 밖 record 를 drop(date-pin 계약을 adapter 가 강제).
+    # 기본 False=ADR#62~#82 동작 보존(필터 0). True 면 provider 가 200개를 줘도 window 밖은 같은 사건 후보가
+    # 아니므로 제외 — out-of-window 만 남아 전부 drop 되면 no_in_window_records 로 정직 분리(진짜 0 records 와 구분).
+    pre_filter_count = len(recs)
+    if enforce_window:
+        recs = [r for r in recs if _in_window(r.get("published_at_or_observed_at"), from_date, to_date)]
     if not recs:
+        if enforce_window and pre_filter_count > 0:
+            return ProviderQueryResult(
+                provider, ST_NO_RECORDS, block_reason="no_in_window_records",
+                next_action=(f"provider returned {pre_filter_count} record(s) but none within the pinned "
+                             f"[{from_date},{to_date}] window — provider ignored the date filter or there is "
+                             f"no in-window cross-source coverage; verify occurrence_date or widen the window"))
         return ProviderQueryResult(
             provider, ST_NO_RECORDS, block_reason="no_records",
             next_action="broaden topic/time_window")

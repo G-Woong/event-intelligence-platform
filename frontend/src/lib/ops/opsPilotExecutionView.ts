@@ -544,6 +544,8 @@ export function toR1DatePinnedLiveRunFrontierDisplayRows(
     { label: "Production frozen pair count (worklist, not truth)", value: `${f.production_frozen_pair_count}` },
     { label: "Candidate provenance", value: f.candidate_provenance },
     { label: "Sanitized snapshot status", value: f.sanitized_snapshot_status },
+    { label: "Date window enforced (out-of-window dropped)", value: String(f.date_window_enforced) },
+    { label: "Reviewer handoff ready (pre-contact; no sending)", value: String(f.reviewer_handoff_ready) },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },

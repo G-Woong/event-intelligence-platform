@@ -1290,6 +1290,8 @@ function toR1DatePinnedLiveRunFrontierDisplayRows(f) {
     { label: "Production frozen pair count (worklist, not truth)", value: `${f.production_frozen_pair_count}` },
     { label: "Candidate provenance", value: f.candidate_provenance },
     { label: "Sanitized snapshot status", value: f.sanitized_snapshot_status },
+    { label: "Date window enforced (out-of-window dropped)", value: String(f.date_window_enforced) },
+    { label: "Reviewer handoff ready (pre-contact; no sending)", value: String(f.reviewer_handoff_ready) },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -1336,6 +1338,8 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
   production_frozen_pair_count: 0,
   candidate_provenance: "none",
   sanitized_snapshot_status: "not_written_no_live_run",
+  date_window_enforced: false,
+  reviewer_handoff_ready: false,
   ko_source_lane_status: "ready_5_keyfree_live_ko_news_anchors",
   ko_named_seed_needed: true,
   ko_floor_current: 0,
@@ -1408,6 +1412,14 @@ describe("ADR#83 date-pinned live query plumbing + bounded live run + freeze fro
     for (const row of toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER)) {
       assert.equal(typeof row.value, "string");
     }
+  });
+
+  it("(ADR#84) shows date window enforced + reviewer handoff readiness (no live → both false)", () => {
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Date window enforced (out-of-window dropped)"], "false");
+    assert.equal(byLabel["Reviewer handoff ready (pre-contact; no sending)"], "false");
   });
 
   it("warns: operator event required + occurrence=assertion + date-pin != occurrence + query targets operator event + freeze != truth + gold 0 + No-Go", () => {

@@ -285,6 +285,22 @@
 >
 > **구현/검증**: 신규 `r1_reviewer_pilot_batch.py`(`run_actual_input_gate` 단일 호출 re-check + 순수 builder freeze[`_frozen_pair_list` allowlist 파생·`_batch_signature` sha256·`_launch_status` 5-state·`build_operator_launch_checklist`]·`candidate_provenance=synthetic_fixture`·`pilot_batch_is_production_candidate=False`·전체 출력 재귀 PII 가드)+`reviewer_batch_launch.py`(`build_intake_plan` +`intake_dir` override·additive·기존 호출 무영향)+`schemas/internal_ops.py`(+`InternalOpsR1PilotBatchStatus`)+`api/internal_ops.py`(+`GET /api/internal/ops/r1-pilot-batch`·이중 게이트·read-only·503 sanitize·기존 무변경)+frontend(types +1·opsPilotExecutionView +toR1BatchDisplayRows/r1BatchWarnings/OPS_R1_BATCH_COPY·page +launch-readiness 패널·warnings dedupe·node:test +6). 신규 backend 테스트 **44**(r1 batch 36+API 8)·frontend **+6**·ruff(E/F/I/B/W−E501) **0**·ingestion **1353p**·frontend tsc0/lint0/test38·backend 비-live **1391p/101skip/0fail**·**production_gold_count 0·r1_status blocked_no_labels·frozen 5<<target 200(pilot_n)·launch_status ready_for_manual_launch**·merge/전송/입력 날조/secret 값 노출 0. 합성 fixture→production gold 둔갑 0(**template dataset_source=synthetic 태깅→라벨 회수해도 production gold 미승격·machinery 강제**). 신규 RISK 1(R-BatchFreezeAsTruth LOW). 부분진전 R-GoldAcquisitionPlanOnly/R-ReviewerPilotExecution/R-IdentityHumanLabeling/R-ReviewerAgreement/R-GoldSamplingBias/R-IdentityEvalDataset. **adversarial PROCEED-WITH-FIXES**(HIGH-1 template synthetic 태깅[machinery 강제]·MEDIUM-1 dry-run hard-stop 수정)·**code-review LGTM-WITH-NITS**(triple-consistency 22==22==22).
 
+> **ADR#84 — date-pinned bounded live run + production candidate freeze attempt + reviewer handoff bridge (첫 실 live run 실행·provider date-window fidelity 결손 발견)**
+>
+> **선행**: ADR#83(date-pinned live query plumbing) 커밋(`0774f1c`·22파일·push 0·NO UPSTREAM).
+>
+> **시작 조건(§1)**: operator 가 구체적 date-pinned event 제공(U.S. Supreme Court·asylum metering ruling·occurrence_date 2026-06-25·live_approved=true·범위 [2026-06-25, 2026-06-26]·guardian/nyt·seed 1).
+>
+> **첫 실 live run**: `build_live_query_target`(wired·query_text=entity+phrase·절대 윈도우)+credential present(secret-safe) 검증 후 `execute_date_pinned_bounded_live_run(host_gate=real)` → **executed·call 2**(guardian/nyt ok·secret 0·raw body 0·host/rate 준수)·cross-source publishable 비교쌍 **100**·그러나 near/hard/fingerprint 0·max jaccard 0.0625·routing candidate 0 → `live_no_routing_candidates`·freeze 0·gold 0.
+>
+> **근본 원인(§2 분해)**: 간결 hint 재실행 동일 결과(query 장문성 아님)→반환 헤드라인 직접 확인(전부 2026-06-28 당일·asylum 무관)→오프라인 URL 캡처(from-date/to-date·begin/end_date **정확**) → **요청 window 가 응답을 제약 못 함(확정)·100 비교쌍=무관한 동일자 뉴스·near-match 0 은 recall/장문성 아님**(plumbing 정상). **단 메커니즘 미확정**(adversarial MEDIUM-1): 기사가 *주제까지* 무관 → date-filter 무시뿐 아니라 order-by=newest 지배·느슨한 q OR-매칭·in-window 보도 0 도 동등 시사·**통제실험 미수행**(신규 R-ProviderDateWindowFidelity·enforce_window 는 date 증상만).
+>
+> **보정/구현(§4·additive)**: ① `run_provider_query(enforce_window=)` 신설(published_at 으로 window 밖 record drop·전부 drop→`no_in_window_records`·기본 False=ADR#62~#82 보존·date-pinned executor opt-in True)·② 신규 `reviewer_handoff_bridge.py`(freeze→contact 직전 package·freeze 없으면 ready=False·**actual_sending=False**·PII/score 0)·③ 신규 `sanitized_live_snapshot.py`(build+write·entity/phrase **hash**·aggregate-only·`outputs/live_snapshots/` gitignored·첫 snapshot 실작성)·④ orchestrator 배선·frontier +2 필드(`date_window_enforced`·`reviewer_handoff_ready`) **dict==pydantic==TS==mjs 32==32==32==32**.
+>
+> **옵션 결정(§3)**: **A(actual input)+B(date-pinned bounded live run·**실행**)+C(freeze 시도·후보 0→0)+D(handoff bridge·freeze 없음→ready=False)+E(snapshot 작성)+F(KO lane)+G(provider 확장 plan=ADR#85)+H(community contract) 채택·I(LLM/RAG/KG/public IU runtime) 금지·enforce_window=in-scope correctness 보정.** ADR#84 기록.
+>
+> **RISK**: 신규 1 R-ProviderDateWindowFidelity(MEDIUM·provider date window 무시·완화 enforce_window·in-window 수율 미측정·종결 금지)·부분진전 R-DatePinnedEventAvailability/R-ProductionCandidateScarcity/R-LiveRunReproducibility/R-LiveQueryTargetDrift·종결 0. **다음**: window-honoring source(enforce 재실행 or GDELT/Federal Register 배선 ADR#85)→freeze→reviewer handoff→실 contact→actual returned labels(R1). **live 실행 성공 ≠ production candidate 확보**·freeze 0·gold 0·R2~R7 No-Go.
+
 > **ADR#83 — date-pinned live query plumbing + bounded live run + production candidate freeze attempt (operator event 미제공·실 live 미실행)**
 >
 > **선행**: ADR#82 안정 기준점 커밋(`04ccbda`·22파일·지정 subject·secret PASS·closeout 수렴·NO UPSTREAM).

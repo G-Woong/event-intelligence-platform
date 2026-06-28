@@ -422,6 +422,10 @@ class InternalOpsDatePinnedLiveRunFrontier(BaseModel):
     production_frozen_pair_count: int
     candidate_provenance: str
     sanitized_snapshot_status: str
+    # ADR#84: executor 가 enforce_window=True 로 호출(provider out-of-window record drop) + freeze→contact 직전
+    # reviewer handoff bridge readiness(freeze 없으면 False·전송 0). 둘 다 sanitized boolean(truth/score/PII 미노출).
+    date_window_enforced: bool
+    reviewer_handoff_ready: bool
     ko_source_lane_status: str
     ko_named_seed_needed: bool
     ko_floor_current: int

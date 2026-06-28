@@ -80,6 +80,9 @@ ingestion/logs/errors/
 # reviewer batch label intake (ADR#67/#68) — real reviewer labels carry reviewer_id/rationale PII; never commit
 outputs/reviewer_batch/
 
+# sanitized live-run snapshots (ADR#84) — reproducibility artifacts under outputs/; never commit (status/path only)
+outputs/live_snapshots/
+
 # GCP service account keys (never commit)
 gcp-service-account-key.json
 *service-account*.json

@@ -234,7 +234,7 @@ def execute_date_pinned_bounded_live_run(
     smoke = (smoke_fn or run_cross_source_live_overlap_smoke)(
         provider_b=second, topic=target["query_text"], topic_key="operator_date_pinned_event",
         time_window=target.get("time_window") or _DEFAULT_TIME_WINDOW, today=target.get("as_of_anchor"),
-        live_query=True, transport_a=transport_a, transport_b=transport_b,
+        live_query=True, enforce_window=True, transport_a=transport_a, transport_b=transport_b,
         env_status_fn=env_status_fn, env_probe_fn=env_probe_fn, host_gate=host_gate,
         emit_band_diagnostic=True, emit_recall_probe=True)
     pcand = (freeze_fn or run_r1_production_candidate_acquisition)(
