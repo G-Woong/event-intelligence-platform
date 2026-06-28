@@ -177,6 +177,37 @@ def _production_candidate_status(
     return PCAND_PRODUCTION_BATCH_FROZEN if batch_frozen else PCAND_LIVE_CANDIDATES_FOUND
 
 
+# blocked_no_publishable_pairs 의 실제 사유 분기(ADR#77 live run 근거). `_cross_source_stats` 가 **publishable**
+# cross-source same-date **비교쌍(comparison pair)** 만 세므로, live_candidate_count>0(publishable 비교쌍 존재) +
+# smoke 가 no_title_overlap 을 보고하면 그 0 은 source role 거부가 **아니다**(publishable 쌍은 존재). 다만 그 0 의
+# **원인은 이 신호만으로 미확정**이다 — (i) 같은 사건의 cross-source paraphrase 를 결정적 recall 이 놓침, 또는
+# (ii) broad topic 아래 서로 다른 사건/측면이라 정당하게 안 겹침(단일 broad-topic 1회로는 구분 불가·ADR#64 가 이미
+# "100 쌍=비교대상이지 same-event match 아님"으로 명시). 따라서 "source role guard 약화" 오안내(옛 메시지)는 교정하되,
+# 단정적 paraphrase 로도 승격하지 않고 양가(兩價)로 안내한다 — 구분은 bounded 좁은 topic/window 재실행으로.
+_PCAND_NO_TITLE_OVERLAP_ACTION = (
+    "publishable cross-source same-date comparison pairs exist but none cleared the deterministic near-match "
+    "title floor (title-token + fingerprint overlap below threshold); the cause is indeterminate from this "
+    "signal — either same-event cross-source paraphrase (deterministic recall limit) or genuinely different "
+    "events/aspects under a broad topic (a single broad-topic run cannot distinguish these). next: re-run "
+    "bounded with narrower same-event-targeted topics / multiple breaking-event windows to test whether any "
+    "pair lands in the hard band; a gated semantic adjudicator (embedding/LLM·deferred·MERGE_GATE-gated) helps "
+    "only if it is the paraphrase case — do not weaken the source role guard")
+
+
+def _primary_next_action(status: str, *, smoke: dict, live_candidate_count: int) -> str:
+    """production_candidate_status → operator 한 줄 primary action(internal ops UI next_manual_action).
+
+    blocked_no_publishable_pairs 는 실 데이터에서 두 사유가 갈린다(ADR#77 live run 근거): ① 진짜 비-publishable
+    role 거부(이론), ② publishable cross pair 는 있으나 near-match title floor 0 통과(no_title_overlap·paraphrase).
+    `_cross_source_stats` 가 publishable pair 만 세므로 live_candidate_count>0 + no_title_overlap 이면 ②(adjudicator-
+    zone) — role-guard 오안내 대신 정확 사유 안내. 그 외엔 기존 dict 메시지(다른 5 state 포함·fallback ①)."""
+    if (status == PCAND_BLOCKED_NO_PUBLISHABLE_PAIRS
+            and live_candidate_count > 0
+            and "no_title_overlap" in (smoke.get("block_reasons") or [])):
+        return _PCAND_NO_TITLE_OVERLAP_ACTION
+    return _PCAND_NEXT_ACTION[status]
+
+
 def _default_acquire(*, live_query: bool) -> dict:
     """기본 live 후보 획득 경로(ADR#64 cross-source smoke·opt-in·secret-safe). 기본 live_query=False → 시도 0.
 
@@ -298,7 +329,9 @@ def run_r1_production_candidate_acquisition(
     current_r1_gap = max(0, REQUIRED_PRODUCTION_GOLD - prod)
 
     # operator next actions(returned labels 우선·Q17 → status 한 줄 → smoke → gate).
-    primary_next_action = _PCAND_NEXT_ACTION[production_candidate_status]
+    # blocked_no_publishable_pairs 는 no_title_overlap(paraphrase) vs role 거부로 분기(ADR#77 live 근거).
+    primary_next_action = _primary_next_action(
+        production_candidate_status, smoke=smoke, live_candidate_count=cross_source_pair_count)
     next_actions: list[str] = []
     if returned_labels_take_precedence:
         next_actions.append(

@@ -11,6 +11,8 @@ import backend.app.tools.r1_production_candidate_acquisition as mod
 from backend.app.services.identity_human_labeling import SOURCE_LIVE, SOURCE_SYNTHETIC
 from backend.app.tools.near_match_reviewer_queue import build_near_match_reviewer_queue
 from backend.app.tools.r1_production_candidate_acquisition import (
+    _PCAND_NEXT_ACTION,
+    _PCAND_NO_TITLE_OVERLAP_ACTION,
     PCAND_BLOCKED_NO_CREDENTIALS,
     PCAND_BLOCKED_NO_LIVE_OPT_IN,
     PCAND_BLOCKED_NO_LIVE_OVERLAP,
@@ -18,6 +20,7 @@ from backend.app.tools.r1_production_candidate_acquisition import (
     PCAND_PRODUCTION_BATCH_FROZEN,
     REQUIRED_PRODUCTION_GOLD,
     _is_publishable_production_pair,
+    _primary_next_action,
     run_r1_production_candidate_acquisition,
 )
 from backend.app.tools.reviewer_actual_input_gate import (
@@ -306,6 +309,62 @@ def test_publishable_guard_filters_deployed_worklist():
     # 배포 산출물(checklist/expected files)도 비-publishable pair 흔적 없음.
     blob = json.dumps(out["operator_launch_checklist"], ensure_ascii=False)
     assert "nm:bad" not in blob and "community" not in blob and "market" not in blob
+
+
+# ── ADR#77: blocked_no_publishable_pairs 사유 정직성(paraphrase vs role 거부·live run 근거) ────────────────
+
+
+def test_no_title_overlap_uses_indeterminate_action_not_role_guard():
+    """ADR#77 live run 재현: publishable cross-source 비교쌍 100(>0)이나 near-match title floor 0 통과
+    (no_title_overlap). primary next action 은 **원인 미확정(paraphrase OR different-events)** 양가 안내 —
+    'source role guard 약화' 오안내(옛 default)도, 단정적 paraphrase 도 아님(adversarial 정직성 fix)."""
+    out = _run(live_query=True, ready=True,
+               smoke=_smoke(live_query_requested=True, live_query_attempted=True,
+                            cross_source_pair_count=100,
+                            reviewer_queue={"packet_rows": [], "queue_pair_ids": []},
+                            provenance="live_derived", block_reasons=["no_title_overlap"]))
+    assert out["production_candidate_status"] == PCAND_BLOCKED_NO_PUBLISHABLE_PAIRS
+    assert out["live_candidate_count"] == 100
+    assert out["publishable_pair_count"] == 0
+    primary = out["next_actions"][0]
+    assert primary == _PCAND_NO_TITLE_OVERLAP_ACTION
+    # 정직: near-match floor 미통과 + 원인 미확정 — 양가(paraphrase AND different-events) 둘 다 명시·단정 금지.
+    assert "near-match" in primary.lower() and "indeterminate" in primary.lower()
+    assert "paraphrase" in primary.lower() and "different events" in primary.lower()
+    assert "are not event anchors" not in primary           # 오해 소지 role-거부 default 는 primary 아님.
+    # contract next_manual_action(UI 표면)도 동일하게 정직.
+    assert out["r1_production_candidate_contract"]["next_manual_action"] == _PCAND_NO_TITLE_OVERLAP_ACTION
+
+
+def test_role_rejection_keeps_role_guard_action():
+    """no_title_overlap 부재(진짜 비-publishable role 거부 fallback) → 기존 role-guard 메시지 유지."""
+    out = _run(live_query=True, ready=True,
+               smoke=_smoke(live_query_requested=True, live_query_attempted=True,
+                            cross_source_pair_count=1, reviewer_queue=_nonpub_queue(),
+                            provenance="live_derived", block_reasons=[]))
+    assert out["production_candidate_status"] == PCAND_BLOCKED_NO_PUBLISHABLE_PAIRS
+    primary = out["next_actions"][0]
+    assert primary == _PCAND_NEXT_ACTION[PCAND_BLOCKED_NO_PUBLISHABLE_PAIRS]
+    assert "are not event anchors" in primary
+
+
+def test_primary_next_action_helper_branches():
+    """_primary_next_action 분기 직접 검증(paraphrase / role-guard fallback / count 0 보수 / 타 state passthrough)."""
+    nto = {"block_reasons": ["no_title_overlap"]}
+    none = {"block_reasons": []}
+    assert _primary_next_action(
+        PCAND_BLOCKED_NO_PUBLISHABLE_PAIRS, smoke=nto, live_candidate_count=100) == _PCAND_NO_TITLE_OVERLAP_ACTION
+    assert _primary_next_action(
+        PCAND_BLOCKED_NO_PUBLISHABLE_PAIRS, smoke=none, live_candidate_count=5) == _PCAND_NEXT_ACTION[
+            PCAND_BLOCKED_NO_PUBLISHABLE_PAIRS]
+    # live_candidate_count 0 이면 no_title_overlap 있어도 보수적 fallback(publishable pair 자체가 없음).
+    assert _primary_next_action(
+        PCAND_BLOCKED_NO_PUBLISHABLE_PAIRS, smoke=nto, live_candidate_count=0) == _PCAND_NEXT_ACTION[
+            PCAND_BLOCKED_NO_PUBLISHABLE_PAIRS]
+    # 다른 state 는 분기 무관·dict passthrough.
+    assert _primary_next_action(
+        PCAND_BLOCKED_NO_LIVE_OPT_IN, smoke=nto, live_candidate_count=100) == _PCAND_NEXT_ACTION[
+            PCAND_BLOCKED_NO_LIVE_OPT_IN]
 
 
 # ── §10 source role guard (14-19) ────────────────────────────────────────────────────────────────────────
