@@ -386,3 +386,46 @@ export interface InternalOpsProviderBreadthFrontier {
   required_copy: string[];
   flags: AcquisitionFrontierFlags;
 }
+
+// ADR#82 — bounded live breadth run + named-event date-pin gate + production-candidate freeze attempt frontier
+// (read-only·public truth 아님). r1_bounded_live_breadth_run 의 sanitized internal_ops_bounded_live_breadth_frontier
+// 미러. provider breadth 는 acquisition support 이지 truth 아님·bounded live run 은 operator 확인 date-pinned event
+// 요구·production candidate freeze 는 reviewer worklist 이지 same-event truth 아님. same_event truth·per-pair score·
+// rationale·predicted_status·raw body·PII·secret 은 필드 자체가 없어 구조적 미노출.
+export interface InternalOpsBoundedLiveBreadthFrontier {
+  contract: string;
+  latest_bounded_live_run_status: string;
+  // named seed date-pin(§5).
+  named_seed_selected: string | null;
+  named_seed_date_pin_status: string;
+  selected_seed_actual_occurrence: string | null;
+  // bounded live(§6·§7).
+  live_query_approved: boolean;
+  live_query_executed: boolean;
+  live_call_count: number;
+  providers_used: string[];
+  provider_breadth_used: number;
+  key_free_provider_count: number;
+  credential_required_provider_count: number;
+  comparison_pair_count: number;
+  max_recall_probe_score: number;
+  newly_routed_count: number;
+  // production candidate freeze(§7).
+  production_candidate_status: string;
+  production_candidate_batch_ready: boolean;
+  production_frozen_pair_count: number;
+  sanitized_snapshot_status: string;
+  // KO source lane(§8).
+  ko_source_lane_status: string;
+  ko_named_seed_needed: boolean;
+  ko_floor_current: number;
+  ko_floor_required: number;
+  // gap / next action + copy.
+  blocked_reason: string;
+  acquisition_next_action: string;
+  current_r1_gap: number;
+  production_gold_count: number;
+  r2_r7_no_go: boolean;
+  required_copy: string[];
+  flags: AcquisitionFrontierFlags;
+}

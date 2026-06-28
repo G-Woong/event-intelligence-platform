@@ -338,3 +338,53 @@ class InternalOpsDiscreteAcquisitionFrontier(BaseModel):
     r2_r7_no_go: bool
     required_copy: list[str]
     flags: AcquisitionFrontierFlags
+
+
+class InternalOpsBoundedLiveBreadthFrontier(BaseModel):
+    """ADR#82 — bounded live breadth run + named-event date-pin gate + production-candidate freeze attempt frontier
+    (read-only·public truth 아님).
+
+    `r1_bounded_live_breadth_run.run_bounded_live_breadth_run` 의 sanitized `internal_ops_bounded_live_breadth_frontier`
+    를 미러한다. bounded live run status·named seed **date-pin status**(occurrence_date 없으면 not_pinned)·실제 실행
+    가능 provider pool 카운트(breadth_used/key_free/credential_required — *breadth 크기가 아니라 adapter_wired ∩
+    credential 교집합*)·comparison/recall aggregate·production candidate freeze status·sanitized snapshot status·KO
+    source lane status·R1 gap·R2~R7 No-Go·정직 copy 만 노출한다 — same_event truth·per-pair score·rationale·
+    predicted_status·raw body·raw PII·secret 은 **필드 자체가 없어** 구조적 미노출. read API 는 live 시도 0
+    (latest_bounded_live_run_status=blocked_no_live_opt_in 이 정상 — 실 live 는 operator CLI opt-in + date-pin 전용).
+    **provider breadth 는 acquisition support 이지 truth 가 아니고**, **bounded live run 은 operator 확인 date-pinned
+    event 를 요구하며**, **production candidate freeze 는 reviewer worklist 이지 same-event truth 가 아니다**(copy 명시)."""
+    contract: str
+    latest_bounded_live_run_status: str
+    # named seed date-pin(§5).
+    named_seed_selected: str | None
+    named_seed_date_pin_status: str
+    selected_seed_actual_occurrence: str | None
+    # bounded live(§6·§7).
+    live_query_approved: bool
+    live_query_executed: bool
+    live_call_count: int
+    providers_used: list[str]
+    provider_breadth_used: int
+    key_free_provider_count: int
+    credential_required_provider_count: int
+    comparison_pair_count: int
+    max_recall_probe_score: float
+    newly_routed_count: int
+    # production candidate freeze(§7).
+    production_candidate_status: str
+    production_candidate_batch_ready: bool
+    production_frozen_pair_count: int
+    sanitized_snapshot_status: str
+    # KO source lane(§8).
+    ko_source_lane_status: str
+    ko_named_seed_needed: bool
+    ko_floor_current: int
+    ko_floor_required: int
+    # gap / next action / copy.
+    blocked_reason: str
+    acquisition_next_action: str
+    current_r1_gap: int
+    production_gold_count: int
+    r2_r7_no_go: bool
+    required_copy: list[str]
+    flags: AcquisitionFrontierFlags

@@ -236,6 +236,65 @@ def build_ko_source_readiness(
     }
 
 
+def build_ko_source_lane(*, probe_fn: Optional[Callable[[str], dict]] = None) -> dict:
+    """ADR#82 §8 — KO source lane(EN named-seed live run 과 *분리된* KO floor lane).
+
+    분석 §2-Q10/Q11: KO 뉴스는 RSS feed_only(topic query 불가)라 EN Guardian/NYT named-seed cross-source query 에
+    직접 섞을 수 없고(language mismatch — KO 형태소 분석기 부재), KO-KO candidate 생성에는 한국어 named single-event
+    seed 가 필요(현재 미존재 → ko_named_seed_needed=True). KO floor 는 실제 한국어 human label 전까지 0/50 유지(불변).
+    network 0 · merge 0 · LLM 0 · secret 값 0."""
+    ko = build_ko_source_readiness(probe_fn=probe_fn)
+    rows = ko["ko_sources"]
+    ko_official_news = sorted(
+        r["source_id"] for r in rows if r["ko_role"] == "ko_official_news" and r["anchor_capable"])
+    ko_query_capable = sorted(
+        r["source_id"] for r in rows
+        if r.get("query_capability") in ("topic", "structured_query") and r["anchor_capable"])
+    ko_feed_only = sorted(
+        r["source_id"] for r in rows
+        if r.get("query_capability") == "feed_only" and r["anchor_capable"])
+    keyfree_live_anchors = sorted(
+        r["source_id"] for r in rows
+        if r["anchor_capable"] and not r["credential_required"] and r["status"] == "live_success")
+    lane_status = (
+        f"ready_{len(keyfree_live_anchors)}_keyfree_live_ko_news_anchors"
+        if ko["ko_source_path_ready"] else "blocked_no_ko_anchor")
+    ko_next_action = (
+        "build_korean_named_single_event_seed (특정 한국 기관/사건+날짜) → wire key-free LIVE KO news pool "
+        "(yna/hankyung/maekyung/zdnet_korea/etnews) → 한국어 reviewer contact for KO gold "
+        "(KO floor 는 실제 한국어 human label 전까지 0/50)")
+    return {
+        "operation": "ko_source_lane",
+        "ko_source_lane_status": lane_status,
+        "ko_named_seed_needed": True,                 # 한국어 named single-event seed bank 미존재(EN seed 와 별개).
+        "ko_query_capable_sources": ko_query_capable,
+        "ko_feed_only_sources": ko_feed_only,
+        "ko_official_news_sources": ko_official_news,
+        "ko_keyfree_live_anchor_ids": keyfree_live_anchors,
+        "naver_adapter_status": ko["naver_adapter_status"],
+        "newsapi_status": ko["newsapi_status"],
+        "ko_tokenizer_requirement": (
+            "korean_morphological_analyzer(KoNLPy/Mecab/Okt) — deferred; analyzer 전까지 KO 비교는 breadth-only"),
+        "ko_alias_table_requirement": (
+            "korean_org_alias_table(한국은행=BOK=한은) — 미구축; KO entity-sharing 신뢰 금지"),
+        "ko_floor_current": ko["ko_gold_count"],       # 0
+        "ko_floor_required": ko["ko_floor_target"],    # 50
+        "ko_floor_solved": ko["ko_floor_solved"],      # False(불변)
+        "ko_floor_blocker": ko["ko_floor_blocker"],
+        "ko_next_action": ko_next_action,
+        "ko_tokenization_risk_recorded": ko["ko_tokenization_risk_recorded"],
+        "source_role_guard_preserved": ko["source_role_guard_preserved"],
+        # ── 불변 경계 ──
+        "merge_allowed": False,
+        "llm_invoked": False,
+        "embedding_invoked": False,
+        "db_write": False,
+        "production_gold_count": 0,
+        "secret_values_exposed": False,
+        "raw_source_body_exposed": False,
+    }
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")

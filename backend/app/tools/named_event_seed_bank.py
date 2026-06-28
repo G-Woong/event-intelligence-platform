@@ -89,6 +89,34 @@ def validate_named_single_event_seed(seed: dict) -> dict:
     }
 
 
+def validate_date_pinned_named_event(seed: dict) -> dict:
+    """ADR#82 — named seed 가 *실제 발생 날짜로 핀된* discrete event shape 인지 판정(결정론·same_event 단정 0).
+
+    date-pinned = (a) named-single-event SHAPE 통과(validate_named_single_event_seed) + (b) occurrence_date 가
+    정확한 ISO date(YYYY-MM-DD) + (c) named_entity placeholder 아님. fomc_rate_decision 같은 recurring announcement
+    TYPE 은 occurrence_date 가 없으면 date_pinned=False → §5 missing_date_pinned_named_event(bounded live 차단).
+    date_pinned=True 여도 event_occurrence_verified 는 여전히 False — 날짜는 *operator 주장*이지 code 가 검증한 사실이
+    아니며, 같은 사건 여부는 MERGE_GATE 영역이다(발생/same_event 단정 금지·불변)."""
+    shape = validate_named_single_event_seed(seed)
+    reasons: list[str] = list(shape["rejection_reasons"])
+    occurrence_raw = str(seed.get("occurrence_date") or "").strip()
+    if not occurrence_raw:
+        reasons.append("missing_occurrence_date")
+    elif not _ISO_DATE.match(occurrence_raw):
+        reasons.append("occurrence_date_not_iso_yyyy_mm_dd")
+    date_pinned = not reasons
+    return {
+        "seed_id": seed.get("seed_id"),
+        "date_pinned": date_pinned,
+        "occurrence_date": occurrence_raw if (date_pinned and occurrence_raw) else None,
+        "named_shape_ok": bool(shape["accepted"]),
+        "rejection_reasons": reasons,
+        # date 가 있어도 발생/같은 사건은 operator·MERGE_GATE 영역(불변).
+        "event_occurrence_verified": False,
+        "same_event_asserted": False,
+    }
+
+
 # ── curated named single-event seed bank(code_proposed_named_shape · 발생 미확인 · operator 확인 필요) ────────
 # scheduled 기관 이벤트(entity 실재·discrete·outlet 수렴 높음)는 live_run_allowed_if_approved=True(operator 가 실제
 # 결정 date 확인). entity 미특정 shape(M&A/제재/재난/선거)는 named_entity 특정 전까지 live_run_allowed_if_approved=False.

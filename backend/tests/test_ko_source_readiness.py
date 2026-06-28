@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import json
 
-from backend.app.tools.ko_source_readiness import build_ko_source_readiness
+from backend.app.tools.ko_source_readiness import (
+    build_ko_source_lane,
+    build_ko_source_readiness,
+)
 
 
 def _probe_present(present):
@@ -132,3 +135,55 @@ def test_no_secret_values_no_merge():
         for v in r["credential_presence_secret_safe"].values():
             assert v in ("present", "missing")
     assert "present" in blob
+
+
+# ── ADR#82 KO source lane(§8·§12: 28~33) — EN run 과 분리된 KO floor lane ─────────────────────────────────────
+def test_ko_lane_status_exists_and_keyfree_anchors():
+    """§12-28: KO source lane status 존재·key-free LIVE 뉴스 anchor."""
+    lane = build_ko_source_lane(probe_fn=_PROBE_NONE)
+    assert lane["operation"] == "ko_source_lane"
+    assert lane["ko_source_lane_status"].startswith("ready_")
+    for sid in ("yna", "hankyung", "maekyung", "zdnet_korea", "etnews"):
+        assert sid in lane["ko_keyfree_live_anchor_ids"]
+    assert "yna" in lane["ko_feed_only_sources"]
+    assert lane["ko_named_seed_needed"] is True            # 한국어 named single-event seed 미존재.
+
+
+def test_ko_lane_naver_status_secret_safe():
+    """§12-29: Naver status secret-safe(present/missing boolean·값 0)."""
+    lane = build_ko_source_lane(probe_fn=_PROBE_NONE)
+    assert lane["naver_adapter_status"]["credential_present"] is False
+    assert lane["naver_adapter_status"]["anchor_capable"] is True
+    assert lane["newsapi_status"]["ko_specific"] is False
+    blob = json.dumps(lane, ensure_ascii=False)
+    assert "Users" not in blob
+
+
+def test_ko_lane_floor_remains_zero():
+    """§12-30: KO floor 0/50·solved 금지(실제 한국어 human label 전까지)."""
+    lane = build_ko_source_lane(probe_fn=_PROBE_ALL)
+    assert lane["ko_floor_current"] == 0
+    assert lane["ko_floor_required"] == 50
+    assert lane["ko_floor_solved"] is False
+    assert lane["production_gold_count"] == 0
+
+
+def test_ko_lane_tokenizer_and_alias_requirements_recorded():
+    """§12-33: KO tokenizer/alias 요건 기록(형태소 분석기·org alias 미구축)."""
+    lane = build_ko_source_lane(probe_fn=_PROBE_NONE)
+    assert "morphological" in lane["ko_tokenizer_requirement"]
+    assert "alias" in lane["ko_alias_table_requirement"]
+    assert lane["ko_tokenization_risk_recorded"] is True
+
+
+def test_ko_lane_role_guard_and_no_merge():
+    """§12-31·32: source role guard 유지·merge/LLM 0."""
+    lane = build_ko_source_lane(probe_fn=_PROBE_ALL)
+    assert lane["source_role_guard_preserved"] is True
+    assert lane["merge_allowed"] is False
+    assert lane["llm_invoked"] is False
+    assert lane["embedding_invoked"] is False
+    assert lane["db_write"] is False
+    assert lane["secret_values_exposed"] is False
+    # query-capable KO anchor(naver_news_search·opendart 등)만 ko_query_capable_sources, community 미포함.
+    assert "naver_blog_search" not in lane["ko_query_capable_sources"]

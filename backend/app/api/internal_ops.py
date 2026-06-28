@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException
 from backend.app.core.config import settings
 from backend.app.schemas.internal_ops import (
     InternalOpsAcquisitionFrontierStatus,
+    InternalOpsBoundedLiveBreadthFrontier,
     InternalOpsDiscreteAcquisitionFrontier,
     InternalOpsPilotExecutionStatus,
     InternalOpsPreflightStatus,
@@ -24,6 +25,7 @@ from backend.app.schemas.internal_ops import (
     InternalOpsR1ProductionCandidateStatus,
 )
 from backend.app.tools.internal_ops_preflight import run_internal_ops_preflight
+from backend.app.tools.r1_bounded_live_breadth_run import run_bounded_live_breadth_run
 from backend.app.tools.r1_discrete_event_acquisition import (
     run_discrete_event_acquisition_and_recall_probe,
 )
@@ -212,3 +214,27 @@ def get_r1_provider_breadth_frontier() -> InternalOpsProviderBreadthFrontier:
         raise HTTPException(
             status_code=503, detail="internal ops r1 provider breadth temporarily unavailable") from None
     return InternalOpsProviderBreadthFrontier(**out["internal_ops_provider_breadth_frontier"])
+
+
+@router.get("/r1-bounded-live-breadth", response_model=InternalOpsBoundedLiveBreadthFrontier)
+def get_r1_bounded_live_breadth_frontier() -> InternalOpsBoundedLiveBreadthFrontier:
+    """ADR#82 — bounded live breadth run + date-pin gate + production candidate freeze attempt frontier(read-only).
+    flag off → 404(미노출).
+
+    bounded live run status·named seed **date-pin status**(occurrence_date 없으면 not_pinned·blocked)·실제 실행가능
+    provider pool 카운트(breadth_used/key_free/credential_required — adapter_wired ∩ credential 교집합)·comparison/
+    recall aggregate·production candidate freeze status·sanitized snapshot status·KO source lane status·R1 gap·R2~R7
+    No-Go·정직 copy 를 sanitized 로 산출한다. 응답 스키마에 same_event truth·per-pair score·rationale·predicted_status·
+    raw body·raw PII·secret 필드 자체가 없다(구조적 미노출). 입력 파일이 깨졌으면 경로/내용 누출 없이 503. **실 live
+    네트워크 호출은 API 경로에서 수행하지 않는다**(live_query=False 고정 → blocked_no_live_opt_in 이 정상; 실 live 는
+    operator CLI opt-in + date-pin 전용). bounded live run 은 operator 확인 date-pinned event 를 요구한다(copy 명시)."""
+    if not settings.INTERNAL_OPS_DASHBOARD_ENABLED:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        # read API 는 live_query=False 고정(시도 0). 실 live acquisition 은 operator CLI opt-in + date-pin 전용.
+        out = run_bounded_live_breadth_run(live_query=False)
+    except (ValueError, OSError) as exc:   # malformed operator 입력 파일 등 — detail 에 경로/내용 미포함.
+        logger.warning("internal ops r1 bounded live breadth unavailable: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=503, detail="internal ops r1 bounded live breadth temporarily unavailable") from None
+    return InternalOpsBoundedLiveBreadthFrontier(**out["internal_ops_bounded_live_breadth_frontier"])

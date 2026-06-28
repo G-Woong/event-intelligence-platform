@@ -5,6 +5,7 @@
 // model rationale·predicted_status·reviewer raw PII 는 표시 대상이 아니다 — 발견 시 fail-loud.
 import type {
   InternalOpsAcquisitionFrontierStatus,
+  InternalOpsBoundedLiveBreadthFrontier,
   InternalOpsDiscreteAcquisitionFrontier,
   InternalOpsPilotExecutionStatus,
   InternalOpsPreflightStatus,
@@ -436,5 +437,71 @@ export function r1BreadthFrontierWarnings(
   ensure(OPS_BREADTH_COPY.communityNotAnchor);
   ensure(OPS_BREADTH_COPY.productionGoldZero);
   if (f.r2_r7_no_go) ensure(OPS_BREADTH_COPY.laddersNoGo);
+  return out;
+}
+
+// 필수 copy(§10·ADR#82) — bounded live run 은 operator 확인 date-pinned event 요구·provider breadth=support≠truth·
+// production candidate freeze=reviewer worklist≠same-event truth 를 operator 가 명확히 보게. gold 0·R2~R7 No-Go 강제.
+export const OPS_BOUNDED_COPY = {
+  breadthSupportNotTruth: "Provider breadth is acquisition support, not truth",
+  namedSeedNotProof: "Named seed is candidate generation, not same-event proof",
+  liveRunNeedsDatePin: "A bounded live run requires an operator-confirmed date-pinned event",
+  communityNotAnchor: "Community reaction is not an event anchor",
+  freezeNotTruth: "Production candidate freeze is a reviewer worklist, not same-event truth",
+  productionGoldZero: "Production gold remains 0 until human labels are returned",
+  laddersNoGo: "R2~R7 remain No-Go",
+} as const;
+
+// bounded live breadth frontier → read-only 표시 행(date-pin status·실행가능 pool 카운트·freeze status·KO lane;
+// per-pair score/same_event/raw body 0). provider_breadth_used 는 *adapter_wired ∩ credential 교집합*(breadth 크기 아님).
+export function toR1BoundedLiveBreadthFrontierDisplayRows(
+  f: InternalOpsBoundedLiveBreadthFrontier,
+): OpsDisplayRow[] {
+  return [
+    { label: "Bounded live run status", value: f.latest_bounded_live_run_status },
+    { label: "Named seed selected", value: f.named_seed_selected ?? "(none)" },
+    { label: "Named seed date-pin status", value: f.named_seed_date_pin_status },
+    { label: "Selected seed actual occurrence", value: f.selected_seed_actual_occurrence ?? "(not pinned)" },
+    { label: "Live query approved", value: String(f.live_query_approved) },
+    { label: "Live query executed", value: String(f.live_query_executed) },
+    { label: "Live call count", value: `${f.live_call_count}` },
+    { label: "Providers used (actual)", value: f.providers_used.length ? f.providers_used.join(", ") : "(none)" },
+    { label: "Provider breadth used (adapter-wired ∩ credential)", value: `${f.provider_breadth_used}` },
+    { label: "Key-free providers in pool", value: `${f.key_free_provider_count}` },
+    { label: "Credential-required providers in pool", value: `${f.credential_required_provider_count}` },
+    { label: "Comparison pair count", value: `${f.comparison_pair_count}` },
+    { label: "Live recall probe max score (routing signal, not truth)", value: `${f.max_recall_probe_score}` },
+    { label: "Live pairs newly routed (not same-event)", value: `${f.newly_routed_count}` },
+    { label: "Production candidate status", value: f.production_candidate_status },
+    { label: "Production candidate batch ready", value: String(f.production_candidate_batch_ready) },
+    { label: "Production frozen pair count (worklist, not truth)", value: `${f.production_frozen_pair_count}` },
+    { label: "Sanitized snapshot status", value: f.sanitized_snapshot_status },
+    { label: "KO source lane status", value: f.ko_source_lane_status },
+    { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
+    { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
+    { label: "Blocked reason", value: f.blocked_reason || "(none)" },
+    { label: "Acquisition next action", value: f.acquisition_next_action },
+    { label: "R1 gap", value: `${f.current_r1_gap}` },
+    { label: "Production gold count", value: `${f.production_gold_count}` },
+    { label: "R2~R7 No-Go", value: String(f.r2_r7_no_go) },
+  ];
+}
+
+// bounded live breadth frontier → operator 경고 배너(breadth=support≠truth·named seed≠proof·live run 은 date-pin 요구·
+// community≠anchor·freeze≠truth·gold 0·No-Go). backend required_copy(§10) 우선, 누락 시 로컬 상수 보강(defense-in-depth).
+export function r1BoundedLiveBreadthFrontierWarnings(
+  f: InternalOpsBoundedLiveBreadthFrontier,
+): string[] {
+  const out: string[] = [...(f.required_copy ?? [])];
+  const ensure = (s: string) => {
+    if (!out.includes(s)) out.push(s);
+  };
+  ensure(OPS_BOUNDED_COPY.breadthSupportNotTruth);
+  ensure(OPS_BOUNDED_COPY.namedSeedNotProof);
+  ensure(OPS_BOUNDED_COPY.liveRunNeedsDatePin);
+  ensure(OPS_BOUNDED_COPY.communityNotAnchor);
+  ensure(OPS_BOUNDED_COPY.freezeNotTruth);
+  ensure(OPS_BOUNDED_COPY.productionGoldZero);
+  if (f.r2_r7_no_go) ensure(OPS_BOUNDED_COPY.laddersNoGo);
   return out;
 }

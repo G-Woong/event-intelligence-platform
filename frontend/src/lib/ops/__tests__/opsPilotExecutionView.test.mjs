@@ -1083,3 +1083,178 @@ describe("ADR#81 provider breadth + named seed + KO path frontier view", () => {
     );
   });
 });
+
+// ── ADR#82 bounded live breadth run + date-pin gate + production candidate freeze attempt frontier — inline lock ──
+const OPS_BOUNDED_COPY = {
+  breadthSupportNotTruth: "Provider breadth is acquisition support, not truth",
+  namedSeedNotProof: "Named seed is candidate generation, not same-event proof",
+  liveRunNeedsDatePin: "A bounded live run requires an operator-confirmed date-pinned event",
+  communityNotAnchor: "Community reaction is not an event anchor",
+  freezeNotTruth: "Production candidate freeze is a reviewer worklist, not same-event truth",
+  productionGoldZero: "Production gold remains 0 until human labels are returned",
+  laddersNoGo: "R2~R7 remain No-Go",
+};
+
+function toR1BoundedLiveBreadthFrontierDisplayRows(f) {
+  return [
+    { label: "Bounded live run status", value: f.latest_bounded_live_run_status },
+    { label: "Named seed selected", value: f.named_seed_selected ?? "(none)" },
+    { label: "Named seed date-pin status", value: f.named_seed_date_pin_status },
+    { label: "Selected seed actual occurrence", value: f.selected_seed_actual_occurrence ?? "(not pinned)" },
+    { label: "Live query approved", value: String(f.live_query_approved) },
+    { label: "Live query executed", value: String(f.live_query_executed) },
+    { label: "Live call count", value: `${f.live_call_count}` },
+    { label: "Providers used (actual)", value: f.providers_used.length ? f.providers_used.join(", ") : "(none)" },
+    { label: "Provider breadth used (adapter-wired ∩ credential)", value: `${f.provider_breadth_used}` },
+    { label: "Key-free providers in pool", value: `${f.key_free_provider_count}` },
+    { label: "Credential-required providers in pool", value: `${f.credential_required_provider_count}` },
+    { label: "Comparison pair count", value: `${f.comparison_pair_count}` },
+    { label: "Live recall probe max score (routing signal, not truth)", value: `${f.max_recall_probe_score}` },
+    { label: "Live pairs newly routed (not same-event)", value: `${f.newly_routed_count}` },
+    { label: "Production candidate status", value: f.production_candidate_status },
+    { label: "Production candidate batch ready", value: String(f.production_candidate_batch_ready) },
+    { label: "Production frozen pair count (worklist, not truth)", value: `${f.production_frozen_pair_count}` },
+    { label: "Sanitized snapshot status", value: f.sanitized_snapshot_status },
+    { label: "KO source lane status", value: f.ko_source_lane_status },
+    { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
+    { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
+    { label: "Blocked reason", value: f.blocked_reason || "(none)" },
+    { label: "Acquisition next action", value: f.acquisition_next_action },
+    { label: "R1 gap", value: `${f.current_r1_gap}` },
+    { label: "Production gold count", value: `${f.production_gold_count}` },
+    { label: "R2~R7 No-Go", value: String(f.r2_r7_no_go) },
+  ];
+}
+
+function r1BoundedLiveBreadthFrontierWarnings(f) {
+  const out = [...(f.required_copy ?? [])];
+  const ensure = (s) => {
+    if (!out.includes(s)) out.push(s);
+  };
+  ensure(OPS_BOUNDED_COPY.breadthSupportNotTruth);
+  ensure(OPS_BOUNDED_COPY.namedSeedNotProof);
+  ensure(OPS_BOUNDED_COPY.liveRunNeedsDatePin);
+  ensure(OPS_BOUNDED_COPY.communityNotAnchor);
+  ensure(OPS_BOUNDED_COPY.freezeNotTruth);
+  ensure(OPS_BOUNDED_COPY.productionGoldZero);
+  if (f.r2_r7_no_go) ensure(OPS_BOUNDED_COPY.laddersNoGo);
+  return out;
+}
+
+const SAMPLE_BOUNDED_FRONTIER = {
+  contract: "InternalOpsBoundedLiveBreadthFrontier",
+  latest_bounded_live_run_status: "blocked_no_live_opt_in",
+  named_seed_selected: "fomc_rate_decision",
+  named_seed_date_pin_status: "not_pinned:missing_occurrence_date",
+  selected_seed_actual_occurrence: null,
+  live_query_approved: false,
+  live_query_executed: false,
+  live_call_count: 0,
+  providers_used: [],
+  provider_breadth_used: 2,
+  key_free_provider_count: 0,
+  credential_required_provider_count: 2,
+  comparison_pair_count: 0,
+  max_recall_probe_score: 0.0,
+  newly_routed_count: 0,
+  production_candidate_status: "blocked_no_live_opt_in",
+  production_candidate_batch_ready: false,
+  production_frozen_pair_count: 0,
+  sanitized_snapshot_status: "not_written_no_live_run",
+  ko_source_lane_status: "ready_5_keyfree_live_ko_news_anchors",
+  ko_named_seed_needed: true,
+  ko_floor_current: 0,
+  ko_floor_required: 50,
+  blocked_reason: "missing_date_pinned_named_event",
+  acquisition_next_action:
+    "provide_or_select_date_pinned_event then request bounded live run approval (host/rate honored · 1~2 seeds max)",
+  current_r1_gap: 200,
+  production_gold_count: 0,
+  r2_r7_no_go: true,
+  required_copy: [
+    "Provider breadth is acquisition support, not truth",
+    "Named seed is candidate generation, not same-event proof",
+    "A bounded live run requires an operator-confirmed date-pinned event",
+    "Community reaction is not an event anchor",
+    "Production candidate freeze is a reviewer worklist, not same-event truth",
+    "Production gold remains 0 until human labels are returned",
+    "R2~R7 remain No-Go",
+  ],
+  flags: {
+    no_public_truth: true, no_same_event_truth: true, no_score: true, no_rationale: true,
+    no_predicted_status: true, no_raw_body: true, no_secret: true,
+  },
+};
+
+describe("ADR#82 bounded live breadth run + date-pin gate + freeze attempt frontier view", () => {
+  it("passes the sanitized frontier contract (no forbidden fields)", () => {
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_BOUNDED_FRONTIER));
+  });
+
+  it("shows the named seed date-pin status as not pinned (missing occurrence date)", () => {
+    const byLabel = Object.fromEntries(
+      toR1BoundedLiveBreadthFrontierDisplayRows(SAMPLE_BOUNDED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Named seed selected"], "fomc_rate_decision");
+    assert.equal(byLabel["Named seed date-pin status"], "not_pinned:missing_occurrence_date");
+    assert.equal(byLabel["Selected seed actual occurrence"], "(not pinned)");
+    assert.equal(byLabel["Blocked reason"], "missing_date_pinned_named_event");
+  });
+
+  it("shows the bounded live pool as adapter-wired ∩ credential (not breadth size)", () => {
+    const byLabel = Object.fromEntries(
+      toR1BoundedLiveBreadthFrontierDisplayRows(SAMPLE_BOUNDED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Provider breadth used (adapter-wired ∩ credential)"], "2");
+    assert.equal(byLabel["Key-free providers in pool"], "0");
+    assert.equal(byLabel["Credential-required providers in pool"], "2");
+    assert.equal(byLabel["Providers used (actual)"], "(none)");
+  });
+
+  it("shows freeze status as blocked with 0 frozen pairs and gold 0 (no truth)", () => {
+    const byLabel = Object.fromEntries(
+      toR1BoundedLiveBreadthFrontierDisplayRows(SAMPLE_BOUNDED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Production candidate status"], "blocked_no_live_opt_in");
+    assert.equal(byLabel["Production frozen pair count (worklist, not truth)"], "0");
+    assert.equal(byLabel["Production gold count"], "0");
+    assert.equal(byLabel["Sanitized snapshot status"], "not_written_no_live_run");
+  });
+
+  it("shows the KO source lane status + floor 0/50 + named seed needed", () => {
+    const byLabel = Object.fromEntries(
+      toR1BoundedLiveBreadthFrontierDisplayRows(SAMPLE_BOUNDED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["KO source lane status"], "ready_5_keyfree_live_ko_news_anchors");
+    assert.equal(byLabel["KO named seed needed"], "true");
+    assert.equal(byLabel["KO floor"], "0/50");
+  });
+
+  it("emits only string values (no leaked objects)", () => {
+    for (const row of toR1BoundedLiveBreadthFrontierDisplayRows(SAMPLE_BOUNDED_FRONTIER)) {
+      assert.equal(typeof row.value, "string");
+    }
+  });
+
+  it("warns: breadth=support + named seed != proof + live run needs date-pin + freeze != truth + gold 0 + No-Go", () => {
+    const w = r1BoundedLiveBreadthFrontierWarnings(SAMPLE_BOUNDED_FRONTIER);
+    assert.ok(w.includes(OPS_BOUNDED_COPY.breadthSupportNotTruth));
+    assert.ok(w.includes(OPS_BOUNDED_COPY.namedSeedNotProof));
+    assert.ok(w.includes(OPS_BOUNDED_COPY.liveRunNeedsDatePin));
+    assert.ok(w.includes(OPS_BOUNDED_COPY.communityNotAnchor));
+    assert.ok(w.includes(OPS_BOUNDED_COPY.freezeNotTruth));
+    assert.ok(w.includes(OPS_BOUNDED_COPY.productionGoldZero));
+    assert.ok(w.includes(OPS_BOUNDED_COPY.laddersNoGo));
+  });
+
+  it("throws if a forbidden field (score/same_event) is re-introduced", () => {
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_BOUNDED_FRONTIER, score: 0.9 }),
+      /forbidden field: score/,
+    );
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_BOUNDED_FRONTIER, extra: [{ predicted_status: "merge" }] }),
+      /forbidden field: predicted_status/,
+    );
+  });
+});

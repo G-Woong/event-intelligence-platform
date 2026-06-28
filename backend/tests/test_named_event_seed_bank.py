@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from backend.app.tools.named_event_seed_bank import (
     build_named_event_seed_bank,
+    validate_date_pinned_named_event,
     validate_named_single_event_seed,
 )
 
@@ -121,3 +122,46 @@ def test_no_same_event_truth_and_no_gold():
     for s in bank["seed_bank"]:
         assert s["same_event_asserted"] is False
         assert s["provenance"] == "code_proposed_named_shape"
+
+
+# ── ADR#82 date-pin 게이트(§12: 8~12) ────────────────────────────────────────────────────────────────────────
+def test_date_pin_fomc_without_occurrence_date_rejected():
+    """§12-8: occurrence_date 없는 named seed 는 date_pinned=False(missing_occurrence_date)."""
+    v = validate_date_pinned_named_event(_named_seed())   # occurrence_date 없음.
+    assert v["date_pinned"] is False
+    assert v["occurrence_date"] is None
+    assert "missing_occurrence_date" in v["rejection_reasons"]
+
+
+def test_date_pin_fomc_with_iso_occurrence_date_accepted():
+    """§12-9·11: occurrence_date(ISO) 있으면 date_pinned=True·실제 occurrence 기록."""
+    v = validate_date_pinned_named_event(_named_seed(occurrence_date="2026-06-17"))
+    assert v["date_pinned"] is True
+    assert v["occurrence_date"] == "2026-06-17"
+    assert v["named_shape_ok"] is True
+
+
+def test_date_pin_non_iso_occurrence_date_rejected():
+    """occurrence_date 가 ISO(YYYY-MM-DD) 아니면 reject."""
+    for bad in ("June 17 2026", "2026/06/17", "next week", "2026-6-17"):
+        v = validate_date_pinned_named_event(_named_seed(occurrence_date=bad))
+        assert v["date_pinned"] is False
+        assert "occurrence_date_not_iso_yyyy_mm_dd" in v["rejection_reasons"]
+
+
+def test_date_pin_broad_seed_rejected_even_with_date():
+    """§12-10: broad seed 는 occurrence_date 가 있어도 named shape 실패로 date_pinned=False."""
+    v = validate_date_pinned_named_event(
+        {"seed_id": "b", "seed_text": "Federal Reserve", "named_entity": "Federal Reserve",
+         "event_phrase": "policy", "date_window": "1d", "provider_coverage_hypothesis": "broad",
+         "occurrence_date": "2026-06-17"})
+    assert v["date_pinned"] is False
+    assert "bare_broad_entity" in v["rejection_reasons"]
+
+
+def test_date_pin_does_not_assert_same_event_or_occurrence():
+    """§12-12: date_pinned=True 여도 event_occurrence_verified=False·same_event_asserted=False(불변)."""
+    v = validate_date_pinned_named_event(_named_seed(occurrence_date="2026-06-17"))
+    assert v["date_pinned"] is True
+    assert v["event_occurrence_verified"] is False
+    assert v["same_event_asserted"] is False

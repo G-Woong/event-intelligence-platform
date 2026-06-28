@@ -75,6 +75,11 @@ runtime 수집/출력 0 — 설계만; 검증된 event 0 이므로 attach 대상
 - **provider breadth(ADR#81)와의 경계:** breadth inventory 가 community 9종(reddit·hacker_news·dcinside·fmkorea·
   naver_blog_search 등)을 `community_reaction_only` 로 분류하고 `anchor_eligible=False` 를 강제 — breadth 확장이
   community 를 anchor 로 승격시키지 않는다(source role guard 약화 0). 필수 copy: **"Community reaction is not an event anchor"**.
+- **bounded live breadth run(ADR#82)와의 경계:** `build_bounded_live_provider_pool` 가 breadth→실 실행가능 pool 을
+  `anchor_eligible ∩ adapter_wired ∩ credential` 로만 산출하므로 community/market/catalog/search(`anchor_eligible=False`)는
+  pool 진입 자체 불가 — bounded live 실행/production candidate freeze 가 community 를 anchor 나 same-event proof 로
+  쓰지 않는다. `r1_bounded_live_breadth_run` 의 frontier 도 `community_reaction_contract_preserved=True` 만 보고하고
+  community runtime 수집/출력 0. 필수 copy: **"Production candidate freeze is a reviewer worklist, not same-event truth"**.
 
 ## 5. Public Intelligence Unit gate (공개 전제조건)
 
