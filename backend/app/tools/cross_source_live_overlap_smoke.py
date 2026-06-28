@@ -45,7 +45,12 @@ from backend.app.tools.semantic_candidate_scorer import (
     MODE_DETERMINISTIC,
     run_semantic_candidate_scoring,
 )
-from backend.app.tools.source_overlap_discovery import discover_overlap
+from backend.app.tools.source_overlap_discovery import (
+    _HARD_NEG_FLOOR,
+    DEFAULT_NEAR_JACCARD,
+    discover_overlap,
+)
+from ingestion.orchestration.cross_source_dedup import _title_tokens
 
 _SMOKE_NAME = "cross_source_live_overlap"
 _PROVIDER_A = "guardian"
@@ -135,6 +140,70 @@ def _cross_source_stats(disc: dict) -> dict:
     return {"cross_source_pair_count": pair, "cross_fingerprint": fp}
 
 
+def _canonical_host(url: Optional[str]) -> Optional[str]:
+    """canonical_url → host(netloc)만(경로/쿼리 미노출·본문 0). 파싱 실패 None."""
+    if not url:
+        return None
+    try:
+        from urllib.parse import urlparse
+        return urlparse(url).netloc or None
+    except Exception:
+        return None
+
+
+def _build_band_diagnostic(
+    disc: dict, *, cross_pair: int, cross_fp: int, cross_near: int, cross_hard: int,
+    top_k: int = 5,
+) -> dict:
+    """ADR#78 near-match gap 진단용 metadata 요약(raw body 0·secret 0·same_event 단정 0).
+
+    `no_title_overlap`(cross_pair>0·near/hard/fp 0)일 때 그 0 의 원인 (i) recall vs (ii) different-events 를
+    **카운트 너머로** 가르기 위한 band 분포 + 최고중첩 below-floor 샘플(공유 토큰·Jaccard·role·host). 제목 전문이
+    아니라 **정규화 공유 토큰 집합**만 노출(diagnostic 입력 허용 표면) — 같은 사건 단정 금지·점수/rationale 0.
+
+    cross-source(source_id 상이) candidate pair 만 본다(same-source 오염 차단). disc 는 emit_candidate_pairs=True
+    로 산출(candidate_pairs band 태그 포함). 미산출 시 빈 샘플·max 0.0."""
+    cands = [p for p in (disc.get("candidate_pairs") or []) if _is_cross_source(p)]
+    below = sorted(
+        (p for p in cands if p.get("band") == "below_floor"),
+        key=lambda p: p.get("title_token_jaccard") or 0.0, reverse=True)
+    samples: list[dict] = []
+    for p in below[:max(0, top_k)]:
+        shared = sorted(_title_tokens(p.get("title_left")) & _title_tokens(p.get("title_right")))
+        samples.append({
+            "pair_id": p.get("pair_id"),
+            "source_id_left": p.get("source_id_left"),
+            "source_id_right": p.get("source_id_right"),
+            "source_role_left": p.get("source_type_left"),
+            "source_role_right": p.get("source_type_right"),
+            "title_token_jaccard": p.get("title_token_jaccard"),
+            "shared_token_count": len(shared),
+            "shared_tokens": shared,             # 정규화 교집합 토큰만(제목 전문 아님·본문 0).
+            "canonical_host_left": _canonical_host(p.get("canonical_url_left")),
+            "canonical_host_right": _canonical_host(p.get("canonical_url_right")),
+            "date_bucket_match": p.get("date_bucket_match"),
+        })
+    max_jac = max((p.get("title_token_jaccard") or 0.0 for p in cands), default=0.0)
+    below_floor = max(0, cross_pair - (cross_fp + cross_near + cross_hard))
+    return {
+        "cross_source_pair_count": cross_pair,           # publishable·cross-source·same-date 비교쌍(= same-event 매치 아님).
+        "band_distribution": {
+            "fingerprint": cross_fp, "near_match": cross_near,
+            "hard_negative": cross_hard, "below_floor": below_floor,
+        },
+        "max_cross_source_title_jaccard": round(max_jac, 4),
+        "near_floor": DEFAULT_NEAR_JACCARD,              # 0.5
+        "hard_floor": _HARD_NEG_FLOOR,                   # 0.2
+        "top_below_floor_samples": samples,              # 최고중첩 below-floor cross-source 샘플(공유 토큰·body 0).
+        "title_normalization": {                         # detector 정규화 표면(recall 한계 진단 근거).
+            "lowercase": True, "stopword_removed": True,
+            "stemming": False, "entity_normalization": False,
+        },
+        "raw_body_stored": False,
+        "same_event_truth_asserted": False,
+    }
+
+
 def run_cross_source_live_overlap_smoke(
     *, provider_b: str = _DEFAULT_PROVIDER_B,
     topic: str = "central bank rate decision", topic_key: str = "central_bank_rate",
@@ -146,7 +215,7 @@ def run_cross_source_live_overlap_smoke(
     host_gate: Any = None, reviewers: Optional[list[str]] = None,
     packet_id: str = "cross_source_near_match_pkt",
     semantic_scoring: bool = False, scorer_mode: str = MODE_DETERMINISTIC,
-    scorer_top_k: int = DEFAULT_TOP_K,
+    scorer_top_k: int = DEFAULT_TOP_K, emit_band_diagnostic: bool = False,
 ) -> dict:
     """opt-in secret-safe cross-source live overlap smoke(§4 계약). 기본 live_query=False → 시도 0.
 
@@ -181,6 +250,7 @@ def run_cross_source_live_overlap_smoke(
     labeler_prediction_hidden = True
     live_query_attempted = False
     reviewer_queue_obj: Optional[dict] = None   # ADR#76: 실 live 후보 freeze 가 소비할 cross-source reviewer queue(미생성 시 None).
+    band_diagnostic: Optional[dict] = None      # ADR#78: near-match gap 진단 metadata(emit_band_diagnostic 시·양 provider ok 일 때만·body 0).
 
     # ── gate ──
     if not live_query:
@@ -221,7 +291,8 @@ def run_cross_source_live_overlap_smoke(
                 combined_records = list(qa.records) + list(qb.records)
                 dataset_source = "live_derived"   # 실 records — fixture 둔갑 0(records 0/실패면 None 유지).
                 disc = discover_overlap(
-                    combined_records, discovery_mode="cross_source_live", real_fetch=True)
+                    combined_records, discovery_mode="cross_source_live", real_fetch=True,
+                    emit_candidate_pairs=emit_band_diagnostic)
                 stats = _cross_source_stats(disc)
                 cross_pair, cross_fp = stats["cross_source_pair_count"], stats["cross_fingerprint"]
                 # near/hard pair 를 **cross-source(source_id 상이)만** 남긴 discovery 로 queue 충원
@@ -246,6 +317,11 @@ def run_cross_source_live_overlap_smoke(
                 cross_hard = queue["hard_negative_discovery_count"]
                 queue_pop = len(queue.get("queue_pair_ids") or [])
                 labeler_prediction_hidden = bool(gold_seed["labeler_prediction_hidden"])
+                # ADR#78: near-match gap 진단 metadata(band 분포·최고중첩 below-floor 샘플·body 0). 양 provider ok 일 때만.
+                if emit_band_diagnostic:
+                    band_diagnostic = _build_band_diagnostic(
+                        disc, cross_pair=cross_pair, cross_fp=cross_fp,
+                        cross_near=cross_near, cross_hard=cross_hard)
                 # cross-source candidate 0 분해(정직 — source scarcity 를 모델 실패로 뭉뚱그리지 않음).
                 if cross_pair == 0:
                     block_reasons.append("no_cross_source_overlap")
@@ -302,6 +378,9 @@ def run_cross_source_live_overlap_smoke(
         # ADR#76: cross-source live 후보 worklist(둘 다 ok·live_derived 일 때만 dict; 아니면 None). production
         # candidate freeze 가 소비 — score/rationale/predicted_status 부재(near_match queue 가 이미 숨김·additive·계약 무변).
         "reviewer_queue": reviewer_queue_obj,
+        # ADR#78: near-match gap 진단 metadata(emit_band_diagnostic 시·양 provider ok 일 때만 dict; 아니면 None).
+        # band 분포·최고중첩 below-floor 샘플(공유 토큰·Jaccard·role·host)·정규화 표면 — raw body 0·same_event 단정 0.
+        "band_diagnostic": band_diagnostic,
         "labeler_prediction_hidden": labeler_prediction_hidden,
         "semantic_scoring_requested": bool(semantic_scoring),
         "semantic_scoring": semantic_scoring_result,   # ADR#65 opt-in 결과(off/미도달 시 None·커밋 ADR#64 동작 보존).

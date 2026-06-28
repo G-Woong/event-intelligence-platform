@@ -197,3 +197,52 @@ class InternalOpsR1ProductionCandidateStatus(BaseModel):
     r2_r7_no_go: bool
     next_manual_action: str
     flags: InternalOpsFlags
+
+
+class AcquisitionRootCauseHypothesis(BaseModel):
+    """near-match gap 원인 가설(양가 보존·단정 아님). cause=root-cause class·signal=supporting/plausible/weak/
+    not_indicated/n/a. **같은/다른 사건을 단정하지 않는다**(confidence=indeterminate 가 정상)."""
+    cause: str
+    signal: str
+
+
+class AcquisitionFrontierFlags(BaseModel):
+    """acquisition frontier no-go 플래그(전부 상수 — UI 가 truth/score/PII 로 오인하지 못하게)."""
+    no_public_truth: bool
+    no_same_event_truth: bool
+    no_score: bool
+    no_rationale: bool
+    no_predicted_status: bool
+    no_raw_body: bool
+    no_secret: bool
+
+
+class InternalOpsAcquisitionFrontierStatus(BaseModel):
+    """ADR#78 — near-match gap diagnostic + targeted acquisition frontier(read-only·public truth 아님).
+
+    `r1_targeted_live_acquisition.run_targeted_live_acquisition_and_near_match_diagnostic` 의 sanitized
+    `internal_ops_acquisition_frontier` 를 미러한다. near-match gap status·**원인 가설들(양가·단정 아님)**·
+    confidence·targeted seed/live attempt count·provider expansion·Korean strategy readiness·production candidate
+    status·R1 gap·R2~R7 No-Go·필수 정직 copy 만 노출한다 — same_event truth·score·rationale·predicted_status·raw
+    body·raw PII·secret 은 필드 자체가 없어 구조적 미노출. read API 는 live 시도 0(near_match_gap_status 는
+    insufficient_debug_artifact 가 정상 — 실 live diagnostic 은 operator CLI opt-in 전용). **near-match 0 은 같은
+    사건 부재를 증명하지 않는다**(required_copy 가 명시)."""
+    contract: str
+    near_match_gap_status: str
+    root_cause_hypotheses: list[AcquisitionRootCauseHypothesis]
+    root_cause_confidence: str
+    targeted_query_seed_count: int
+    live_attempt_count: int
+    live_candidate_count: int
+    publishable_pair_count: int
+    production_candidate_status: str
+    production_candidate_batch_ready: bool
+    candidate_provenance: str
+    provider_expansion_plan_ready: bool
+    korean_source_strategy_ready: bool
+    blocked_reason: str
+    current_r1_gap: int
+    production_gold_count: int
+    r2_r7_no_go: bool
+    required_copy: list[str]
+    flags: AcquisitionFrontierFlags

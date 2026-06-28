@@ -4,6 +4,7 @@
 // re-introduce 하지 못하게 한 겹 더 막는다(R-OpsUIPrematureTruth·심층 방어). same_event truth·semantic score·
 // model rationale·predicted_status·reviewer raw PII 는 표시 대상이 아니다 — 발견 시 fail-loud.
 import type {
+  InternalOpsAcquisitionFrontierStatus,
   InternalOpsPilotExecutionStatus,
   InternalOpsPreflightStatus,
   InternalOpsR1AcquisitionStatus,
@@ -246,5 +247,62 @@ export function r1ProdCandidateWarnings(
   if (p.production_gold_count === 0) out.push(OPS_R1_PROD_COPY.returnedLabelsRequired);
   if (p.production_gold_count === 0) out.push(OPS_R1_PROD_COPY.goldZeroUntilImport);
   if (p.r2_r7_no_go) out.push(OPS_R1_PROD_COPY.laddersNoGo);
+  return out;
+}
+
+// ── ADR#78 near-match gap diagnostic + targeted acquisition frontier view helpers ───────────────────────
+// 필수 copy(§11) — near-match 0 이 같은 사건 부재를 증명하지 않으며 원인이 미확정임을 operator 가 명확히 보게.
+// 원인 가설은 양가(단정 아님)로 표시하고, production candidate=reviewer worklist≠truth·gold 0·R2~R7 No-Go 를 강제.
+export const OPS_FRONTIER_COPY = {
+  zeroNotProof: "Near-match 0 does not prove no same event",
+  causeUnresolved: "Cause unresolved: detector miss vs different-events vs provider narrowness",
+  requiresLivePair: "Production candidate requires live-derived publishable pair",
+  worklistNotTruth: "Production candidate is reviewer worklist, not truth",
+  goldZeroUntilLabels: "R1 gold remains 0 until human labels are returned",
+  laddersNoGo: "R2~R7 remain No-Go",
+} as const;
+
+// frontier → read-only 표시 행(near-match gap·원인 가설·acquisition 상태만; score/rationale/same_event 0).
+export function toR1FrontierDisplayRows(
+  f: InternalOpsAcquisitionFrontierStatus,
+): OpsDisplayRow[] {
+  const hyp = f.root_cause_hypotheses
+    .filter((h) => h.signal === "supporting" || h.signal === "plausible")
+    .map((h) => `${h.cause} [${h.signal}]`)
+    .join("; ");
+  return [
+    { label: "Near-match gap status", value: f.near_match_gap_status },
+    { label: "Root-cause confidence", value: f.root_cause_confidence },
+    { label: "Root-cause hypotheses (not asserted)", value: hyp || "(none)" },
+    { label: "Targeted query seeds", value: `${f.targeted_query_seed_count}` },
+    { label: "Live attempts", value: `${f.live_attempt_count}` },
+    { label: "Live candidate pairs (comparison, not match)", value: `${f.live_candidate_count}` },
+    { label: "Publishable near-match pairs", value: `${f.publishable_pair_count}` },
+    { label: "Production candidate status", value: f.production_candidate_status },
+    { label: "Production candidate batch ready", value: String(f.production_candidate_batch_ready) },
+    { label: "Candidate provenance", value: f.candidate_provenance },
+    { label: "Provider expansion plan ready", value: String(f.provider_expansion_plan_ready) },
+    { label: "Korean source strategy ready", value: String(f.korean_source_strategy_ready) },
+    { label: "Blocked reason", value: f.blocked_reason || "(none)" },
+    { label: "Production gold (unverified)", value: `${f.production_gold_count} (gap ${f.current_r1_gap})` },
+    { label: "R2~R7 No-Go", value: String(f.r2_r7_no_go) },
+  ];
+}
+
+// frontier → operator 경고 배너(near-match 0 ≠ 증명·원인 미확정·live pair 필요·worklist≠truth·gold 0·No-Go).
+// backend required_copy(§11) 를 우선 표시하고, 누락 시 로컬 상수로 보강(defense-in-depth).
+export function r1FrontierWarnings(
+  f: InternalOpsAcquisitionFrontierStatus,
+): string[] {
+  const out: string[] = [...(f.required_copy ?? [])];
+  const ensure = (s: string) => {
+    if (!out.includes(s)) out.push(s);
+  };
+  ensure(OPS_FRONTIER_COPY.zeroNotProof);
+  ensure(OPS_FRONTIER_COPY.causeUnresolved);
+  ensure(OPS_FRONTIER_COPY.worklistNotTruth);
+  if (!f.production_candidate_batch_ready) ensure(OPS_FRONTIER_COPY.requiresLivePair);
+  if (f.production_gold_count === 0) ensure(OPS_FRONTIER_COPY.goldZeroUntilLabels);
+  if (f.r2_r7_no_go) ensure(OPS_FRONTIER_COPY.laddersNoGo);
   return out;
 }

@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException
 
 from backend.app.core.config import settings
 from backend.app.schemas.internal_ops import (
+    InternalOpsAcquisitionFrontierStatus,
     InternalOpsPilotExecutionStatus,
     InternalOpsPreflightStatus,
     InternalOpsR1AcquisitionStatus,
@@ -26,6 +27,9 @@ from backend.app.tools.r1_production_candidate_acquisition import (
     run_r1_production_candidate_acquisition,
 )
 from backend.app.tools.r1_reviewer_pilot_batch import run_r1_reviewer_pilot_batch
+from backend.app.tools.r1_targeted_live_acquisition import (
+    run_targeted_live_acquisition_and_near_match_diagnostic,
+)
 from backend.app.tools.reviewer_actual_input_gate import run_actual_input_gate
 
 router = APIRouter()
@@ -131,3 +135,26 @@ def get_r1_production_candidate_status() -> InternalOpsR1ProductionCandidateStat
         raise HTTPException(
             status_code=503, detail="internal ops r1 production candidates temporarily unavailable") from None
     return InternalOpsR1ProductionCandidateStatus(**out["r1_production_candidate_contract"])
+
+
+@router.get("/r1-acquisition-frontier", response_model=InternalOpsAcquisitionFrontierStatus)
+def get_r1_acquisition_frontier_status() -> InternalOpsAcquisitionFrontierStatus:
+    """ADR#78 — near-match gap diagnostic + targeted acquisition frontier(read-only). flag off → 404(미노출).
+
+    near-match gap status·**원인 가설들(양가·단정 아님)**·confidence·targeted seed/live attempt count·provider
+    expansion·Korean strategy readiness·production candidate status·R1 gap·R2~R7 No-Go·필수 정직 copy 를 sanitized
+    로 산출한다. 응답 스키마에 same_event truth·score·rationale·predicted_status·raw body·raw PII·secret 필드 자체가
+    없다(구조적 미노출). 입력 파일이 깨졌으면 경로/내용 누출 없이 503. **실 live 네트워크 호출은 API 경로에서 수행하지
+    않는다**(live_query=False 고정 → near_match_gap_status=insufficient_debug_artifact 가 정상; 실 live diagnostic 은
+    operator CLI opt-in 전용). near-match 0 은 같은 사건 부재를 증명하지 않는다(required_copy 가 명시).
+    """
+    if not settings.INTERNAL_OPS_DASHBOARD_ENABLED:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        # read API 는 live_query=False 고정(시도 0). 실 live targeted acquisition 은 operator CLI opt-in 전용.
+        out = run_targeted_live_acquisition_and_near_match_diagnostic(live_query=False)
+    except (ValueError, OSError) as exc:   # malformed operator 입력 파일 등 — detail 에 경로/내용 미포함.
+        logger.warning("internal ops r1 acquisition frontier unavailable: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=503, detail="internal ops r1 acquisition frontier temporarily unavailable") from None
+    return InternalOpsAcquisitionFrontierStatus(**out["internal_ops_acquisition_frontier"])

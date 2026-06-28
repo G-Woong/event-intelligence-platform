@@ -266,3 +266,45 @@ export interface InternalOpsR1ProductionCandidateStatus {
   next_manual_action: string;
   flags: InternalOpsFlags;
 }
+
+// ── ADR#78: near-match gap diagnostic + targeted acquisition frontier — backend sanitized contract 와 1:1 ──
+// near-match gap status·원인 가설들(양가·단정 아님)·confidence·targeted seed/live attempt·provider/Korean readiness·
+// production candidate status·R1 gap·R2~R7 No-Go·필수 정직 copy 만. same_event truth·score·rationale·predicted_status·
+// raw body·raw PII·secret 필드 자체가 없음. read API 는 live 0(near_match_gap_status=insufficient_debug_artifact 정상).
+// near-match 0 은 같은 사건 부재를 증명하지 않는다(required_copy 가 명시). public truth 아님·read-only.
+export interface AcquisitionRootCauseHypothesis {
+  cause: string;
+  signal: string;
+}
+
+export interface AcquisitionFrontierFlags {
+  no_public_truth: boolean;
+  no_same_event_truth: boolean;
+  no_score: boolean;
+  no_rationale: boolean;
+  no_predicted_status: boolean;
+  no_raw_body: boolean;
+  no_secret: boolean;
+}
+
+export interface InternalOpsAcquisitionFrontierStatus {
+  contract: string;
+  near_match_gap_status: string;
+  root_cause_hypotheses: AcquisitionRootCauseHypothesis[];
+  root_cause_confidence: string;
+  targeted_query_seed_count: number;
+  live_attempt_count: number;
+  live_candidate_count: number;
+  publishable_pair_count: number;
+  production_candidate_status: string;
+  production_candidate_batch_ready: boolean;
+  candidate_provenance: string;
+  provider_expansion_plan_ready: boolean;
+  korean_source_strategy_ready: boolean;
+  blocked_reason: string;
+  current_r1_gap: number;
+  production_gold_count: number;
+  r2_r7_no_go: boolean;
+  required_copy: string[];
+  flags: AcquisitionFrontierFlags;
+}

@@ -579,3 +579,148 @@ describe("r1 production candidate acquisition view (dual-track)", () => {
     );
   });
 });
+
+// ── ADR#78 near-match gap diagnostic + targeted acquisition frontier — inline 재선언 lock ──
+const OPS_FRONTIER_COPY = {
+  zeroNotProof: "Near-match 0 does not prove no same event",
+  causeUnresolved: "Cause unresolved: detector miss vs different-events vs provider narrowness",
+  requiresLivePair: "Production candidate requires live-derived publishable pair",
+  worklistNotTruth: "Production candidate is reviewer worklist, not truth",
+  goldZeroUntilLabels: "R1 gold remains 0 until human labels are returned",
+  laddersNoGo: "R2~R7 remain No-Go",
+};
+
+function toR1FrontierDisplayRows(f) {
+  const hyp = f.root_cause_hypotheses
+    .filter((h) => h.signal === "supporting" || h.signal === "plausible")
+    .map((h) => `${h.cause} [${h.signal}]`)
+    .join("; ");
+  return [
+    { label: "Near-match gap status", value: f.near_match_gap_status },
+    { label: "Root-cause confidence", value: f.root_cause_confidence },
+    { label: "Root-cause hypotheses (not asserted)", value: hyp || "(none)" },
+    { label: "Targeted query seeds", value: `${f.targeted_query_seed_count}` },
+    { label: "Live attempts", value: `${f.live_attempt_count}` },
+    { label: "Live candidate pairs (comparison, not match)", value: `${f.live_candidate_count}` },
+    { label: "Publishable near-match pairs", value: `${f.publishable_pair_count}` },
+    { label: "Production candidate status", value: f.production_candidate_status },
+    { label: "Production candidate batch ready", value: String(f.production_candidate_batch_ready) },
+    { label: "Candidate provenance", value: f.candidate_provenance },
+    { label: "Provider expansion plan ready", value: String(f.provider_expansion_plan_ready) },
+    { label: "Korean source strategy ready", value: String(f.korean_source_strategy_ready) },
+    { label: "Blocked reason", value: f.blocked_reason || "(none)" },
+    { label: "Production gold (unverified)", value: `${f.production_gold_count} (gap ${f.current_r1_gap})` },
+    { label: "R2~R7 No-Go", value: String(f.r2_r7_no_go) },
+  ];
+}
+
+function r1FrontierWarnings(f) {
+  const out = [...(f.required_copy ?? [])];
+  const ensure = (s) => {
+    if (!out.includes(s)) out.push(s);
+  };
+  ensure(OPS_FRONTIER_COPY.zeroNotProof);
+  ensure(OPS_FRONTIER_COPY.causeUnresolved);
+  ensure(OPS_FRONTIER_COPY.worklistNotTruth);
+  if (!f.production_candidate_batch_ready) ensure(OPS_FRONTIER_COPY.requiresLivePair);
+  if (f.production_gold_count === 0) ensure(OPS_FRONTIER_COPY.goldZeroUntilLabels);
+  if (f.r2_r7_no_go) ensure(OPS_FRONTIER_COPY.laddersNoGo);
+  return out;
+}
+
+const SAMPLE_FRONTIER = {
+  contract: "InternalOpsAcquisitionFrontier",
+  near_match_gap_status: "all_below_hard_floor",
+  root_cause_hypotheses: [
+    { cause: "same_event_possible_but_detector_missed", signal: "plausible" },
+    { cause: "broad_topic_different_events", signal: "plausible" },
+    { cause: "title_normalization_gap", signal: "plausible" },
+    { cause: "provider_pair_narrowness", signal: "plausible" },
+    { cause: "time_window_mismatch", signal: "weak" },
+    { cause: "source_role_metadata_gap", signal: "not_indicated" },
+    { cause: "unknown", signal: "supporting" },
+  ],
+  root_cause_confidence: "indeterminate",
+  targeted_query_seed_count: 3,
+  live_attempt_count: 2,
+  live_candidate_count: 30,
+  publishable_pair_count: 0,
+  production_candidate_status: "blocked_no_publishable_pairs",
+  production_candidate_batch_ready: false,
+  candidate_provenance: "none",
+  provider_expansion_plan_ready: true,
+  korean_source_strategy_ready: true,
+  blocked_reason: "blocked_no_publishable_pairs",
+  current_r1_gap: 200,
+  production_gold_count: 0,
+  r2_r7_no_go: true,
+  required_copy: [
+    "Near-match 0 does not prove no same event",
+    "Cause unresolved: detector miss vs different-events vs provider narrowness",
+    "Production candidate requires live-derived publishable pair",
+    "Production candidate is reviewer worklist, not truth",
+    "R1 gold remains 0 until human labels are returned",
+    "R2~R7 remain No-Go",
+  ],
+  flags: {
+    no_public_truth: true, no_same_event_truth: true, no_score: true, no_rationale: true,
+    no_predicted_status: true, no_raw_body: true, no_secret: true,
+  },
+};
+
+describe("ADR#78 acquisition frontier view", () => {
+  it("passes the sanitized frontier contract (no forbidden fields)", () => {
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_FRONTIER));
+  });
+
+  it("shows near-match gap status + indeterminate confidence (not asserted as truth)", () => {
+    const rows = toR1FrontierDisplayRows(SAMPLE_FRONTIER);
+    const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]));
+    assert.equal(byLabel["Near-match gap status"], "all_below_hard_floor");
+    assert.equal(byLabel["Root-cause confidence"], "indeterminate");
+    // 가설은 표시되되 같은/다른 사건을 단정하지 않는다(둘 다 plausible 로 병기).
+    assert.ok(byLabel["Root-cause hypotheses (not asserted)"].includes("same_event_possible_but_detector_missed"));
+    assert.ok(byLabel["Root-cause hypotheses (not asserted)"].includes("broad_topic_different_events"));
+  });
+
+  it("labels live candidate pairs as comparison, not match", () => {
+    const rows = toR1FrontierDisplayRows(SAMPLE_FRONTIER);
+    const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]));
+    assert.equal(byLabel["Live candidate pairs (comparison, not match)"], "30");
+    assert.equal(byLabel["Publishable near-match pairs"], "0");
+  });
+
+  it("emits only string values (no leaked objects)", () => {
+    for (const row of toR1FrontierDisplayRows(SAMPLE_FRONTIER)) {
+      assert.equal(typeof row.value, "string");
+    }
+  });
+
+  it("warns: near-match 0 is not proof + cause unresolved + worklist not truth + gold 0 + No-Go", () => {
+    const w = r1FrontierWarnings(SAMPLE_FRONTIER);
+    assert.ok(w.includes(OPS_FRONTIER_COPY.zeroNotProof));
+    assert.ok(w.includes(OPS_FRONTIER_COPY.causeUnresolved));
+    assert.ok(w.includes(OPS_FRONTIER_COPY.worklistNotTruth));
+    assert.ok(w.includes(OPS_FRONTIER_COPY.requiresLivePair));
+    assert.ok(w.includes(OPS_FRONTIER_COPY.goldZeroUntilLabels));
+    assert.ok(w.includes(OPS_FRONTIER_COPY.laddersNoGo));
+  });
+
+  it("carries the required §11 honesty copy", () => {
+    assert.ok(OPS_FRONTIER_COPY.zeroNotProof.includes("does not prove no same event"));
+    assert.ok(OPS_FRONTIER_COPY.causeUnresolved.includes("Cause unresolved"));
+    assert.ok(OPS_FRONTIER_COPY.worklistNotTruth.includes("not truth"));
+    assert.ok(OPS_FRONTIER_COPY.laddersNoGo.includes("No-Go"));
+  });
+
+  it("throws if a forbidden field is re-introduced into the frontier contract", () => {
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_FRONTIER, score: 0.9 }),
+      /forbidden field: score/,
+    );
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_FRONTIER, extra: [{ same_event: true }] }),
+      /forbidden field: same_event/,
+    );
+  });
+});

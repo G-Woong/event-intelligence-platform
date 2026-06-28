@@ -448,3 +448,29 @@ def test_34_reviewer_queue_exposed_only_for_live_records():
     ok = _both_ok()
     assert isinstance(ok["reviewer_queue"], dict)
     assert ok["reviewer_queue"].get("packet_rows")  # live 후보 worklist 소비 가능.
+
+
+def test_35_band_diagnostic_default_none_additive():
+    """ADR#78 additive: band_diagnostic 키 항상 존재·기본 None(emit_band_diagnostic 미지정·기존 계약 보존)."""
+    out = _both_ok()
+    assert "band_diagnostic" in out
+    assert out["band_diagnostic"] is None
+    # not_opted 도 None.
+    assert run_cross_source_live_overlap_smoke(live_query=False)["band_diagnostic"] is None
+
+
+def test_36_band_diagnostic_emitted_body_free():
+    """ADR#78: emit_band_diagnostic=True → band 분포·max Jaccard·공유 토큰 샘플(제목 전문/secret 0)."""
+    out = _both_ok(emit_band_diagnostic=True)
+    bd = out["band_diagnostic"]
+    assert isinstance(bd, dict)
+    # WIRE 가 양 provider 에 → fingerprint cross 쌍 ≥1(검출 band).
+    assert bd["band_distribution"]["fingerprint"] >= 1
+    assert bd["near_floor"] == 0.5 and bd["hard_floor"] == 0.2
+    assert bd["raw_body_stored"] is False and bd["same_event_truth_asserted"] is False
+    # 샘플은 공유 정규화 토큰만(제목 전문 미노출) — secret sentinel 부재.
+    blob = json.dumps(bd, ensure_ascii=False)
+    assert _SENTINEL not in blob
+    for s in bd["top_below_floor_samples"]:
+        assert set(s.keys()) >= {"shared_tokens", "title_token_jaccard", "source_role_left"}
+        assert "title_left" not in s and "body" not in s   # 제목 전문/본문 키 부재.
