@@ -6,6 +6,7 @@
 import type {
   InternalOpsAcquisitionFrontierStatus,
   InternalOpsBoundedLiveBreadthFrontier,
+  InternalOpsDatePinnedLiveRunFrontier,
   InternalOpsDiscreteAcquisitionFrontier,
   InternalOpsPilotExecutionStatus,
   InternalOpsPreflightStatus,
@@ -503,5 +504,72 @@ export function r1BoundedLiveBreadthFrontierWarnings(
   ensure(OPS_BOUNDED_COPY.freezeNotTruth);
   ensure(OPS_BOUNDED_COPY.productionGoldZero);
   if (f.r2_r7_no_go) ensure(OPS_BOUNDED_COPY.laddersNoGo);
+  return out;
+}
+
+// ADR#83 — date-pinned live run frontier 정직 copy(date-pin=operator 게이트≠발생 증명·live query=operator event≠
+// curated fallback·freeze=worklist≠truth·gold 0·No-Go). backend required_copy(§13) 우선·로컬은 defense-in-depth.
+export const OPS_DATE_PINNED_COPY = {
+  operatorEventRequired: "A date-pinned operator event is required before any bounded live run",
+  occurrenceIsAssertion: "occurrence_date is an operator assertion, not a code-verified fact",
+  datePinNotOccurrence: "A date pin does not prove the event occurred or that both sources cover it",
+  queryTargetsOperatorEvent: "The live query targets the operator event, never a curated seed fallback",
+  freezeNotTruth: "Production candidate freeze is a reviewer worklist, not same-event truth",
+  productionGoldZero: "Production gold remains 0 until human labels are returned",
+  laddersNoGo: "R2~R7 remain No-Go",
+} as const;
+
+// date-pinned live run frontier → read-only 표시 행(operator event provided·occurrence_date(operator 주장)·target
+// wired·live executed·freeze status·KO lane; per-pair score/same_event/raw body/named_entity 전문 0). operator 가
+// 다음에 할 일(date-pinned event 제공 → bounded live 승인)을 한 눈에 보여준다.
+export function toR1DatePinnedLiveRunFrontierDisplayRows(
+  f: InternalOpsDatePinnedLiveRunFrontier,
+): OpsDisplayRow[] {
+  return [
+    { label: "Date-pinned live run status", value: f.latest_date_pinned_live_run_status },
+    { label: "Operator event provided", value: String(f.operator_event_provided) },
+    { label: "Occurrence date (operator assertion, unverified)", value: f.occurrence_date ?? "(not provided)" },
+    { label: "Occurrence date valid ISO", value: String(f.occurrence_date_valid_iso) },
+    { label: "Date-pinned named event valid", value: String(f.date_pinned_named_event_valid) },
+    { label: "Live query target wired", value: String(f.live_query_target_wired) },
+    { label: "Live query approved", value: String(f.live_query_approved) },
+    { label: "Live query executed", value: String(f.live_query_executed) },
+    { label: "Live call count", value: `${f.live_call_count}` },
+    { label: "Providers used (actual)", value: f.providers_used.length ? f.providers_used.join(", ") : "(none)" },
+    { label: "Comparison pair count", value: `${f.comparison_pair_count}` },
+    { label: "Live recall probe max score (routing signal, not truth)", value: `${f.max_recall_probe_score}` },
+    { label: "Live pairs newly routed (not same-event)", value: `${f.newly_routed_count}` },
+    { label: "Production candidate status", value: f.production_candidate_status },
+    { label: "Production candidate batch ready", value: String(f.production_candidate_batch_ready) },
+    { label: "Production frozen pair count (worklist, not truth)", value: `${f.production_frozen_pair_count}` },
+    { label: "Candidate provenance", value: f.candidate_provenance },
+    { label: "Sanitized snapshot status", value: f.sanitized_snapshot_status },
+    { label: "KO source lane status", value: f.ko_source_lane_status },
+    { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
+    { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
+    { label: "Blocked reason", value: f.blocked_reason || "(none)" },
+    { label: "Acquisition next action", value: f.acquisition_next_action },
+    { label: "R1 gap", value: `${f.current_r1_gap}` },
+    { label: "Production gold count", value: `${f.production_gold_count}` },
+    { label: "R2~R7 No-Go", value: String(f.r2_r7_no_go) },
+  ];
+}
+
+// date-pinned live run frontier → operator 경고 배너(operator event 필요·occurrence=주장·date-pin≠발생·query=operator
+// event≠curated·freeze≠truth·gold 0·No-Go). backend required_copy(§13) 우선, 누락 시 로컬 상수 보강(defense-in-depth).
+export function r1DatePinnedLiveRunFrontierWarnings(
+  f: InternalOpsDatePinnedLiveRunFrontier,
+): string[] {
+  const out: string[] = [...(f.required_copy ?? [])];
+  const ensure = (s: string) => {
+    if (!out.includes(s)) out.push(s);
+  };
+  ensure(OPS_DATE_PINNED_COPY.operatorEventRequired);
+  ensure(OPS_DATE_PINNED_COPY.occurrenceIsAssertion);
+  ensure(OPS_DATE_PINNED_COPY.datePinNotOccurrence);
+  ensure(OPS_DATE_PINNED_COPY.queryTargetsOperatorEvent);
+  ensure(OPS_DATE_PINNED_COPY.freezeNotTruth);
+  ensure(OPS_DATE_PINNED_COPY.productionGoldZero);
+  if (f.r2_r7_no_go) ensure(OPS_DATE_PINNED_COPY.laddersNoGo);
   return out;
 }

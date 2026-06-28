@@ -1258,3 +1258,177 @@ describe("ADR#82 bounded live breadth run + date-pin gate + freeze attempt front
     );
   });
 });
+
+// ── ADR#83 date-pinned live run frontier(inline-locked·opsPilotExecutionView.ts 와 동기화) ──
+const OPS_DATE_PINNED_COPY = {
+  operatorEventRequired: "A date-pinned operator event is required before any bounded live run",
+  occurrenceIsAssertion: "occurrence_date is an operator assertion, not a code-verified fact",
+  datePinNotOccurrence: "A date pin does not prove the event occurred or that both sources cover it",
+  queryTargetsOperatorEvent: "The live query targets the operator event, never a curated seed fallback",
+  freezeNotTruth: "Production candidate freeze is a reviewer worklist, not same-event truth",
+  productionGoldZero: "Production gold remains 0 until human labels are returned",
+  laddersNoGo: "R2~R7 remain No-Go",
+};
+
+function toR1DatePinnedLiveRunFrontierDisplayRows(f) {
+  return [
+    { label: "Date-pinned live run status", value: f.latest_date_pinned_live_run_status },
+    { label: "Operator event provided", value: String(f.operator_event_provided) },
+    { label: "Occurrence date (operator assertion, unverified)", value: f.occurrence_date ?? "(not provided)" },
+    { label: "Occurrence date valid ISO", value: String(f.occurrence_date_valid_iso) },
+    { label: "Date-pinned named event valid", value: String(f.date_pinned_named_event_valid) },
+    { label: "Live query target wired", value: String(f.live_query_target_wired) },
+    { label: "Live query approved", value: String(f.live_query_approved) },
+    { label: "Live query executed", value: String(f.live_query_executed) },
+    { label: "Live call count", value: `${f.live_call_count}` },
+    { label: "Providers used (actual)", value: f.providers_used.length ? f.providers_used.join(", ") : "(none)" },
+    { label: "Comparison pair count", value: `${f.comparison_pair_count}` },
+    { label: "Live recall probe max score (routing signal, not truth)", value: `${f.max_recall_probe_score}` },
+    { label: "Live pairs newly routed (not same-event)", value: `${f.newly_routed_count}` },
+    { label: "Production candidate status", value: f.production_candidate_status },
+    { label: "Production candidate batch ready", value: String(f.production_candidate_batch_ready) },
+    { label: "Production frozen pair count (worklist, not truth)", value: `${f.production_frozen_pair_count}` },
+    { label: "Candidate provenance", value: f.candidate_provenance },
+    { label: "Sanitized snapshot status", value: f.sanitized_snapshot_status },
+    { label: "KO source lane status", value: f.ko_source_lane_status },
+    { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
+    { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
+    { label: "Blocked reason", value: f.blocked_reason || "(none)" },
+    { label: "Acquisition next action", value: f.acquisition_next_action },
+    { label: "R1 gap", value: `${f.current_r1_gap}` },
+    { label: "Production gold count", value: `${f.production_gold_count}` },
+    { label: "R2~R7 No-Go", value: String(f.r2_r7_no_go) },
+  ];
+}
+
+function r1DatePinnedLiveRunFrontierWarnings(f) {
+  const out = [...(f.required_copy ?? [])];
+  const ensure = (s) => {
+    if (!out.includes(s)) out.push(s);
+  };
+  ensure(OPS_DATE_PINNED_COPY.operatorEventRequired);
+  ensure(OPS_DATE_PINNED_COPY.occurrenceIsAssertion);
+  ensure(OPS_DATE_PINNED_COPY.datePinNotOccurrence);
+  ensure(OPS_DATE_PINNED_COPY.queryTargetsOperatorEvent);
+  ensure(OPS_DATE_PINNED_COPY.freezeNotTruth);
+  ensure(OPS_DATE_PINNED_COPY.productionGoldZero);
+  if (f.r2_r7_no_go) ensure(OPS_DATE_PINNED_COPY.laddersNoGo);
+  return out;
+}
+
+const SAMPLE_DATE_PINNED_FRONTIER = {
+  contract: "InternalOpsDatePinnedLiveRunFrontier",
+  latest_date_pinned_live_run_status: "missing_operator_date_pinned_event",
+  operator_event_provided: false,
+  occurrence_date: null,
+  occurrence_date_valid_iso: false,
+  date_pinned_named_event_valid: false,
+  live_query_target_wired: true,
+  live_query_approved: false,
+  live_query_executed: false,
+  live_call_count: 0,
+  providers_used: [],
+  comparison_pair_count: 0,
+  max_recall_probe_score: 0.0,
+  newly_routed_count: 0,
+  production_candidate_status: "blocked",
+  production_candidate_batch_ready: false,
+  production_frozen_pair_count: 0,
+  candidate_provenance: "none",
+  sanitized_snapshot_status: "not_written_no_live_run",
+  ko_source_lane_status: "ready_5_keyfree_live_ko_news_anchors",
+  ko_named_seed_needed: true,
+  ko_floor_current: 0,
+  ko_floor_required: 50,
+  blocked_reason: "missing_operator_date_pinned_event",
+  acquisition_next_action:
+    "operator must provide a date-pinned event (named_entity + event_phrase + occurrence_date ISO)",
+  current_r1_gap: 200,
+  production_gold_count: 0,
+  r2_r7_no_go: true,
+  required_copy: [
+    "A date-pinned operator event is required before any bounded live run",
+    "occurrence_date is an operator assertion, not a code-verified fact",
+    "A date pin does not prove the event occurred or that both sources cover it",
+    "The live query targets the operator event, never a curated seed fallback",
+    "Production candidate freeze is a reviewer worklist, not same-event truth",
+    "Production gold remains 0 until human labels are returned",
+    "R2~R7 remain No-Go",
+  ],
+  flags: {
+    no_public_truth: true, no_same_event_truth: true, no_score: true, no_rationale: true,
+    no_predicted_status: true, no_raw_body: true, no_secret: true,
+  },
+};
+
+describe("ADR#83 date-pinned live query plumbing + bounded live run + freeze frontier view", () => {
+  it("passes the sanitized frontier contract (no forbidden fields)", () => {
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_DATE_PINNED_FRONTIER));
+  });
+
+  it("shows operator event not provided + occurrence not provided + blocked reason", () => {
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Operator event provided"], "false");
+    assert.equal(byLabel["Occurrence date (operator assertion, unverified)"], "(not provided)");
+    assert.equal(byLabel["Date-pinned named event valid"], "false");
+    assert.equal(byLabel["Blocked reason"], "missing_operator_date_pinned_event");
+  });
+
+  it("shows the live query target wired (test-locked) but live not executed (no opt-in)", () => {
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Live query target wired"], "true");
+    assert.equal(byLabel["Live query executed"], "false");
+    assert.equal(byLabel["Providers used (actual)"], "(none)");
+  });
+
+  it("shows freeze status blocked with 0 frozen pairs, provenance none, gold 0 (no truth)", () => {
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Production candidate status"], "blocked");
+    assert.equal(byLabel["Production frozen pair count (worklist, not truth)"], "0");
+    assert.equal(byLabel["Candidate provenance"], "none");
+    assert.equal(byLabel["Production gold count"], "0");
+  });
+
+  it("shows the KO source lane status + floor 0/50 + named seed needed", () => {
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["KO source lane status"], "ready_5_keyfree_live_ko_news_anchors");
+    assert.equal(byLabel["KO named seed needed"], "true");
+    assert.equal(byLabel["KO floor"], "0/50");
+  });
+
+  it("emits only string values (no leaked objects)", () => {
+    for (const row of toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER)) {
+      assert.equal(typeof row.value, "string");
+    }
+  });
+
+  it("warns: operator event required + occurrence=assertion + date-pin != occurrence + query targets operator event + freeze != truth + gold 0 + No-Go", () => {
+    const w = r1DatePinnedLiveRunFrontierWarnings(SAMPLE_DATE_PINNED_FRONTIER);
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.operatorEventRequired));
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.occurrenceIsAssertion));
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.datePinNotOccurrence));
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.queryTargetsOperatorEvent));
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.freezeNotTruth));
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.productionGoldZero));
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.laddersNoGo));
+  });
+
+  it("throws if a forbidden field (score/same_event) is re-introduced", () => {
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_DATE_PINNED_FRONTIER, score: 0.9 }),
+      /forbidden field: score/,
+    );
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_DATE_PINNED_FRONTIER, extra: [{ same_event: true }] }),
+      /forbidden field: same_event/,
+    );
+  });
+});

@@ -80,6 +80,11 @@ runtime 수집/출력 0 — 설계만; 검증된 event 0 이므로 attach 대상
   pool 진입 자체 불가 — bounded live 실행/production candidate freeze 가 community 를 anchor 나 same-event proof 로
   쓰지 않는다. `r1_bounded_live_breadth_run` 의 frontier 도 `community_reaction_contract_preserved=True` 만 보고하고
   community runtime 수집/출력 0. 필수 copy: **"Production candidate freeze is a reviewer worklist, not same-event truth"**.
+- **date-pinned live query plumbing(ADR#83)와의 경계:** `live_query_target.build_live_query_target` 가 `source_role_required=publishable`
+  로 고정하고 `execute_date_pinned_bounded_live_run` 은 publishable×publishable(guardian/nyt=article) 만 freeze 한다 —
+  operator 가 date-pinned event 를 제공해 실 live 가 돌아도 community/market/catalog/search 는 anchor/same-event proof 로
+  쓰이지 않는다(reaction layer 불변·runtime 수집/출력 0·`community_reaction_contract_preserved=True`). date-pin=operator
+  gate≠발생 증명·live query=operator event≠curated fallback.
 
 ## 5. Public Intelligence Unit gate (공개 전제조건)
 

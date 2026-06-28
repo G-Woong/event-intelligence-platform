@@ -7,14 +7,53 @@
 """
 from __future__ import annotations
 
-from backend.app.schemas.internal_ops import InternalOpsBoundedLiveBreadthFrontier
+import json
+
+from backend.app.schemas.internal_ops import (
+    InternalOpsBoundedLiveBreadthFrontier,
+    InternalOpsDatePinnedLiveRunFrontier,
+)
+from backend.app.tools.live_query_target import LIVE_QUERY_TARGET_WIRED
 from backend.app.tools.r1_bounded_live_breadth_run import (
-    BLOCKED_MISSING_DATE_PIN,
-    BLOCKED_QUERY_WIRING,
-    LIVE_QUERY_TARGET_WIRED,
+    BLOCKED_MISSING_OPERATOR_EVENT,
+    LIVE_BLOCKED_NO_OPT_IN,
     build_bounded_live_provider_pool,
     run_bounded_live_breadth_run,
 )
+
+# ADR#83 date-pinned operator event(valid shape·실 source 아님) + 결정적 fake transports(network 0).
+_OPERATOR_EVENT = {"named_entity": "US Federal Reserve", "event_phrase": "FOMC rate decision",
+                   "occurrence_date": "2026-06-17"}
+_WIRE = "Federal Reserve raises benchmark interest rate by quarter point"
+_PARA = "Federal Reserve raises benchmark interest rate by 25 basis points"
+_DIFF = "Federal Reserve official comments on interest rate policy outlook"
+
+
+def _g_payload(items, day="2026-06-17"):
+    return json.dumps({"response": {"status": "ok", "results": [
+        {"webTitle": t, "webUrl": u, "webPublicationDate": day + "T12:00:00Z"} for t, u in items]}})
+
+
+def _n_payload(items, day="2026-06-17"):
+    return json.dumps({"status": "OK", "response": {"docs": [
+        {"headline": {"main": t}, "web_url": u, "pub_date": day + "T13:00:00+0000"} for t, u in items]}})
+
+
+def _guardian_tr(_url):
+    return _g_payload([(_WIRE, "https://g.test/a"), (_PARA, "https://g.test/b")])
+
+
+def _nyt_tr(_url):
+    return _n_payload([(_WIRE, "https://nyt.test/a"), (_DIFF, "https://nyt.test/b")])
+
+
+def _probe(present=True):
+    return lambda v: {"var_name": v, "credential_present": present,
+                      "env_file_present": True, "declared_in_example": True}
+
+
+def _present_env(keys):
+    return {k: "present" for k in keys}
 
 
 def _inv_rows() -> list[dict]:
@@ -65,41 +104,51 @@ def _synthetic_base(**overrides) -> dict:
     return base
 
 
-# ── ① date-pin 게이트 ──────────────────────────────────────────────────────────────────────────────────────
-def test_default_no_date_pin_blocks_live_with_missing_date_pin_reason():
+# ── ① date-pin 게이트(ADR#83: operator-event 기반) ───────────────────────────────────────────────────────────
+def test_default_no_operator_event_blocks_with_missing_operator_event_reason():
     out = run_bounded_live_breadth_run(base_result=_synthetic_base())
     assert out["named_seed_selected"] == "fomc_rate_decision"
+    assert out["operator_event_provided"] is False
     assert out["named_seed_date_pinned"] is False
     assert out["selected_seed_actual_occurrence"] is None
-    assert out["blocked_reason"] == BLOCKED_MISSING_DATE_PIN
+    assert out["blocked_reason"] == BLOCKED_MISSING_OPERATOR_EVENT
     assert out["live_query_executed"] is False
     assert "missing_occurrence_date" in out["named_seed_date_pin_status"]
 
 
 def test_operator_pinned_event_records_occurrence_but_not_executed_without_opt_in():
-    pinned = {"seed_id": "fomc_2026_06_17", "named_entity": "US Federal Reserve FOMC",
-              "event_phrase": "FOMC federal funds rate decision announcement", "date_window": "1d",
-              "provider_coverage_hypothesis": "guardian+nyt", "occurrence_date": "2026-06-17"}
-    out = run_bounded_live_breadth_run(base_result=_synthetic_base(), pinned_event=pinned)
+    out = run_bounded_live_breadth_run(base_result=_synthetic_base(), operator_event=dict(_OPERATOR_EVENT))
+    assert out["operator_event_provided"] is True
     assert out["named_seed_date_pinned"] is True
     assert out["selected_seed_actual_occurrence"] == "2026-06-17"
-    # date-pin 충족이나 live 미실행 → blocked_reason 은 더 이상 missing_date_pin 아님(query-wiring blocker).
+    assert out["live_query_target_wired"] is True
+    # date-pin 충족·wired 이나 live 미승인 → blocked_no_live_opt_in(missing_operator_event 아님).
     assert out["live_query_executed"] is False
-    assert out["blocked_reason"] != BLOCKED_MISSING_DATE_PIN
+    assert out["blocked_reason"] == LIVE_BLOCKED_NO_OPT_IN
 
 
-def test_date_pinned_plus_optin_still_blocked_query_wiring_not_implemented():
-    """date-pin 충족 + live_query 승인이어도 pinned-event→실 쿼리 plumbing 미구현이라 fail-closed(정직·둔갑 금지)."""
-    assert LIVE_QUERY_TARGET_WIRED is False   # 이 ADR 에서는 미배선이 진실.
-    pinned = {"seed_id": "fomc_2026_06_17", "named_entity": "US Federal Reserve FOMC",
-              "event_phrase": "FOMC federal funds rate decision announcement", "date_window": "1d",
-              "provider_coverage_hypothesis": "guardian+nyt", "occurrence_date": "2026-06-17"}
-    out = run_bounded_live_breadth_run(base_result=_synthetic_base(), pinned_event=pinned, live_query=True)
-    assert out["named_seed_date_pinned"] is True
-    assert out["live_query_target_wired"] is False
-    assert out["live_query_executed"] is False
-    assert out["blocked_reason"] == BLOCKED_QUERY_WIRING
-    assert BLOCKED_QUERY_WIRING in out["block_reasons"]
+def test_date_pinned_optin_executes_via_injected_transport_and_attempts_freeze():
+    """date-pin 충족 + opt-in + wired → executor 가 operator query 로 live 실행(주입 transport·network 0) → freeze 시도.
+
+    ADR#83: LIVE_QUERY_TARGET_WIRED=True(test-locked). live 실행은 여전히 operator event valid + live_query 승인 +
+    pool 을 모두 요구. curated topic 아닌 operator query_text·occurrence_date 절대 윈도우로 쿼리."""
+    assert LIVE_QUERY_TARGET_WIRED is True
+    out = run_bounded_live_breadth_run(
+        base_result=_synthetic_base(), operator_event=dict(_OPERATOR_EVENT), live_query=True,
+        transport_a=_guardian_tr, transport_b=_nyt_tr, env_status_fn=_present_env, env_probe_fn=_probe(True))
+    assert out["live_query_target_wired"] is True
+    assert out["live_query_executed"] is True
+    assert out["live_query_text"] == "US Federal Reserve FOMC rate decision"
+    assert out["live_query_start_date"] == "2026-06-17"
+    assert out["live_query_end_date"] == "2026-06-18"
+    # freeze 시도 — live-derived publishable 후보 동결(worklist·truth 아님). gold 0 불변.
+    assert out["candidate_provenance"] == "live_derived"
+    assert out["production_candidate_batch_ready"] is True
+    assert out["production_frozen_pair_count"] >= 1
+    assert out["production_gold_count"] == 0
+    assert out["same_event_truth_exposed"] is False
+    assert out["merge_allowed"] is False
+    assert out["raw_source_body_exposed"] is False
 
 
 # ── ② bounded live pool(adapter_wired ∩ credential·breadth 크기 아님) ─────────────────────────────────────────
@@ -205,11 +254,12 @@ def test_no_truth_score_pii_secret_exposed():
 
 
 # ── 실 통합(합성 base 없이 — 실제 base + 실 registry) ────────────────────────────────────────────────────────
-def test_real_integration_blocked_no_date_pin_pool_guardian_nyt():
+def test_real_integration_blocked_no_operator_event_pool_guardian_nyt():
     out = run_bounded_live_breadth_run()
     assert out["operation_name"] == "bounded_live_breadth_run_and_candidate_freeze_attempt"
+    assert out["operator_event_provided"] is False
     assert out["named_seed_date_pinned"] is False
-    assert out["blocked_reason"] == BLOCKED_MISSING_DATE_PIN
+    assert out["blocked_reason"] == BLOCKED_MISSING_OPERATOR_EVENT
     assert out["live_query_executed"] is False
     # 실 registry+실 adapter: guardian/nyt 만 wired. gdelt/federal_register 는 미wired.
     assert set(out["providers_in_pool"]).issubset({"guardian", "nyt"})
@@ -217,3 +267,28 @@ def test_real_integration_blocked_no_date_pin_pool_guardian_nyt():
     assert out["production_gold_count"] == 0
     assert out["current_r1_gap"] == 200
     assert out["source_role_guard_preserved"] is True
+
+
+# ── ⑧ ADR#83 date-pinned live run frontier(30 필드 sanitized + dict==pydantic) ─────────────────────────────────
+def test_date_pinned_frontier_matches_pydantic_schema_exactly():
+    out = run_bounded_live_breadth_run(base_result=_synthetic_base())
+    f = out["internal_ops_date_pinned_live_run_frontier"]
+    model = InternalOpsDatePinnedLiveRunFrontier(**f)   # raises on missing/type mismatch.
+    assert set(f.keys()) == set(InternalOpsDatePinnedLiveRunFrontier.model_fields.keys())
+    assert len(f) == 30
+    assert model.r2_r7_no_go is True
+    assert model.latest_date_pinned_live_run_status == BLOCKED_MISSING_OPERATOR_EVENT
+    assert len(f["flags"]) == 7
+
+
+def test_date_pinned_frontier_no_forbidden_or_raw_entity_fields():
+    out = run_bounded_live_breadth_run(base_result=_synthetic_base())
+    f = out["internal_ops_date_pinned_live_run_frontier"]
+    # same_event truth·score·rationale·predicted·raw body·PII·secret 구조적 미노출.
+    for forbidden in ("score", "rationale", "predicted_status", "same_event", "raw_body", "body",
+                      "reviewer_email", "reviewer_name", "secret"):
+        assert forbidden not in f
+    # named_entity/event_phrase 전문은 sanitized frontier 에 미노출(operator_event_provided bool 만).
+    assert "named_entity" not in f
+    assert "event_phrase" not in f
+    assert "live_query_text" not in f

@@ -87,6 +87,30 @@ def _both_ok(**kw):
         live_query=True, env_probe_fn=_probe(True), transport_a=_guardian_tr, transport_b=_nyt_tr, **kw)
 
 
+# ── ADR#83: today(절대 윈도우 anchor) 스레딩 — date-pin 이 실제 provider 쿼리 URL 에 반영 ─────────────────────
+def test_today_anchor_threads_absolute_window_into_provider_query_url():
+    """today=D+1 + time_window=1d → provider 쿼리 URL 의 날짜 범위가 [D, D+1](절대). today 미주입 시 기존 동작 보존."""
+    cap: list[str] = []
+
+    def _cap_g(url):
+        cap.append(url)
+        return _g_payload([(WIRE, "https://g.test/a")])
+
+    def _cap_n(url):
+        cap.append(url)
+        return _n_payload([(WIRE, "https://nyt.test/a")])
+
+    out = run_cross_source_live_overlap_smoke(
+        live_query=True, today="2026-06-18", time_window="1d",
+        env_status_fn=lambda ks: {k: "present" for k in ks}, env_probe_fn=_probe(True),
+        transport_a=_cap_g, transport_b=_cap_n)
+    assert out["live_query_attempted"] is True
+    # Guardian from-date/to-date + NYT begin_date/end_date 가 [2026-06-17, 2026-06-18].
+    assert any("2026-06-17" in u and "2026-06-18" in u for u in cap), cap
+    # NYT date 형식 YYYYMMDD 도 확인(20260617/20260618).
+    assert any("20260617" in u and "20260618" in u for u in cap), cap
+
+
 # ── cross-source smoke (11-29) ───────────────────────────────────────────────────────────────────────
 def test_01_output_contract_complete():
     """§4 필수 output key 전부 존재(계약 완전성)."""

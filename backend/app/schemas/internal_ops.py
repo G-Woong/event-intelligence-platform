@@ -388,3 +388,48 @@ class InternalOpsBoundedLiveBreadthFrontier(BaseModel):
     r2_r7_no_go: bool
     required_copy: list[str]
     flags: AcquisitionFrontierFlags
+
+
+class InternalOpsDatePinnedLiveRunFrontier(BaseModel):
+    """ADR#83 — date-pinned live query plumbing + bounded live run + production-candidate freeze frontier
+    (read-only·public truth 아님).
+
+    `r1_bounded_live_breadth_run.run_bounded_live_breadth_run` 의 sanitized `internal_ops_date_pinned_live_run_frontier`
+    를 미러한다. operator event provided 여부·**occurrence_date(operator 주장·발생 미검증)**·date-pin valid·live query
+    target wired·live executed·providers·comparison/recall aggregate·production candidate freeze status·sanitized
+    snapshot status·KO source lane·R1 gap·R2~R7 No-Go·정직 copy 만 노출한다 — same_event truth·per-pair score·
+    rationale·predicted_status·raw body·raw PII·secret·named_entity/event_phrase 전문은 **필드 자체가 없어** 구조적
+    미노출. read API 는 live 시도 0(latest_date_pinned_live_run_status=missing_operator_date_pinned_event 가 정상 —
+    실 live 는 operator 가 date-pinned event 를 제공하고 bounded live run 을 승인할 때만). **date-pin 은 operator
+    게이트이지 발생/같은 사건 증명이 아니고**, **live query 는 operator event 를 쿼리하지 curated fallback 이 아니며**,
+    **production candidate freeze 는 reviewer worklist 이지 same-event truth 가 아니다**(required_copy 명시)."""
+    contract: str
+    latest_date_pinned_live_run_status: str
+    operator_event_provided: bool
+    occurrence_date: str | None
+    occurrence_date_valid_iso: bool
+    date_pinned_named_event_valid: bool
+    live_query_target_wired: bool
+    live_query_approved: bool
+    live_query_executed: bool
+    live_call_count: int
+    providers_used: list[str]
+    comparison_pair_count: int
+    max_recall_probe_score: float
+    newly_routed_count: int
+    production_candidate_status: str
+    production_candidate_batch_ready: bool
+    production_frozen_pair_count: int
+    candidate_provenance: str
+    sanitized_snapshot_status: str
+    ko_source_lane_status: str
+    ko_named_seed_needed: bool
+    ko_floor_current: int
+    ko_floor_required: int
+    blocked_reason: str
+    acquisition_next_action: str
+    current_r1_gap: int
+    production_gold_count: int
+    r2_r7_no_go: bool
+    required_copy: list[str]
+    flags: AcquisitionFrontierFlags

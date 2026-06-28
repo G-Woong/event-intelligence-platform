@@ -429,3 +429,45 @@ export interface InternalOpsBoundedLiveBreadthFrontier {
   required_copy: string[];
   flags: AcquisitionFrontierFlags;
 }
+
+// ADR#83 — date-pinned live query plumbing + bounded live run + production-candidate freeze frontier.
+// `r1_bounded_live_breadth_run.build_date_pinned_live_run_frontier` 의 sanitized 미러(public truth 아님).
+// same_event truth·per-pair score·rationale·predicted_status·raw body·PII·secret·named_entity/event_phrase 전문은
+// 필드 자체가 없어 구조적 미노출. operator_event_provided bool + occurrence_date(operator 주장) 만 노출.
+export interface InternalOpsDatePinnedLiveRunFrontier {
+  contract: string;
+  latest_date_pinned_live_run_status: string;
+  // operator event / date-pin(§B·§5·§6).
+  operator_event_provided: boolean;
+  occurrence_date: string | null;
+  occurrence_date_valid_iso: boolean;
+  date_pinned_named_event_valid: boolean;
+  live_query_target_wired: boolean;
+  // bounded live(§6·§7).
+  live_query_approved: boolean;
+  live_query_executed: boolean;
+  live_call_count: number;
+  providers_used: string[];
+  comparison_pair_count: number;
+  max_recall_probe_score: number;
+  newly_routed_count: number;
+  // production candidate freeze(§7·§8).
+  production_candidate_status: string;
+  production_candidate_batch_ready: boolean;
+  production_frozen_pair_count: number;
+  candidate_provenance: string;
+  sanitized_snapshot_status: string;
+  // KO source lane(§8).
+  ko_source_lane_status: string;
+  ko_named_seed_needed: boolean;
+  ko_floor_current: number;
+  ko_floor_required: number;
+  // gap / next action + copy.
+  blocked_reason: string;
+  acquisition_next_action: string;
+  current_r1_gap: number;
+  production_gold_count: number;
+  r2_r7_no_go: boolean;
+  required_copy: string[];
+  flags: AcquisitionFrontierFlags;
+}

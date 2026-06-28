@@ -23,6 +23,7 @@ R1_PROD_PATH = "/api/internal/ops/r1-production-candidates"
 R1_DISCRETE_PATH = "/api/internal/ops/r1-discrete-acquisition"
 R1_BREADTH_PATH = "/api/internal/ops/r1-provider-breadth"
 R1_BOUNDED_PATH = "/api/internal/ops/r1-bounded-live-breadth"
+R1_DATE_PINNED_PATH = "/api/internal/ops/r1-date-pinned-live-run"
 
 
 @pytest.fixture()
@@ -605,12 +606,12 @@ def test_r1_bounded_flag_on_returns_sanitized_contract(client, monkeypatch):
     assert r.status_code == 200
     body = r.json()
     assert body["contract"] == "InternalOpsBoundedLiveBreadthFrontier"
-    # read API live_query=False 고정 + date-pin 미충족 → blocked.
+    # read API live_query=False 고정 + operator event 미주입 → blocked(ADR#83: operator-event 기반).
     assert body["live_query_executed"] is False
-    assert body["latest_bounded_live_run_status"] == "blocked_no_live_opt_in"
+    assert body["latest_bounded_live_run_status"] == "missing_operator_date_pinned_event"
     assert body["named_seed_date_pin_status"].startswith("not_pinned")
     assert body["selected_seed_actual_occurrence"] is None
-    assert body["blocked_reason"] == "missing_date_pinned_named_event"
+    assert body["blocked_reason"] == "missing_operator_date_pinned_event"
     # bounded pool = adapter_wired ∩ credential(breadth 크기 아님) — 실 registry: guardian/nyt 만 wired.
     assert body["provider_breadth_used"] <= 2
     assert body["production_frozen_pair_count"] == 0
@@ -672,5 +673,91 @@ def test_r1_bounded_response_keys_are_sanitized_subset(client, monkeypatch):
         "ko_source_lane_status", "ko_named_seed_needed", "ko_floor_current", "ko_floor_required",
         "blocked_reason", "acquisition_next_action", "current_r1_gap", "production_gold_count",
         "r2_r7_no_go", "required_copy", "flags",
+    }
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(30 field).
+
+
+# ── ADR#83 /r1-date-pinned-live-run 엔드포인트(date-pinned live query plumbing + freeze frontier·read-only) ──
+def test_r1_date_pinned_flag_off_returns_404(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", False)
+    assert client.get(R1_DATE_PINNED_PATH).status_code == 404
+
+
+def test_r1_date_pinned_flag_on_returns_sanitized_contract(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    r = client.get(R1_DATE_PINNED_PATH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["contract"] == "InternalOpsDatePinnedLiveRunFrontier"
+    # read API: operator event 미주입 + live_query=False 고정 → missing_operator_date_pinned_event.
+    assert body["operator_event_provided"] is False
+    assert body["live_query_executed"] is False
+    assert body["latest_date_pinned_live_run_status"] == "missing_operator_date_pinned_event"
+    assert body["blocked_reason"] == "missing_operator_date_pinned_event"
+    assert body["occurrence_date"] is None
+    assert body["date_pinned_named_event_valid"] is False
+    # ADR#83: plumbing test-locked → target wired True(단, operator event+opt-in 없으면 live 미실행).
+    assert body["live_query_target_wired"] is True
+    assert body["production_frozen_pair_count"] == 0
+    assert body["production_gold_count"] == 0
+    assert body["ko_floor_current"] == 0
+    assert body["ko_floor_required"] == 50
+    assert body["r2_r7_no_go"] is True
+
+
+def test_r1_date_pinned_required_copy_states_operator_event_and_no_curated_fallback(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    copy = client.get(R1_DATE_PINNED_PATH).json()["required_copy"]
+    assert "A date-pinned operator event is required before any bounded live run" in copy
+    assert "occurrence_date is an operator assertion, not a code-verified fact" in copy
+    assert "The live query targets the operator event, never a curated seed fallback" in copy
+    assert "Production gold remains 0 until human labels are returned" in copy
+    assert "R2~R7 remain No-Go" in copy
+
+
+def test_r1_date_pinned_no_go_flags(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    flags = client.get(R1_DATE_PINNED_PATH).json()["flags"]
+    for k in ("no_public_truth", "no_same_event_truth", "no_score", "no_rationale",
+              "no_predicted_status", "no_raw_body", "no_secret"):
+        assert flags[k] is True, k
+
+
+def test_r1_date_pinned_no_forbidden_fields_no_raw_entity_no_pii(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_DATE_PINNED_PATH).json()
+    assert _forbidden_keys_in(body) == set()                    # score/rationale/predicted_status/raw PII 0.
+    # operator named_entity/event_phrase 전문·query_text 는 sanitized frontier 에 미노출.
+    for k in ("named_entity", "event_phrase", "live_query_text"):
+        assert k not in body
+    blob = json.dumps(body, ensure_ascii=False)
+    assert "Users" not in blob                                  # 절대경로/사용자명 미노출.
+
+
+def test_r1_date_pinned_read_only_post_not_allowed(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    assert client.post(R1_DATE_PINNED_PATH).status_code == 405
+
+
+def test_r1_date_pinned_admin_auth_prod_fail_closed(monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "ADMIN_API_TOKEN", "")
+    c = TestClient(app)
+    assert c.get(R1_DATE_PINNED_PATH).status_code == 503
+
+
+def test_r1_date_pinned_response_keys_are_sanitized_subset(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_DATE_PINNED_PATH).json()
+    allowed = {
+        "contract", "latest_date_pinned_live_run_status", "operator_event_provided",
+        "occurrence_date", "occurrence_date_valid_iso", "date_pinned_named_event_valid",
+        "live_query_target_wired", "live_query_approved", "live_query_executed", "live_call_count",
+        "providers_used", "comparison_pair_count", "max_recall_probe_score", "newly_routed_count",
+        "production_candidate_status", "production_candidate_batch_ready", "production_frozen_pair_count",
+        "candidate_provenance", "sanitized_snapshot_status", "ko_source_lane_status", "ko_named_seed_needed",
+        "ko_floor_current", "ko_floor_required", "blocked_reason", "acquisition_next_action",
+        "current_r1_gap", "production_gold_count", "r2_r7_no_go", "required_copy", "flags",
     }
     assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(30 field).

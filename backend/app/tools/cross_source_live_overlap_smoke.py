@@ -227,7 +227,7 @@ def _build_recall_probe_diagnostic(disc: dict, *, routing_floor: float) -> Optio
 def run_cross_source_live_overlap_smoke(
     *, provider_b: str = _DEFAULT_PROVIDER_B,
     topic: str = "central bank rate decision", topic_key: str = "central_bank_rate",
-    time_window: str = "1d", live_query: bool = False,
+    time_window: str = "1d", today: Optional[str] = None, live_query: bool = False,
     transport_a: Optional[Callable[[str], Optional[str]]] = None,
     transport_b: Optional[Callable[[str], Optional[str]]] = None,
     env_status_fn: Optional[Callable[[list[str]], dict[str, str]]] = None,
@@ -290,9 +290,9 @@ def run_cross_source_live_overlap_smoke(
             block_reasons.append(f"{sb}:{provider_b}")
 
         if sa == "present" and sb == "present":
-            qa = run_provider_query(provider_a, topic=topic, time_window=time_window,
+            qa = run_provider_query(provider_a, topic=topic, time_window=time_window, today=today,
                                     transport=transport_a, env_status_fn=env_status_fn, host_gate=host_gate)
-            qb = run_provider_query(provider_b, topic=topic, time_window=time_window,
+            qb = run_provider_query(provider_b, topic=topic, time_window=time_window, today=today,
                                     transport=transport_b, env_status_fn=env_status_fn, host_gate=host_gate)
             provider_status = {provider_a: qa.status, provider_b: qb.status}
             records_count = {provider_a: qa.records_count, provider_b: qb.records_count}

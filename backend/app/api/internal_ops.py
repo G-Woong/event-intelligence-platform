@@ -16,6 +16,7 @@ from backend.app.core.config import settings
 from backend.app.schemas.internal_ops import (
     InternalOpsAcquisitionFrontierStatus,
     InternalOpsBoundedLiveBreadthFrontier,
+    InternalOpsDatePinnedLiveRunFrontier,
     InternalOpsDiscreteAcquisitionFrontier,
     InternalOpsPilotExecutionStatus,
     InternalOpsPreflightStatus,
@@ -238,3 +239,28 @@ def get_r1_bounded_live_breadth_frontier() -> InternalOpsBoundedLiveBreadthFront
         raise HTTPException(
             status_code=503, detail="internal ops r1 bounded live breadth temporarily unavailable") from None
     return InternalOpsBoundedLiveBreadthFrontier(**out["internal_ops_bounded_live_breadth_frontier"])
+
+
+@router.get("/r1-date-pinned-live-run", response_model=InternalOpsDatePinnedLiveRunFrontier)
+def get_r1_date_pinned_live_run_frontier() -> InternalOpsDatePinnedLiveRunFrontier:
+    """ADR#83 — date-pinned live query plumbing + bounded live run + production-candidate freeze frontier(read-only).
+    flag off → 404(미노출).
+
+    operator event provided 여부·occurrence_date(operator 주장·발생 미검증)·date-pin valid·live query target wired·
+    live executed·providers·comparison/recall aggregate·production candidate freeze status·sanitized snapshot status·
+    KO source lane·R1 gap·R2~R7 No-Go·정직 copy 를 sanitized 로 산출한다. 응답 스키마에 same_event truth·per-pair
+    score·rationale·predicted_status·raw body·raw PII·secret·named_entity/event_phrase 전문 필드 자체가 없다(구조적
+    미노출). 입력 파일이 깨졌으면 경로/내용 누출 없이 503. **실 live 네트워크 호출은 API 경로에서 수행하지 않는다**
+    (operator event 미주입 + live_query=False 고정 → missing_operator_date_pinned_event 가 정상; 실 live 는 operator 가
+    date-pinned event 를 제공하고 bounded live run 을 승인하는 CLI 경로 전용). live query 는 operator event 를 쿼리하지
+    curated fallback 이 아니다(copy 명시)."""
+    if not settings.INTERNAL_OPS_DASHBOARD_ENABLED:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        # read API 는 operator event 미주입 + live_query=False 고정(시도 0). 실 live 는 operator CLI opt-in + date-pin 전용.
+        out = run_bounded_live_breadth_run(live_query=False)
+    except (ValueError, OSError) as exc:   # malformed operator 입력 파일 등 — detail 에 경로/내용 미포함.
+        logger.warning("internal ops r1 date-pinned live run unavailable: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=503, detail="internal ops r1 date-pinned live run temporarily unavailable") from None
+    return InternalOpsDatePinnedLiveRunFrontier(**out["internal_ops_date_pinned_live_run_frontier"])
