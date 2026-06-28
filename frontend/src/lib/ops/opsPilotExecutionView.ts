@@ -8,6 +8,7 @@ import type {
   InternalOpsDiscreteAcquisitionFrontier,
   InternalOpsPilotExecutionStatus,
   InternalOpsPreflightStatus,
+  InternalOpsProviderBreadthFrontier,
   InternalOpsR1AcquisitionStatus,
   InternalOpsR1PilotBatchStatus,
   InternalOpsR1ProductionCandidateStatus,
@@ -374,5 +375,66 @@ export function r1DiscreteFrontierWarnings(
     ensure(OPS_DISCRETE_COPY.productionGoldZero);
   }
   if (f.r2_r7_no_go) ensure(OPS_DISCRETE_COPY.laddersNoGo);
+  return out;
+}
+
+// ── ADR#81 provider breadth + named single-event seed + KO source path frontier view helpers ────────────
+// 필수 copy(§10) — provider breadth=acquisition support≠truth·named seed=candidate generation≠same-event proof·
+// community=event anchor 아님을 operator 가 명확히 보게. source role guard 유지·gold 0·R2~R7 No-Go 강제.
+export const OPS_BREADTH_COPY = {
+  breadthSupportNotTruth: "Provider breadth is acquisition support, not truth",
+  namedSeedNotProof: "Named seed is candidate generation, not same-event proof",
+  communityNotAnchor: "Community reaction is not an event anchor",
+  productionGoldZero: "Production gold remains 0 until human labels are returned",
+  laddersNoGo: "R2~R7 remain No-Go",
+} as const;
+
+// provider breadth frontier → read-only 표시 행(9-카테고리 카운트·named seed·KO·live recall aggregate; per-pair score/same_event 0).
+export function toR1BreadthFrontierDisplayRows(
+  f: InternalOpsProviderBreadthFrontier,
+): OpsDisplayRow[] {
+  return [
+    { label: "Provider breadth status", value: f.provider_breadth_status },
+    { label: "Query-capable publishable providers", value: `${f.query_capable_provider_count}` },
+    { label: "Feed-only publishable providers", value: `${f.feed_only_provider_count}` },
+    { label: "Official sources", value: `${f.official_source_count}` },
+    { label: "Search URL candidates (not truth until fetched)", value: `${f.search_url_candidate_count}` },
+    { label: "KO official/news (anchor-eligible)", value: `${f.ko_official_news_count}` },
+    { label: "Community (reaction-only, not anchor)", value: `${f.community_reaction_only_count}` },
+    { label: "Market (signal-only, not anchor)", value: `${f.market_signal_only_count}` },
+    { label: "Catalog (enrichment-only, not anchor)", value: `${f.catalog_enrichment_only_count}` },
+    { label: "Unknown / quarantine (fail-closed)", value: `${f.unknown_quarantine_count}` },
+    { label: "Anchor-eligible sources", value: `${f.anchor_eligible_count}` },
+    { label: "Named seed bank status", value: f.named_seed_bank_status },
+    { label: "Named single-event seeds", value: `${f.named_seed_count}` },
+    { label: "Selected seed for next live run", value: f.selected_seed_for_next_live_run ?? "(none)" },
+    { label: "Seed type", value: f.seed_type },
+    { label: "KO source path status", value: f.ko_source_path_status },
+    { label: "KO tokenization risk recorded", value: String(f.ko_tokenization_risk_recorded) },
+    { label: "Live recall lift status", value: f.live_recall_lift_status },
+    { label: "Live recall probe max score (routing signal, not truth)", value: `${f.max_live_recall_probe_score}` },
+    { label: "Live pairs newly routed (not same-event)", value: `${f.newly_routed_count}` },
+    { label: "Production candidate status", value: f.production_candidate_status },
+    { label: "Blocked reason", value: f.blocked_reason || "(none)" },
+    { label: "R1 gap", value: `${f.current_r1_gap}` },
+    { label: "Acquisition next action", value: f.acquisition_next_action },
+    { label: "R2~R7 No-Go", value: String(f.r2_r7_no_go) },
+  ];
+}
+
+// provider breadth frontier → operator 경고 배너(breadth=support≠truth·named seed≠proof·community≠anchor·gold 0·No-Go).
+// backend required_copy(§10) 를 우선 표시하고, 누락 시 로컬 상수로 보강(defense-in-depth).
+export function r1BreadthFrontierWarnings(
+  f: InternalOpsProviderBreadthFrontier,
+): string[] {
+  const out: string[] = [...(f.required_copy ?? [])];
+  const ensure = (s: string) => {
+    if (!out.includes(s)) out.push(s);
+  };
+  ensure(OPS_BREADTH_COPY.breadthSupportNotTruth);
+  ensure(OPS_BREADTH_COPY.namedSeedNotProof);
+  ensure(OPS_BREADTH_COPY.communityNotAnchor);
+  ensure(OPS_BREADTH_COPY.productionGoldZero);
+  if (f.r2_r7_no_go) ensure(OPS_BREADTH_COPY.laddersNoGo);
   return out;
 }

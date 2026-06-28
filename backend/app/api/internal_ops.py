@@ -18,6 +18,7 @@ from backend.app.schemas.internal_ops import (
     InternalOpsDiscreteAcquisitionFrontier,
     InternalOpsPilotExecutionStatus,
     InternalOpsPreflightStatus,
+    InternalOpsProviderBreadthFrontier,
     InternalOpsR1AcquisitionStatus,
     InternalOpsR1PilotBatchStatus,
     InternalOpsR1ProductionCandidateStatus,
@@ -29,6 +30,9 @@ from backend.app.tools.r1_discrete_event_acquisition import (
 from backend.app.tools.r1_gold_acquisition_plan import run_r1_gold_acquisition_plan
 from backend.app.tools.r1_production_candidate_acquisition import (
     run_r1_production_candidate_acquisition,
+)
+from backend.app.tools.r1_provider_breadth_acquisition import (
+    run_provider_breadth_named_seed_ko_path,
 )
 from backend.app.tools.r1_reviewer_pilot_batch import run_r1_reviewer_pilot_batch
 from backend.app.tools.r1_targeted_live_acquisition import (
@@ -185,3 +189,26 @@ def get_r1_discrete_acquisition_frontier() -> InternalOpsDiscreteAcquisitionFron
         raise HTTPException(
             status_code=503, detail="internal ops r1 discrete acquisition temporarily unavailable") from None
     return InternalOpsDiscreteAcquisitionFrontier(**out["internal_ops_discrete_acquisition_frontier"])
+
+
+@router.get("/r1-provider-breadth", response_model=InternalOpsProviderBreadthFrontier)
+def get_r1_provider_breadth_frontier() -> InternalOpsProviderBreadthFrontier:
+    """ADR#81 — provider breadth + named single-event seed + KO source path frontier(read-only). flag off → 404(미노출).
+
+    provider breadth(9-카테고리 카운트·anchor-eligible·source role guard)·named single-event seed bank status·KO source
+    path status·KO tokenization risk recorded·live recall lift status(aggregate only)·production candidate status·R1
+    gap·R2~R7 No-Go·정직 copy 를 sanitized 로 산출한다. 응답 스키마에 same_event truth·per-pair score·rationale·
+    predicted_status·raw body·raw PII·secret 필드 자체가 없다(구조적 미노출). 입력 파일이 깨졌으면 경로/내용 누출 없이
+    503. **실 live 네트워크 호출은 API 경로에서 수행하지 않는다**(live_query=False 고정 → live_blocked_by_rate_or_opt_in
+    이 정상; 실 live 는 operator CLI opt-in 전용). provider breadth 는 acquisition support 이지 truth 가 아니다(copy 명시).
+    """
+    if not settings.INTERNAL_OPS_DASHBOARD_ENABLED:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        # read API 는 live_query=False 고정(시도 0). 실 live acquisition 은 operator CLI opt-in 전용.
+        out = run_provider_breadth_named_seed_ko_path(live_query=False)
+    except (ValueError, OSError) as exc:   # malformed operator 입력 파일 등 — detail 에 경로/내용 미포함.
+        logger.warning("internal ops r1 provider breadth unavailable: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=503, detail="internal ops r1 provider breadth temporarily unavailable") from None
+    return InternalOpsProviderBreadthFrontier(**out["internal_ops_provider_breadth_frontier"])

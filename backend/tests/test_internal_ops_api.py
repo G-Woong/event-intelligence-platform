@@ -21,6 +21,7 @@ R1_PATH = "/api/internal/ops/r1-gold-acquisition"
 R1_BATCH_PATH = "/api/internal/ops/r1-pilot-batch"
 R1_PROD_PATH = "/api/internal/ops/r1-production-candidates"
 R1_DISCRETE_PATH = "/api/internal/ops/r1-discrete-acquisition"
+R1_BREADTH_PATH = "/api/internal/ops/r1-provider-breadth"
 
 
 @pytest.fixture()
@@ -508,3 +509,84 @@ def test_r1_discrete_response_keys_are_sanitized_subset(client, monkeypatch):
         "current_r1_gap", "production_gold_count", "r2_r7_no_go", "required_copy", "flags",
     }
     assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(26 field·ADR#80 +4).
+
+
+# ── ADR#81 /r1-provider-breadth 엔드포인트(provider breadth + named seed + KO path frontier·read-only) ──
+def test_r1_breadth_flag_off_returns_404(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", False)
+    assert client.get(R1_BREADTH_PATH).status_code == 404
+
+
+def test_r1_breadth_flag_on_returns_sanitized_contract(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    r = client.get(R1_BREADTH_PATH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["contract"] == "InternalOpsProviderBreadthFrontier"
+    # 실 registry 57 = 9 카테고리(분석 §2).
+    assert body["query_capable_provider_count"] == 7
+    assert body["feed_only_provider_count"] == 7
+    assert body["ko_official_news_count"] == 6
+    assert body["anchor_eligible_count"] == 25
+    assert body["named_seed_count"] >= 2
+    assert body["seed_type"] == "named_single_event"
+    # read API 는 live_query=False 고정 → live_blocked_by_rate_or_opt_in 이 정상.
+    assert body["live_recall_lift_status"] == "live_blocked_by_rate_or_opt_in"
+    assert body["r2_r7_no_go"] is True
+
+
+def test_r1_breadth_required_copy_states_support_not_truth(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    copy = client.get(R1_BREADTH_PATH).json()["required_copy"]
+    assert "Provider breadth is acquisition support, not truth" in copy
+    assert "Named seed is candidate generation, not same-event proof" in copy
+    assert "Community reaction is not an event anchor" in copy
+    assert "Production gold remains 0 until human labels are returned" in copy
+    assert "R2~R7 remain No-Go" in copy
+
+
+def test_r1_breadth_no_go_flags(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    flags = client.get(R1_BREADTH_PATH).json()["flags"]
+    for k in ("no_public_truth", "no_same_event_truth", "no_score", "no_rationale",
+              "no_predicted_status", "no_raw_body", "no_secret"):
+        assert flags[k] is True, k
+
+
+def test_r1_breadth_no_forbidden_fields_and_no_pii(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_BREADTH_PATH).json()
+    assert _forbidden_keys_in(body) == set()                    # score/rationale/predicted_status/raw PII 0.
+    blob = json.dumps(body, ensure_ascii=False)
+    assert "Users" not in blob                                  # 절대경로/사용자명 미노출.
+
+
+def test_r1_breadth_read_only_post_not_allowed(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    assert client.post(R1_BREADTH_PATH).status_code == 405
+
+
+def test_r1_breadth_admin_auth_prod_fail_closed(monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "ADMIN_API_TOKEN", "")
+    c = TestClient(app)
+    assert c.get(R1_BREADTH_PATH).status_code == 503
+
+
+def test_r1_breadth_response_keys_are_sanitized_subset(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_BREADTH_PATH).json()
+    allowed = {
+        "contract", "provider_breadth_status", "provider_breadth_inventory_ready",
+        "query_capable_provider_count", "feed_only_provider_count", "official_source_count",
+        "search_url_candidate_count", "ko_official_news_count", "community_reaction_only_count",
+        "market_signal_only_count", "catalog_enrichment_only_count", "unknown_quarantine_count",
+        "anchor_eligible_count", "named_seed_bank_status", "named_seed_count",
+        "selected_seed_for_next_live_run", "seed_type", "ko_source_path_status",
+        "ko_tokenization_risk_recorded", "latest_live_seed", "live_recall_lift_status",
+        "max_live_recall_probe_score", "newly_routed_count", "production_candidate_status",
+        "blocked_reason", "current_r1_gap", "r2_r7_no_go", "acquisition_next_action",
+        "required_copy", "flags",
+    }
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(30 field).

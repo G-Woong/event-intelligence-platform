@@ -60,6 +60,22 @@ verified=False entity 로 `same_event`/`caused_by` 간선 생성 금지. entity 
 - community 를 event **anchor**·**fact source**·**same_event 근거**로 사용 금지.
 - 공개 시 community reaction 은 event identity 와 **시각적·구조적으로 분리** 표기(§5).
 
+### 4a. Community reaction layer product contract (ADR#81 §9 — runtime 0·contract 강화)
+
+community 는 제품의 "현장감/분위기" 를 위해 중요하나 **사실을 만들지 않는다**. 다음을 contract 로 고정한다(이번 턴
+runtime 수집/출력 0 — 설계만; 검증된 event 0 이므로 attach 대상도 0).
+
+- **Allowed(검증된 event 뒤에만):** `reaction_to` verified event · sentiment/vibe 버킷 · controversy level ·
+  public reaction time-series · 대표 snippet(legal/ToS 허용 시에만) · community source provenance · uncertainty·
+  moderation flag.
+- **Forbidden:** community 를 event **anchor** · community 를 **same_event proof** · rumor 를 fact 로 · private/PII
+  노출 · ToS 위반 수집 · community 단독 근거로 public IU 주장.
+- **부착 시점:** evidence+identity+MERGE_GATE 를 통과한 **verified event** 뒤에만 `reaction_to` 로 attach. 그 전 부착 0.
+- **rumor amplification guard:** 미확인 community 주장은 reaction layer 안에서도 "unverified" 표기·확산량≠사실성.
+- **provider breadth(ADR#81)와의 경계:** breadth inventory 가 community 9종(reddit·hacker_news·dcinside·fmkorea·
+  naver_blog_search 등)을 `community_reaction_only` 로 분류하고 `anchor_eligible=False` 를 강제 — breadth 확장이
+  community 를 anchor 로 승격시키지 않는다(source role guard 약화 0). 필수 copy: **"Community reaction is not an event anchor"**.
+
 ## 5. Public Intelligence Unit gate (공개 전제조건)
 
 public IU(R7)는 다음을 **모두** 만족하기 전 mock/wireframe only(`no_public_intelligence_unit=True`):
@@ -79,4 +95,5 @@ public IU(R7)는 다음을 **모두** 만족하기 전 mock/wireframe only(`no_p
 - "raw source 를 public Intelligence Unit 으로 착각" → §5
 - "entity 추출 provenance 없이 mentions/same_event" → §2/§3
 - "MERGE_GATE 전에 same_event edge" → §2(same_event 행)
+- "provider breadth/named seed 로 community/search 를 anchor 로 승격" → §1/§4 (ADR#81 `provider_breadth_inventory` 가 community=`community_reaction_only`·search=`search_url_candidate`·market=`market_signal_only`·catalog=`catalog_enrichment_only` 로 분류하고 `anchor_eligible=False` 강제·`source_role_guard_preserved` 단언. breadth=acquisition support≠truth·named seed=candidate generation≠same-event proof. search URL candidate 는 fetch/검증 전 truth 아님[R-SearchCandidateTruthLeakage]. KO official/news 만 anchor·KO community 는 reaction only·KO tokenization 한계는 breadth-only[R-KOAnalyzerDependency].)
 - "recall probe lift 를 same_event/merge/KG edge 로 사용" → §2 (ADR#79 `near_match_recall_probe` 는 **reviewer-routing 후보 recall 만**·`recall_probe_applies_to_merge=False`·merge 경로[`cluster_records`/`semantic_identity_fingerprint`] 미호출·RAG/KG 미적재·probe score 는 reviewer/public 미노출[R-NormalizationRecallLeakage]. recall 완화 ≠ same_event ≠ merge ≠ KG edge. **ADR#80: recall probe 를 실 LIVE cross-source pair 에 적용해도 동일** — `live_recall_lift_status`(`live_recall_lift_found`/`live_no_recall_lift`/`live_blocked`)는 reviewer-routing 신호일 뿐 same_event/merge/KG edge 아님·per-pair score 는 smoke internal `recall_probe_diagnostic` 에만·frontier 는 max aggregate 만["Newly routed does not mean same event"]. 실측: live lift 0[max 0.1765<0.2]이라도 same/different event 단정 0.)

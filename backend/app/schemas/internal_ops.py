@@ -248,6 +248,55 @@ class InternalOpsAcquisitionFrontierStatus(BaseModel):
     flags: AcquisitionFrontierFlags
 
 
+class InternalOpsProviderBreadthFrontier(BaseModel):
+    """ADR#81 — provider breadth + named single-event seed + KO source path frontier(read-only·public truth 아님).
+
+    `r1_provider_breadth_acquisition.run_provider_breadth_named_seed_ko_path` 의 sanitized
+    `internal_ops_provider_breadth_frontier` 를 미러한다. provider breadth(9-카테고리 카운트·anchor-eligible)·named
+    single-event seed bank status·KO source path status·live recall lift status(aggregate only)·production candidate
+    status·R1 gap·R2~R7 No-Go·정직 copy 만 노출한다 — same_event truth·per-pair score·rationale·predicted_status·raw
+    body·raw PII·secret 은 **필드 자체가 없어** 구조적 미노출. **provider breadth 는 acquisition support 이지 truth 가
+    아니고**, **named seed 는 candidate generation 이지 same-event proof 가 아니며**, **community reaction 은 event
+    anchor 가 아니다**(required_copy 명시). read API 는 live 시도 0(live_recall_lift_status=live_blocked_by_rate_or_opt_in
+    이 정상 — 실 live 는 operator CLI opt-in 전용)."""
+    contract: str
+    # provider breadth(§10).
+    provider_breadth_status: str
+    provider_breadth_inventory_ready: bool
+    query_capable_provider_count: int
+    feed_only_provider_count: int
+    official_source_count: int
+    search_url_candidate_count: int
+    ko_official_news_count: int
+    community_reaction_only_count: int
+    market_signal_only_count: int
+    catalog_enrichment_only_count: int
+    unknown_quarantine_count: int
+    anchor_eligible_count: int
+    # named single-event seed(§10).
+    named_seed_bank_status: str
+    named_seed_count: int
+    selected_seed_for_next_live_run: str | None
+    seed_type: str
+    # KO source path(§10).
+    ko_source_path_status: str
+    ko_tokenization_risk_recorded: bool
+    # live recall(shared·aggregate only·per-pair score 미노출).
+    latest_live_seed: str | None
+    live_recall_lift_status: str
+    max_live_recall_probe_score: float
+    newly_routed_count: int
+    # production / gap(shared).
+    production_candidate_status: str
+    blocked_reason: str
+    current_r1_gap: int
+    r2_r7_no_go: bool
+    # next action + copy.
+    acquisition_next_action: str
+    required_copy: list[str]
+    flags: AcquisitionFrontierFlags
+
+
 class InternalOpsDiscreteAcquisitionFrontier(BaseModel):
     """ADR#79/#80 — discrete-event acquisition + deterministic recall probe frontier(read-only·public truth 아님).
 

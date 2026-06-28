@@ -342,3 +342,47 @@ export interface InternalOpsDiscreteAcquisitionFrontier {
   required_copy: string[];
   flags: AcquisitionFrontierFlags;
 }
+
+// ADR#81 — provider breadth + named single-event seed + KO source path frontier(read-only·public truth 아님).
+// r1_provider_breadth_acquisition 의 sanitized internal_ops_provider_breadth_frontier 미러. provider breadth 는
+// acquisition support 이지 truth 아님·named seed 는 candidate generation 이지 same-event proof 아님·community 는
+// event anchor 아님. same_event truth·per-pair score·rationale·predicted_status·raw body·PII·secret 은 필드 자체가
+// 없어 구조적 미노출.
+export interface InternalOpsProviderBreadthFrontier {
+  contract: string;
+  // provider breadth(§10).
+  provider_breadth_status: string;
+  provider_breadth_inventory_ready: boolean;
+  query_capable_provider_count: number;
+  feed_only_provider_count: number;
+  official_source_count: number;
+  search_url_candidate_count: number;
+  ko_official_news_count: number;
+  community_reaction_only_count: number;
+  market_signal_only_count: number;
+  catalog_enrichment_only_count: number;
+  unknown_quarantine_count: number;
+  anchor_eligible_count: number;
+  // named single-event seed(§10).
+  named_seed_bank_status: string;
+  named_seed_count: number;
+  selected_seed_for_next_live_run: string | null;
+  seed_type: string;
+  // KO source path(§10).
+  ko_source_path_status: string;
+  ko_tokenization_risk_recorded: boolean;
+  // live recall(shared·aggregate only·per-pair score not exposed).
+  latest_live_seed: string | null;
+  live_recall_lift_status: string;
+  max_live_recall_probe_score: number;
+  newly_routed_count: number;
+  // production / gap(shared).
+  production_candidate_status: string;
+  blocked_reason: string;
+  current_r1_gap: number;
+  r2_r7_no_go: boolean;
+  // next action + copy.
+  acquisition_next_action: string;
+  required_copy: string[];
+  flags: AcquisitionFrontierFlags;
+}

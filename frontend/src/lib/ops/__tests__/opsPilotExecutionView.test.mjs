@@ -913,3 +913,173 @@ describe("ADR#79 discrete acquisition + recall probe frontier view", () => {
     assert.ok(w.includes(OPS_DISCRETE_COPY.productionGoldZero));
   });
 });
+
+// ── ADR#81 provider breadth + named single-event seed + KO source path frontier — inline 재선언 lock ──
+const OPS_BREADTH_COPY = {
+  breadthSupportNotTruth: "Provider breadth is acquisition support, not truth",
+  namedSeedNotProof: "Named seed is candidate generation, not same-event proof",
+  communityNotAnchor: "Community reaction is not an event anchor",
+  productionGoldZero: "Production gold remains 0 until human labels are returned",
+  laddersNoGo: "R2~R7 remain No-Go",
+};
+
+function toR1BreadthFrontierDisplayRows(f) {
+  return [
+    { label: "Provider breadth status", value: f.provider_breadth_status },
+    { label: "Query-capable publishable providers", value: `${f.query_capable_provider_count}` },
+    { label: "Feed-only publishable providers", value: `${f.feed_only_provider_count}` },
+    { label: "Official sources", value: `${f.official_source_count}` },
+    { label: "Search URL candidates (not truth until fetched)", value: `${f.search_url_candidate_count}` },
+    { label: "KO official/news (anchor-eligible)", value: `${f.ko_official_news_count}` },
+    { label: "Community (reaction-only, not anchor)", value: `${f.community_reaction_only_count}` },
+    { label: "Market (signal-only, not anchor)", value: `${f.market_signal_only_count}` },
+    { label: "Catalog (enrichment-only, not anchor)", value: `${f.catalog_enrichment_only_count}` },
+    { label: "Unknown / quarantine (fail-closed)", value: `${f.unknown_quarantine_count}` },
+    { label: "Anchor-eligible sources", value: `${f.anchor_eligible_count}` },
+    { label: "Named seed bank status", value: f.named_seed_bank_status },
+    { label: "Named single-event seeds", value: `${f.named_seed_count}` },
+    { label: "Selected seed for next live run", value: f.selected_seed_for_next_live_run ?? "(none)" },
+    { label: "Seed type", value: f.seed_type },
+    { label: "KO source path status", value: f.ko_source_path_status },
+    { label: "KO tokenization risk recorded", value: String(f.ko_tokenization_risk_recorded) },
+    { label: "Live recall lift status", value: f.live_recall_lift_status },
+    { label: "Live recall probe max score (routing signal, not truth)", value: `${f.max_live_recall_probe_score}` },
+    { label: "Live pairs newly routed (not same-event)", value: `${f.newly_routed_count}` },
+    { label: "Production candidate status", value: f.production_candidate_status },
+    { label: "Blocked reason", value: f.blocked_reason || "(none)" },
+    { label: "R1 gap", value: `${f.current_r1_gap}` },
+    { label: "Acquisition next action", value: f.acquisition_next_action },
+    { label: "R2~R7 No-Go", value: String(f.r2_r7_no_go) },
+  ];
+}
+
+function r1BreadthFrontierWarnings(f) {
+  const out = [...(f.required_copy ?? [])];
+  const ensure = (s) => {
+    if (!out.includes(s)) out.push(s);
+  };
+  ensure(OPS_BREADTH_COPY.breadthSupportNotTruth);
+  ensure(OPS_BREADTH_COPY.namedSeedNotProof);
+  ensure(OPS_BREADTH_COPY.communityNotAnchor);
+  ensure(OPS_BREADTH_COPY.productionGoldZero);
+  if (f.r2_r7_no_go) ensure(OPS_BREADTH_COPY.laddersNoGo);
+  return out;
+}
+
+const SAMPLE_BREADTH_FRONTIER = {
+  contract: "InternalOpsProviderBreadthFrontier",
+  provider_breadth_status: "ready_25_anchor_of_57",
+  provider_breadth_inventory_ready: true,
+  query_capable_provider_count: 7,
+  feed_only_provider_count: 7,
+  official_source_count: 5,
+  search_url_candidate_count: 4,
+  ko_official_news_count: 6,
+  community_reaction_only_count: 9,
+  market_signal_only_count: 6,
+  catalog_enrichment_only_count: 9,
+  unknown_quarantine_count: 4,
+  anchor_eligible_count: 25,
+  named_seed_bank_status: "ready_2_named_seeds",
+  named_seed_count: 2,
+  selected_seed_for_next_live_run: "fomc_rate_decision",
+  seed_type: "named_single_event",
+  ko_source_path_status: "ready_6_ko_news_live",
+  ko_tokenization_risk_recorded: true,
+  latest_live_seed: "fomc_decision",
+  live_recall_lift_status: "live_blocked_by_rate_or_opt_in",
+  max_live_recall_probe_score: 0.0,
+  newly_routed_count: 0,
+  production_candidate_status: "blocked_no_live_opt_in",
+  blocked_reason: "blocked_no_live_opt_in",
+  current_r1_gap: 200,
+  r2_r7_no_go: true,
+  acquisition_next_action: "confirm_actual_event_for_named_seed:fomc_rate_decision then request bounded live run (host/rate honored)",
+  required_copy: [
+    "Provider breadth is acquisition support, not truth",
+    "Named seed is candidate generation, not same-event proof",
+    "Community reaction is not an event anchor",
+    "Production gold remains 0 until human labels are returned",
+    "R2~R7 remain No-Go",
+  ],
+  flags: {
+    no_public_truth: true, no_same_event_truth: true, no_score: true, no_rationale: true,
+    no_predicted_status: true, no_raw_body: true, no_secret: true,
+  },
+};
+
+describe("ADR#81 provider breadth + named seed + KO path frontier view", () => {
+  it("passes the sanitized frontier contract (no forbidden fields)", () => {
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_BREADTH_FRONTIER));
+  });
+
+  it("shows the 9-category provider breadth counts with non-anchor roles separated", () => {
+    const byLabel = Object.fromEntries(
+      toR1BreadthFrontierDisplayRows(SAMPLE_BREADTH_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Query-capable publishable providers"], "7");
+    assert.equal(byLabel["Feed-only publishable providers"], "7");
+    assert.equal(byLabel["KO official/news (anchor-eligible)"], "6");
+    assert.equal(byLabel["Community (reaction-only, not anchor)"], "9");
+    assert.equal(byLabel["Market (signal-only, not anchor)"], "6");
+    assert.equal(byLabel["Catalog (enrichment-only, not anchor)"], "9");
+    assert.equal(byLabel["Anchor-eligible sources"], "25");
+  });
+
+  it("labels search URL candidates as not truth until fetched", () => {
+    const labels = toR1BreadthFrontierDisplayRows(SAMPLE_BREADTH_FRONTIER).map((r) => r.label);
+    assert.ok(labels.includes("Search URL candidates (not truth until fetched)"));
+  });
+
+  it("shows named single-event seed bank status + selected seed + seed type", () => {
+    const byLabel = Object.fromEntries(
+      toR1BreadthFrontierDisplayRows(SAMPLE_BREADTH_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Named single-event seeds"], "2");
+    assert.equal(byLabel["Selected seed for next live run"], "fomc_rate_decision");
+    assert.equal(byLabel["Seed type"], "named_single_event");
+  });
+
+  it("shows KO source path status + tokenization risk recorded", () => {
+    const byLabel = Object.fromEntries(
+      toR1BreadthFrontierDisplayRows(SAMPLE_BREADTH_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["KO source path status"], "ready_6_ko_news_live");
+    assert.equal(byLabel["KO tokenization risk recorded"], "true");
+  });
+
+  it("surfaces live recall as aggregate only (status + max score + newly-routed; no per-pair score)", () => {
+    const byLabel = Object.fromEntries(
+      toR1BreadthFrontierDisplayRows(SAMPLE_BREADTH_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Live recall lift status"], "live_blocked_by_rate_or_opt_in");
+    assert.equal(byLabel["Live recall probe max score (routing signal, not truth)"], "0");
+    assert.equal(byLabel["Live pairs newly routed (not same-event)"], "0");
+  });
+
+  it("emits only string values (no leaked objects)", () => {
+    for (const row of toR1BreadthFrontierDisplayRows(SAMPLE_BREADTH_FRONTIER)) {
+      assert.equal(typeof row.value, "string");
+    }
+  });
+
+  it("warns: breadth=support not truth + named seed != proof + community != anchor + gold 0 + No-Go", () => {
+    const w = r1BreadthFrontierWarnings(SAMPLE_BREADTH_FRONTIER);
+    assert.ok(w.includes(OPS_BREADTH_COPY.breadthSupportNotTruth));
+    assert.ok(w.includes(OPS_BREADTH_COPY.namedSeedNotProof));
+    assert.ok(w.includes(OPS_BREADTH_COPY.communityNotAnchor));
+    assert.ok(w.includes(OPS_BREADTH_COPY.productionGoldZero));
+    assert.ok(w.includes(OPS_BREADTH_COPY.laddersNoGo));
+  });
+
+  it("throws if a forbidden field (score/same_event) is re-introduced", () => {
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_BREADTH_FRONTIER, score: 0.9 }),
+      /forbidden field: score/,
+    );
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_BREADTH_FRONTIER, extra: [{ same_event: true }] }),
+      /forbidden field: same_event/,
+    );
+  });
+});

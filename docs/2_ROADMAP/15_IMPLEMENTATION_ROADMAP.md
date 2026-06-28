@@ -285,6 +285,20 @@
 >
 > **구현/검증**: 신규 `r1_reviewer_pilot_batch.py`(`run_actual_input_gate` 단일 호출 re-check + 순수 builder freeze[`_frozen_pair_list` allowlist 파생·`_batch_signature` sha256·`_launch_status` 5-state·`build_operator_launch_checklist`]·`candidate_provenance=synthetic_fixture`·`pilot_batch_is_production_candidate=False`·전체 출력 재귀 PII 가드)+`reviewer_batch_launch.py`(`build_intake_plan` +`intake_dir` override·additive·기존 호출 무영향)+`schemas/internal_ops.py`(+`InternalOpsR1PilotBatchStatus`)+`api/internal_ops.py`(+`GET /api/internal/ops/r1-pilot-batch`·이중 게이트·read-only·503 sanitize·기존 무변경)+frontend(types +1·opsPilotExecutionView +toR1BatchDisplayRows/r1BatchWarnings/OPS_R1_BATCH_COPY·page +launch-readiness 패널·warnings dedupe·node:test +6). 신규 backend 테스트 **44**(r1 batch 36+API 8)·frontend **+6**·ruff(E/F/I/B/W−E501) **0**·ingestion **1353p**·frontend tsc0/lint0/test38·backend 비-live **1391p/101skip/0fail**·**production_gold_count 0·r1_status blocked_no_labels·frozen 5<<target 200(pilot_n)·launch_status ready_for_manual_launch**·merge/전송/입력 날조/secret 값 노출 0. 합성 fixture→production gold 둔갑 0(**template dataset_source=synthetic 태깅→라벨 회수해도 production gold 미승격·machinery 강제**). 신규 RISK 1(R-BatchFreezeAsTruth LOW). 부분진전 R-GoldAcquisitionPlanOnly/R-ReviewerPilotExecution/R-IdentityHumanLabeling/R-ReviewerAgreement/R-GoldSamplingBias/R-IdentityEvalDataset. **adversarial PROCEED-WITH-FIXES**(HIGH-1 template synthetic 태깅[machinery 강제]·MEDIUM-1 dry-run hard-stop 수정)·**code-review LGTM-WITH-NITS**(triple-consistency 22==22==22).
 
+> **ADR#81 — provider breadth + named single-event seed + KO source path (acquisition support·실 live 미실행)**
+>
+> **선행**: ADR#80 안정 기준점 커밋(`87b14f9`·21파일·지정 subject·closeout 26==26·NO UPSTREAM).
+>
+> **문제(§2·20문항)**: ADR#80 live lift 0(0.1765<0.2·newly_routed 0·sharing_entity 0) 원인 분해=(a)category-lean seed(comparison 100·entity-sharing 0=seed 비특이성+영어 alias 표 협소)+(b)Guardian×NYT 2 provider+(c)KO 미연결. **결정적 발견: source_registry.yaml 에 이미 57 소스 와이어링**(Guardian×NYT only 는 live run 한계지 wiring 한계 아님).
+>
+> **옵션 결정(§3)**: **A(actual input)+B(provider breadth)+C(named seed)+E(KO path)+F(frontier)+G(community contract·docs) 채택·D(bounded live)=`blocked_no_live_opt_in`(이번 턴 승인 없음·§7)·H/I(LLM/RAG/KG/public IU runtime) 금지.**
+>
+> **구현(§3·전부 additive·신규 3 도구+1 orchestrator)**: `provider_breadth_inventory`(57=9 카테고리·anchor_eligible 25·`source_role_guard_preserved`·credential secret-safe)·`named_event_seed_bank`(category→named single-event·fomc/ecb accepted·placeholder/broad reject·broad 5/5·`same_event_asserted=False`)·`ko_source_readiness`(KO news 5 LIVE key-free·Naver 어댑터·KO tokenization risk[형태소/stemming/alias 부재·breadth-only]·floor solved=False)·`r1_provider_breadth_acquisition`(orchestrator·§4 output+§10 frontier `InternalOpsProviderBreadthFrontier` **dict==pydantic==TS 30==30==30**·`GET /api/internal/ops/r1-provider-breadth`)·필수 copy(breadth=support≠truth·named seed≠same-event proof·community≠anchor).
+>
+> **live 정책(§7·미실행)**: `live_query_executed=False`·`live_run_status=blocked_no_live_opt_in`·`next_action=ask_for_bounded_live_run_approval`·selected seed=**fomc_rate_decision** queued·secret 0·raw body 0.
+>
+> **검증/RISK**: 신규 backend 테스트(breadth 15+seed 10+ko 11+orchestrator 9+API +8=53)·ADR#79/#80 회귀 무변경·frontend tsc0/lint0/test 49→58(+9)·dict==pydantic==TS 30==30==30·secret PASS·docs_lifecycle 0. 신규 R-ProviderBreadthScopeCreep/R-SearchCandidateTruthLeakage/R-NamedSeedSelectionBias/R-LiveRunReproducibility(LOW). 부분진전 R-ProviderPairNarrowness/R-KoreanR1SourceGap/R-ProductionCandidateScarcity·종결 0. **다음 hard blocker=승인된 bounded live run→reviewer contact→actual returned labels.**
+
 > **ADR#80 — live discrete-event run + recall probe를 LIVE pair에 적용 + 3분류 + provider breadth**
 >
 > **선행**: ADR#79 안정 기준점 커밋(`7f3ef11`·20파일·지정 subject·closeout 25==25·NO UPSTREAM).
