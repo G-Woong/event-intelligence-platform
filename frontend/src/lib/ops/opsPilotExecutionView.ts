@@ -5,6 +5,7 @@
 // model rationale·predicted_status·reviewer raw PII 는 표시 대상이 아니다 — 발견 시 fail-loud.
 import type {
   InternalOpsAcquisitionFrontierStatus,
+  InternalOpsDiscreteAcquisitionFrontier,
   InternalOpsPilotExecutionStatus,
   InternalOpsPreflightStatus,
   InternalOpsR1AcquisitionStatus,
@@ -304,5 +305,65 @@ export function r1FrontierWarnings(
   if (!f.production_candidate_batch_ready) ensure(OPS_FRONTIER_COPY.requiresLivePair);
   if (f.production_gold_count === 0) ensure(OPS_FRONTIER_COPY.goldZeroUntilLabels);
   if (f.r2_r7_no_go) ensure(OPS_FRONTIER_COPY.laddersNoGo);
+  return out;
+}
+
+// ── ADR#79 discrete-event acquisition + deterministic recall probe frontier view helpers ────────────────
+// 필수 copy(§9) — recall probe lift 는 reviewer 라우팅 신호이지 same-event 단정이 아님(merge 미적용)을 operator 가
+// 명확히 보게. discrete seed=수집 의도(shape)·near-match 0≠증명·gold 0·R2~R7 No-Go 를 강제.
+export const OPS_DISCRETE_COPY = {
+  recallProbeRoutingOnly: "Recall probe is reviewer-routing only, not merge",
+  liftNotSameEvent: "Recall probe lift on synthetic does not assert same-event on live frontier",
+  zeroNotProof: "Near-match 0 does not prove no same event",
+  worklistNotTruth: "Production candidate is reviewer worklist, not truth",
+  goldZeroUntilLabels: "R1 gold remains 0 until human labels are returned",
+  laddersNoGo: "R2~R7 remain No-Go",
+} as const;
+
+// discrete frontier → read-only 표시 행(discrete seed·near-match gap·recall probe lift 신호만; per-pair score/same_event 0).
+export function toR1DiscreteFrontierDisplayRows(
+  f: InternalOpsDiscreteAcquisitionFrontier,
+): OpsDisplayRow[] {
+  const hyp = f.root_cause_hypotheses
+    .filter((h) => h.signal === "supporting" || h.signal === "plausible")
+    .map((h) => `${h.cause} [${h.signal}]`)
+    .join("; ");
+  return [
+    { label: "Discrete event seed", value: f.discrete_event_seed_selected ?? "(none)" },
+    { label: "Seed source", value: f.discrete_event_seed_source ?? "(none)" },
+    { label: "Time window", value: f.discrete_event_time_window ?? "(none)" },
+    { label: "Valid discrete seeds", value: `${f.discrete_seed_valid_count}` },
+    { label: "Near-match gap status", value: f.near_match_gap_status },
+    { label: "Root-cause confidence", value: f.root_cause_confidence },
+    { label: "Root-cause hypotheses (not asserted)", value: hyp || "(none)" },
+    { label: "Recall probe max score (routing signal, not truth)", value: `${f.max_recall_probe_score}` },
+    { label: "Recall probe pairs newly routed", value: `${f.recall_probe_pairs_newly_routed}` },
+    { label: "Recall probe applies to merge", value: String(f.recall_probe_applies_to_merge) },
+    { label: "Recall probe lever demonstrated (synthetic)", value: String(f.recall_probe_lever_demonstrated) },
+    { label: "Live candidate pairs (comparison, not match)", value: `${f.live_candidate_count}` },
+    { label: "Production candidate status", value: f.production_candidate_status },
+    { label: "Blocked reason", value: f.blocked_reason || "(none)" },
+    { label: "Provider breadth next action", value: f.provider_breadth_next_action },
+    { label: "Korean source next action", value: f.korean_source_next_action },
+    { label: "Production gold (unverified)", value: `${f.production_gold_count} (gap ${f.current_r1_gap})` },
+    { label: "R2~R7 No-Go", value: String(f.r2_r7_no_go) },
+  ];
+}
+
+// discrete frontier → operator 경고 배너(recall probe=routing only≠merge·lift≠same-event·near-match 0≠증명·gold 0·No-Go).
+// backend required_copy(§9) 를 우선 표시하고, 누락 시 로컬 상수로 보강(defense-in-depth).
+export function r1DiscreteFrontierWarnings(
+  f: InternalOpsDiscreteAcquisitionFrontier,
+): string[] {
+  const out: string[] = [...(f.required_copy ?? [])];
+  const ensure = (s: string) => {
+    if (!out.includes(s)) out.push(s);
+  };
+  ensure(OPS_DISCRETE_COPY.recallProbeRoutingOnly);
+  ensure(OPS_DISCRETE_COPY.liftNotSameEvent);
+  ensure(OPS_DISCRETE_COPY.zeroNotProof);
+  ensure(OPS_DISCRETE_COPY.worklistNotTruth);
+  if (f.production_gold_count === 0) ensure(OPS_DISCRETE_COPY.goldZeroUntilLabels);
+  if (f.r2_r7_no_go) ensure(OPS_DISCRETE_COPY.laddersNoGo);
   return out;
 }

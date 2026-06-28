@@ -724,3 +724,142 @@ describe("ADR#78 acquisition frontier view", () => {
     );
   });
 });
+
+// ── ADR#79 discrete-event acquisition + deterministic recall probe frontier — inline 재선언 lock ──
+const OPS_DISCRETE_COPY = {
+  recallProbeRoutingOnly: "Recall probe is reviewer-routing only, not merge",
+  liftNotSameEvent: "Recall probe lift on synthetic does not assert same-event on live frontier",
+  zeroNotProof: "Near-match 0 does not prove no same event",
+  worklistNotTruth: "Production candidate is reviewer worklist, not truth",
+  goldZeroUntilLabels: "R1 gold remains 0 until human labels are returned",
+  laddersNoGo: "R2~R7 remain No-Go",
+};
+
+function toR1DiscreteFrontierDisplayRows(f) {
+  const hyp = f.root_cause_hypotheses
+    .filter((h) => h.signal === "supporting" || h.signal === "plausible")
+    .map((h) => `${h.cause} [${h.signal}]`)
+    .join("; ");
+  return [
+    { label: "Discrete event seed", value: f.discrete_event_seed_selected ?? "(none)" },
+    { label: "Seed source", value: f.discrete_event_seed_source ?? "(none)" },
+    { label: "Time window", value: f.discrete_event_time_window ?? "(none)" },
+    { label: "Valid discrete seeds", value: `${f.discrete_seed_valid_count}` },
+    { label: "Near-match gap status", value: f.near_match_gap_status },
+    { label: "Root-cause confidence", value: f.root_cause_confidence },
+    { label: "Root-cause hypotheses (not asserted)", value: hyp || "(none)" },
+    { label: "Recall probe max score (routing signal, not truth)", value: `${f.max_recall_probe_score}` },
+    { label: "Recall probe pairs newly routed", value: `${f.recall_probe_pairs_newly_routed}` },
+    { label: "Recall probe applies to merge", value: String(f.recall_probe_applies_to_merge) },
+    { label: "Recall probe lever demonstrated (synthetic)", value: String(f.recall_probe_lever_demonstrated) },
+    { label: "Live candidate pairs (comparison, not match)", value: `${f.live_candidate_count}` },
+    { label: "Production candidate status", value: f.production_candidate_status },
+    { label: "Blocked reason", value: f.blocked_reason || "(none)" },
+    { label: "Provider breadth next action", value: f.provider_breadth_next_action },
+    { label: "Korean source next action", value: f.korean_source_next_action },
+    { label: "Production gold (unverified)", value: `${f.production_gold_count} (gap ${f.current_r1_gap})` },
+    { label: "R2~R7 No-Go", value: String(f.r2_r7_no_go) },
+  ];
+}
+
+function r1DiscreteFrontierWarnings(f) {
+  const out = [...(f.required_copy ?? [])];
+  const ensure = (s) => {
+    if (!out.includes(s)) out.push(s);
+  };
+  ensure(OPS_DISCRETE_COPY.recallProbeRoutingOnly);
+  ensure(OPS_DISCRETE_COPY.liftNotSameEvent);
+  ensure(OPS_DISCRETE_COPY.zeroNotProof);
+  ensure(OPS_DISCRETE_COPY.worklistNotTruth);
+  if (f.production_gold_count === 0) ensure(OPS_DISCRETE_COPY.goldZeroUntilLabels);
+  if (f.r2_r7_no_go) ensure(OPS_DISCRETE_COPY.laddersNoGo);
+  return out;
+}
+
+const SAMPLE_DISCRETE_FRONTIER = {
+  contract: "InternalOpsDiscreteAcquisitionFrontier",
+  discrete_event_seed_selected: "fomc_decision",
+  discrete_event_seed_source: "code_proposed_shape",
+  discrete_event_time_window: "1d",
+  discrete_seed_valid_count: 3,
+  near_match_gap_status: "insufficient_debug_artifact",
+  root_cause_hypotheses: [
+    { cause: "insufficient_debug_artifact", signal: "supporting" },
+  ],
+  root_cause_confidence: "n/a",
+  max_recall_probe_score: 1.0,
+  recall_probe_pairs_newly_routed: 2,
+  recall_probe_applies_to_merge: false,
+  recall_probe_lever_demonstrated: true,
+  live_candidate_count: 0,
+  production_candidate_status: "blocked_no_live_opt_in",
+  blocked_reason: "blocked_no_live_opt_in",
+  provider_breadth_next_action: "wire GDELT cooldown-honored + key-free RSS multi-outlet fleet for breadth",
+  korean_source_next_action: "wire naver_news_search adapter for KO topic-targeted overlap (KO floor lever)",
+  current_r1_gap: 200,
+  production_gold_count: 0,
+  r2_r7_no_go: true,
+  required_copy: [
+    "Near-match 0 does not prove no same event",
+    "Recall probe is reviewer-routing only, not merge",
+    "Recall probe lift on synthetic does not assert same-event on live frontier",
+  ],
+  flags: {
+    no_public_truth: true, no_same_event_truth: true, no_score: true, no_rationale: true,
+    no_predicted_status: true, no_raw_body: true, no_secret: true,
+  },
+};
+
+describe("ADR#79 discrete acquisition + recall probe frontier view", () => {
+  it("passes the sanitized frontier contract (no forbidden fields; max_recall_probe_score is not 'score')", () => {
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_DISCRETE_FRONTIER));
+  });
+
+  it("shows the discrete seed shape + source (acquisition intent, not a fabricated event)", () => {
+    const rows = toR1DiscreteFrontierDisplayRows(SAMPLE_DISCRETE_FRONTIER);
+    const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]));
+    assert.equal(byLabel["Discrete event seed"], "fomc_decision");
+    assert.equal(byLabel["Seed source"], "code_proposed_shape");
+    assert.equal(byLabel["Time window"], "1d");
+  });
+
+  it("labels recall probe max score as routing signal, not truth; applies-to-merge is false", () => {
+    const rows = toR1DiscreteFrontierDisplayRows(SAMPLE_DISCRETE_FRONTIER);
+    const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]));
+    assert.equal(byLabel["Recall probe max score (routing signal, not truth)"], "1");
+    assert.equal(byLabel["Recall probe applies to merge"], "false");
+    assert.equal(byLabel["Recall probe pairs newly routed"], "2");
+  });
+
+  it("labels live candidate pairs as comparison, not match", () => {
+    const rows = toR1DiscreteFrontierDisplayRows(SAMPLE_DISCRETE_FRONTIER);
+    const byLabel = Object.fromEntries(rows.map((r) => [r.label, r.value]));
+    assert.equal(byLabel["Live candidate pairs (comparison, not match)"], "0");
+  });
+
+  it("emits only string values (no leaked objects)", () => {
+    for (const row of toR1DiscreteFrontierDisplayRows(SAMPLE_DISCRETE_FRONTIER)) {
+      assert.equal(typeof row.value, "string");
+    }
+  });
+
+  it("warns: recall probe is routing-only not merge + lift != same-event + gold 0 + No-Go", () => {
+    const w = r1DiscreteFrontierWarnings(SAMPLE_DISCRETE_FRONTIER);
+    assert.ok(w.includes(OPS_DISCRETE_COPY.recallProbeRoutingOnly));
+    assert.ok(w.includes(OPS_DISCRETE_COPY.liftNotSameEvent));
+    assert.ok(w.includes(OPS_DISCRETE_COPY.zeroNotProof));
+    assert.ok(w.includes(OPS_DISCRETE_COPY.goldZeroUntilLabels));
+    assert.ok(w.includes(OPS_DISCRETE_COPY.laddersNoGo));
+  });
+
+  it("throws if a forbidden field (score/same_event) is re-introduced", () => {
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_DISCRETE_FRONTIER, score: 0.9 }),
+      /forbidden field: score/,
+    );
+    assert.throws(
+      () => assertOpsContractSafe({ ...SAMPLE_DISCRETE_FRONTIER, extra: [{ same_event: true }] }),
+      /forbidden field: same_event/,
+    );
+  });
+});

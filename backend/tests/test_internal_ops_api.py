@@ -20,6 +20,7 @@ PREFLIGHT_PATH = "/api/internal/ops/preflight"
 R1_PATH = "/api/internal/ops/r1-gold-acquisition"
 R1_BATCH_PATH = "/api/internal/ops/r1-pilot-batch"
 R1_PROD_PATH = "/api/internal/ops/r1-production-candidates"
+R1_DISCRETE_PATH = "/api/internal/ops/r1-discrete-acquisition"
 
 
 @pytest.fixture()
@@ -428,3 +429,78 @@ def test_r1_prod_admin_auth_prod_fail_closed(monkeypatch):
     monkeypatch.setattr(settings, "ADMIN_API_TOKEN", "")
     c = TestClient(app)   # lifespan 미실행 — 요청 시점 인증만 검증(이중 게이트의 인증 축).
     assert c.get(R1_PROD_PATH).status_code == 503
+
+
+# ── ADR#79 /r1-discrete-acquisition 엔드포인트(discrete-event acquisition + recall probe frontier·read-only) ──
+def test_r1_discrete_flag_off_returns_404(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", False)
+    assert client.get(R1_DISCRETE_PATH).status_code == 404
+
+
+def test_r1_discrete_flag_on_returns_sanitized_contract(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    r = client.get(R1_DISCRETE_PATH)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["contract"] == "InternalOpsDiscreteAcquisitionFrontier"
+    # read API 는 live_query=False 고정(시도 0) → recall probe 는 synthetic 검증.
+    assert body["recall_probe_applies_to_merge"] is False
+    assert body["recall_probe_lever_demonstrated"] is True       # synthetic 에서 lever 작동.
+    assert body["discrete_event_seed_source"] == "code_proposed_shape"
+    assert body["live_candidate_count"] == 0
+
+
+def test_r1_discrete_recall_probe_is_routing_signal_not_truth(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_DISCRETE_PATH).json()
+    # recall probe = reviewer-routing only·merge 미적용·max 집계 신호만(per-pair score 미노출).
+    assert body["recall_probe_applies_to_merge"] is False
+    assert body["recall_probe_pairs_newly_routed"] >= 2          # 알려진 below-floor 같은-사건 lift.
+    flags = body["flags"]
+    for k in ("no_public_truth", "no_same_event_truth", "no_score", "no_rationale",
+              "no_predicted_status", "no_raw_body", "no_secret"):
+        assert flags[k] is True, k
+
+
+def test_r1_discrete_required_copy_states_routing_only(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    copy = client.get(R1_DISCRETE_PATH).json()["required_copy"]
+    assert any("reviewer-routing only" in c for c in copy)
+    assert any("does not assert same-event" in c for c in copy)
+    assert "R2~R7 remain No-Go" in copy
+
+
+def test_r1_discrete_no_forbidden_fields_and_no_pii(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_DISCRETE_PATH).json()
+    assert _forbidden_keys_in(body) == set()                    # score/rationale/predicted_status/raw PII 0.
+    blob = json.dumps(body, ensure_ascii=False)
+    assert "Users" not in blob                                  # 절대경로/사용자명 미노출.
+
+
+def test_r1_discrete_read_only_post_not_allowed(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    assert client.post(R1_DISCRETE_PATH).status_code == 405
+
+
+def test_r1_discrete_admin_auth_prod_fail_closed(monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    monkeypatch.setattr(settings, "APP_ENV", "production")
+    monkeypatch.setattr(settings, "ADMIN_API_TOKEN", "")
+    c = TestClient(app)
+    assert c.get(R1_DISCRETE_PATH).status_code == 503
+
+
+def test_r1_discrete_response_keys_are_sanitized_subset(client, monkeypatch):
+    monkeypatch.setattr(settings, "INTERNAL_OPS_DASHBOARD_ENABLED", True)
+    body = client.get(R1_DISCRETE_PATH).json()
+    allowed = {
+        "contract", "discrete_event_seed_selected", "discrete_event_seed_source",
+        "discrete_event_time_window", "discrete_seed_valid_count", "near_match_gap_status",
+        "root_cause_hypotheses", "root_cause_confidence", "max_recall_probe_score",
+        "recall_probe_pairs_newly_routed", "recall_probe_applies_to_merge",
+        "recall_probe_lever_demonstrated", "live_candidate_count", "production_candidate_status",
+        "blocked_reason", "provider_breadth_next_action", "korean_source_next_action",
+        "current_r1_gap", "production_gold_count", "r2_r7_no_go", "required_copy", "flags",
+    }
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(22 field).

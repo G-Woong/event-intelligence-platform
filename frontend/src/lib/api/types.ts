@@ -308,3 +308,32 @@ export interface InternalOpsAcquisitionFrontierStatus {
   required_copy: string[];
   flags: AcquisitionFrontierFlags;
 }
+
+// ADR#79 — discrete-event acquisition + deterministic recall probe frontier(read-only·public truth 아님).
+// r1_discrete_event_acquisition 의 sanitized internal_ops_discrete_acquisition_frontier 미러. recall probe lift 는
+// reviewer 라우팅 신호이지 same-event 단정 아님(merge 미적용). same_event truth·per-pair score·rationale·
+// predicted_status·raw body·PII·secret 은 필드 자체가 없어 구조적 미노출.
+export interface InternalOpsDiscreteAcquisitionFrontier {
+  contract: string;
+  discrete_event_seed_selected: string | null;
+  discrete_event_seed_source: string | null;
+  discrete_event_time_window: string | null;
+  discrete_seed_valid_count: number;
+  near_match_gap_status: string;
+  root_cause_hypotheses: AcquisitionRootCauseHypothesis[];
+  root_cause_confidence: string;
+  max_recall_probe_score: number;
+  recall_probe_pairs_newly_routed: number;
+  recall_probe_applies_to_merge: boolean;
+  recall_probe_lever_demonstrated: boolean;
+  live_candidate_count: number;
+  production_candidate_status: string;
+  blocked_reason: string;
+  provider_breadth_next_action: string;
+  korean_source_next_action: string;
+  current_r1_gap: number;
+  production_gold_count: number;
+  r2_r7_no_go: boolean;
+  required_copy: string[];
+  flags: AcquisitionFrontierFlags;
+}

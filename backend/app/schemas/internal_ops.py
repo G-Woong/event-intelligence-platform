@@ -246,3 +246,37 @@ class InternalOpsAcquisitionFrontierStatus(BaseModel):
     r2_r7_no_go: bool
     required_copy: list[str]
     flags: AcquisitionFrontierFlags
+
+
+class InternalOpsDiscreteAcquisitionFrontier(BaseModel):
+    """ADR#79 — discrete-event acquisition + deterministic recall probe frontier(read-only·public truth 아님).
+
+    `r1_discrete_event_acquisition.run_discrete_event_acquisition_and_recall_probe` 의 sanitized
+    `internal_ops_discrete_acquisition_frontier` 를 미러한다. discrete-event seed(shape·source)·near-match gap
+    status·원인 가설(양가·단정 아님)·recall probe lift 신호(**reviewer-routing only·merge 미적용**)·provider/Korean
+    next action·R1 gap·R2~R7 No-Go·정직 copy 만 노출 — same_event truth·score·rationale·predicted_status·raw body·
+    raw PII·secret 은 **필드 자체가 없어** 구조적 미노출. recall probe per-pair score 는 reviewer/public 미노출
+    (max 집계 신호만). read API 는 live 시도 0(near_match_gap_status=insufficient_debug_artifact 가 정상). **recall
+    probe lift 는 reviewer 라우팅 신호이지 same-event 단정이 아니다**(required_copy 명시)."""
+    contract: str
+    discrete_event_seed_selected: str | None
+    discrete_event_seed_source: str | None
+    discrete_event_time_window: str | None
+    discrete_seed_valid_count: int
+    near_match_gap_status: str
+    root_cause_hypotheses: list[AcquisitionRootCauseHypothesis]
+    root_cause_confidence: str
+    max_recall_probe_score: float
+    recall_probe_pairs_newly_routed: int
+    recall_probe_applies_to_merge: bool
+    recall_probe_lever_demonstrated: bool
+    live_candidate_count: int
+    production_candidate_status: str
+    blocked_reason: str
+    provider_breadth_next_action: str
+    korean_source_next_action: str
+    current_r1_gap: int
+    production_gold_count: int
+    r2_r7_no_go: bool
+    required_copy: list[str]
+    flags: AcquisitionFrontierFlags

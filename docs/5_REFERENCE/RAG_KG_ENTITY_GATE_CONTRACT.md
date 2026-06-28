@@ -79,3 +79,4 @@ public IU(R7)는 다음을 **모두** 만족하기 전 mock/wireframe only(`no_p
 - "raw source 를 public Intelligence Unit 으로 착각" → §5
 - "entity 추출 provenance 없이 mentions/same_event" → §2/§3
 - "MERGE_GATE 전에 same_event edge" → §2(same_event 행)
+- "recall probe lift 를 same_event/merge/KG edge 로 사용" → §2 (ADR#79 `near_match_recall_probe` 는 **reviewer-routing 후보 recall 만**·`recall_probe_applies_to_merge=False`·merge 경로[`cluster_records`/`semantic_identity_fingerprint`] 미호출·RAG/KG 미적재·probe score 는 reviewer/public 미노출[R-NormalizationRecallLeakage]. recall 완화 ≠ same_event ≠ merge ≠ KG edge.)

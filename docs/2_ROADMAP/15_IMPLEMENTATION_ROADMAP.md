@@ -285,6 +285,22 @@
 >
 > **구현/검증**: 신규 `r1_reviewer_pilot_batch.py`(`run_actual_input_gate` 단일 호출 re-check + 순수 builder freeze[`_frozen_pair_list` allowlist 파생·`_batch_signature` sha256·`_launch_status` 5-state·`build_operator_launch_checklist`]·`candidate_provenance=synthetic_fixture`·`pilot_batch_is_production_candidate=False`·전체 출력 재귀 PII 가드)+`reviewer_batch_launch.py`(`build_intake_plan` +`intake_dir` override·additive·기존 호출 무영향)+`schemas/internal_ops.py`(+`InternalOpsR1PilotBatchStatus`)+`api/internal_ops.py`(+`GET /api/internal/ops/r1-pilot-batch`·이중 게이트·read-only·503 sanitize·기존 무변경)+frontend(types +1·opsPilotExecutionView +toR1BatchDisplayRows/r1BatchWarnings/OPS_R1_BATCH_COPY·page +launch-readiness 패널·warnings dedupe·node:test +6). 신규 backend 테스트 **44**(r1 batch 36+API 8)·frontend **+6**·ruff(E/F/I/B/W−E501) **0**·ingestion **1353p**·frontend tsc0/lint0/test38·backend 비-live **1391p/101skip/0fail**·**production_gold_count 0·r1_status blocked_no_labels·frozen 5<<target 200(pilot_n)·launch_status ready_for_manual_launch**·merge/전송/입력 날조/secret 값 노출 0. 합성 fixture→production gold 둔갑 0(**template dataset_source=synthetic 태깅→라벨 회수해도 production gold 미승격·machinery 강제**). 신규 RISK 1(R-BatchFreezeAsTruth LOW). 부분진전 R-GoldAcquisitionPlanOnly/R-ReviewerPilotExecution/R-IdentityHumanLabeling/R-ReviewerAgreement/R-GoldSamplingBias/R-IdentityEvalDataset. **adversarial PROCEED-WITH-FIXES**(HIGH-1 template synthetic 태깅[machinery 강제]·MEDIUM-1 dry-run hard-stop 수정)·**code-review LGTM-WITH-NITS**(triple-consistency 22==22==22).
 
+> **ADR#79 — discrete-event acquisition + deterministic recall probe(reviewer-routing recall·merge 분리) + provider breadth**
+>
+> **선행**: ADR#78 안정 기준점 커밋(`03829e4`·20파일·제공 메시지 그대로·NO UPSTREAM).
+>
+> **문제(§2)**: ADR#77/#78 near-match 0(all below hard floor)의 원인 (i)detector miss vs (ii)different-events 미분리. 원자 분석(20문항·코드 5개 정독): detector `_title_tokens`=stemming/entity alias/number 정규화 전무→paraphrase 가 표면 변형만으로 floor 아래로. near=reviewer 라우팅≠merge(`cluster_records`/fingerprint)→recall 완화 false-merge 위험 0. ADR#78 strategy 가 이미 recall probe 지목. `fake_semantic`(char-bigram 블랙박스)와 달리 probe 차별점=**feature-attributed 정규화**(어느 alias/stem 이 매치 생성)→(i)/(ii) 판별 레버. `naver_news_search`=registry 등재·fetcher 미배선(KO floor 레버).
+>
+> **옵션 결정(§3)**: **A(actual input)+B(discrete-event live·승인 시 — user opt 'synthetic only'→live 미실행)+C(recall probe·핵심)+D(provider/KO plan)+E(frontier 영속)+F(contract guard) 채택·G/H(embedding/LLM/merge/public IU/DB) 금지.** per-turn live 승인 질의→user synthetic-only 선택. ADR#79 기록.
+>
+> **구현(§4·신규 2 tool)**: 신규 `near_match_recall_probe.py`(feature-attributed 정규화=org phrase alias[federal reserve→federalreserve]·acronym alias[fed→…]·light stemming[rates→rate]·number normalize·routing stopword·**merge 경로 미호출**[AST 테스트 잠금]·merge_allowed=False·score internal-only·body-free)+신규 `r1_discrete_event_acquisition.py`(op `r1_discrete_event_acquisition_and_recall_probe`·discrete seed 엄격 검증[단일 이산사건·1d/2d·event phrase·broad umbrella 거부]·ADR#78 gate 재사용·recall probe 통합[synthetic]·`refine_root_cause_with_recall_probe`[(i)/(ii) 구조 진전·단정 0]·§4 output)+internal ops(`InternalOpsDiscreteAcquisitionFrontier` 22 field+`GET /api/internal/ops/r1-discrete-acquisition`[live 0]+TS+view·dict==pydantic==TS 22==22==22).
+>
+> **recall probe 실측(synthetic known-paraphrase·network 0)**: fed_acronym(Fed↔Federal Reserve) baseline 0.125→probe 0.333·entity federalreserve·newly_routed True·scotus 0.111→0.286·diff_control(Fed↔Hurricane) 0→0 미lift. newly_routed 2·둘 다 entity 공유=**(i) recall-miss 레버 시연**·different-events 판별. discrete tool dry: seed 3 valid(code_proposed_shape)·live 0·gold 0·gap 200·merge/llm/embedding/db/전송 0.
+>
+> **정직 해석(§5·단정 0)**: recall probe 는 **synthetic 에서 (i) 레버 실재·작동 증명**일 뿐, 실 below-floor 쌍의 (i)/(ii)는 discrete-event 1d LIVE pair 적용 전까지 미분리(user opt synthetic-only→미실행). same_event 단정 0·merge 불변.
+>
+> **검증/RISK**: 신규 backend 26(recall probe)+29(discrete)+7(API)·frontend tsc0/lint0/test+7(39→46)·ruff 0·secret PASS·docs_lifecycle 0. R-DeterministicNearMatchRecall 부분진전(probe 구현·reviewer-routing only·false-merge AST 분리·synthetic 측정·종결 금지[live 미측정])·R-CrossSourceNearMatchGap 부분진전·신규 R-NormalizationRecallLeakage(LOW·테스트 차단)·종결 0.
+>
 > **ADR#78 — targeted live acquisition + near-match gap diagnostic[양가·미확정] + LLM/RAG/KG product bridge contracts**
 >
 > **선행**: ADR#77 안정 기준점 커밋(`6ee7c31`·11파일·제공 메시지 그대로·NO UPSTREAM).

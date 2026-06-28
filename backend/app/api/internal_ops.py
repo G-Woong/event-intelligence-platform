@@ -15,6 +15,7 @@ from fastapi import APIRouter, HTTPException
 from backend.app.core.config import settings
 from backend.app.schemas.internal_ops import (
     InternalOpsAcquisitionFrontierStatus,
+    InternalOpsDiscreteAcquisitionFrontier,
     InternalOpsPilotExecutionStatus,
     InternalOpsPreflightStatus,
     InternalOpsR1AcquisitionStatus,
@@ -22,6 +23,9 @@ from backend.app.schemas.internal_ops import (
     InternalOpsR1ProductionCandidateStatus,
 )
 from backend.app.tools.internal_ops_preflight import run_internal_ops_preflight
+from backend.app.tools.r1_discrete_event_acquisition import (
+    run_discrete_event_acquisition_and_recall_probe,
+)
 from backend.app.tools.r1_gold_acquisition_plan import run_r1_gold_acquisition_plan
 from backend.app.tools.r1_production_candidate_acquisition import (
     run_r1_production_candidate_acquisition,
@@ -158,3 +162,26 @@ def get_r1_acquisition_frontier_status() -> InternalOpsAcquisitionFrontierStatus
         raise HTTPException(
             status_code=503, detail="internal ops r1 acquisition frontier temporarily unavailable") from None
     return InternalOpsAcquisitionFrontierStatus(**out["internal_ops_acquisition_frontier"])
+
+
+@router.get("/r1-discrete-acquisition", response_model=InternalOpsDiscreteAcquisitionFrontier)
+def get_r1_discrete_acquisition_frontier() -> InternalOpsDiscreteAcquisitionFrontier:
+    """ADR#79 — discrete-event acquisition + deterministic recall probe frontier(read-only). flag off → 404(미노출).
+
+    discrete-event seed(shape·source)·near-match gap status·원인 가설(양가·단정 아님)·recall probe lift 신호
+    (**reviewer-routing only·merge 미적용**)·provider/Korean next action·R1 gap·R2~R7 No-Go·정직 copy 를 sanitized
+    로 산출한다. 응답 스키마에 same_event truth·score(per-pair)·rationale·predicted_status·raw body·raw PII·secret
+    필드 자체가 없다(구조적 미노출). 입력 파일이 깨졌으면 경로/내용 누출 없이 503. **실 live 네트워크 호출은 API 경로에서
+    수행하지 않는다**(live_query=False 고정 → near_match_gap_status=insufficient_debug_artifact 가 정상; 실 live 는
+    operator CLI opt-in 전용). recall probe lift 는 reviewer 라우팅 신호이지 same-event 단정이 아니다(required_copy 명시).
+    """
+    if not settings.INTERNAL_OPS_DASHBOARD_ENABLED:
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        # read API 는 live_query=False 고정(시도 0). recall probe 는 synthetic 검증(network 0).
+        out = run_discrete_event_acquisition_and_recall_probe(live_query=False)
+    except (ValueError, OSError) as exc:   # malformed operator 입력 파일 등 — detail 에 경로/내용 미포함.
+        logger.warning("internal ops r1 discrete acquisition unavailable: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=503, detail="internal ops r1 discrete acquisition temporarily unavailable") from None
+    return InternalOpsDiscreteAcquisitionFrontier(**out["internal_ops_discrete_acquisition_frontier"])
