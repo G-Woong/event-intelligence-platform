@@ -499,8 +499,12 @@ def test_r1_discrete_response_keys_are_sanitized_subset(client, monkeypatch):
         "discrete_event_time_window", "discrete_seed_valid_count", "near_match_gap_status",
         "root_cause_hypotheses", "root_cause_confidence", "max_recall_probe_score",
         "recall_probe_pairs_newly_routed", "recall_probe_applies_to_merge",
-        "recall_probe_lever_demonstrated", "live_candidate_count", "production_candidate_status",
+        "recall_probe_lever_demonstrated",
+        # ADR#80 live recall probe(aggregate only·per-pair score 미노출).
+        "max_live_recall_probe_score", "live_pairs_newly_routed_by_probe",
+        "live_recall_lift_status", "live_frontier_verdict",
+        "live_candidate_count", "production_candidate_status",
         "blocked_reason", "provider_breadth_next_action", "korean_source_next_action",
         "current_r1_gap", "production_gold_count", "r2_r7_no_go", "required_copy", "flags",
     }
-    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(22 field).
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(26 field·ADR#80 +4).

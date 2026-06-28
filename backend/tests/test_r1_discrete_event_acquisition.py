@@ -4,6 +4,8 @@
 """
 from __future__ import annotations
 
+import json
+
 from backend.app.tools import r1_discrete_event_acquisition as dea
 
 REQUIRED_OUTPUT_FIELDS = [
@@ -131,10 +133,12 @@ def test_root_cause_hypotheses_is_list():
 
 
 def test_recall_probe_refinement_defers_live_verdict():
+    # ADR#80: dry 모드(live off)는 3분류상 live_blocked_by_rate_or_opt_in(opt-in off=실행 블록). synthetic lever 는 보존.
     out = _run()
     ref = out["recall_probe_root_cause_refinement"]
     assert ref["recall_probe_lever_demonstrated"] is True   # synthetic 에서 lever 작동 증명.
-    assert ref["live_frontier_verdict"] == "deferred_no_live_candidate_pairs_this_turn"
+    assert ref["live_recall_probe_applied"] is False        # live 미실행 → live pair 미적용.
+    assert ref["live_frontier_verdict"] == "live_blocked_by_rate_or_opt_in"
     assert ref["same_event_truth_asserted"] is False        # 실 frontier 단정 0.
 
 
@@ -239,3 +243,144 @@ def test_no_valid_seed_blocks():
                       {"seed_id": "b2", "topic": "stock market", "time_window": "7d"}])
     assert out["discrete_event_seed_selected"] is None
     assert "no_valid_discrete_event_seed" in out["block_reasons"]
+
+
+# ── ADR#80: live recall probe applied to ACTUAL cross-source pairs (3-bucket·merge 0·gold 0) ─────────────
+DAY = "2026-06-22"
+
+
+def _g_payload(items, day=DAY):
+    return json.dumps({"response": {"status": "ok", "total": len(items), "results": [
+        {"webTitle": t, "webUrl": u, "webPublicationDate": day + "T08:00:00Z"} for t, u in items]}})
+
+
+def _n_payload(items, day=DAY):
+    return json.dumps({"status": "OK", "response": {"docs": [
+        {"headline": {"main": t}, "web_url": u, "pub_date": day + "T09:00:00Z"} for t, u in items]}})
+
+
+def _probe(_v):
+    return {"var_name": _v, "credential_present": True, "env_file_present": True, "declared_in_example": True}
+
+
+def _ready():
+    return {"credential_status": {"guardian": True, "nyt": True}}
+
+
+def _gate(**_kw):
+    return {
+        "actual_input_status": "no_actual_input", "external_input_required": True,
+        "actual_contact_evidence_found": False, "actual_returned_labels_found": False,
+        "returned_label_count": 0, "production_gold_count": 0, "synthetic_gold_count": 0,
+        "calibration_ready": False, "merge_gate_ready": False,
+        "input_directory": "outputs/reviewer_batch/intake",
+        "score_exposed": False, "rationale_exposed": False, "predicted_status_exposed": False,
+        "raw_pii_exposed": False, "no_public_intelligence_unit": True, "merge_allowed": False,
+        "db_write": False, "llm_invoked": False, "embedding_invoked": False,
+        "next_actions": [], "block_reasons": [],
+    }
+
+
+def _synth(**_kw):
+    return {"batch_frozen": True, "pilot_batch_is_production_candidate": False,
+            "batch_id": "synthetic_pilot", "frozen_pair_count": 4}
+
+
+def _tf_lift(seed_id, provider):
+    """below-floor same-event paraphrase(fed≡federal reserve) → probe 가 routing 으로 lift."""
+    if provider == "guardian":
+        return lambda _u: _g_payload([("Fed raises rates again", "https://g/fed")])
+    return lambda _u: _n_payload([("Federal Reserve lifts interest rates", "https://nyt/fed")])
+
+
+def _tf_no_lift(seed_id, provider):
+    """cross pair·entity 공유하나 정규화 후도 routing floor 미달 → no_lift(different-events/normalization 한계)."""
+    if provider == "guardian":
+        return lambda _u: _g_payload([("Federal Reserve holds interest rates steady amid inflation", "https://g/a")])
+    return lambda _u: _n_payload([("Fed keeps rates unchanged as policymakers weigh economy", "https://nyt/a")])
+
+
+def _tf_zero_overlap(seed_id, provider):
+    """양 provider 가 records 반환(live 실행)하나 다른 날짜 → cross-source same-date 비교쌍 0(overlap 부재)."""
+    if provider == "guardian":
+        return lambda _u: _g_payload([("Federal Reserve rate decision announced", "https://g/a")], day="2026-06-22")
+    return lambda _u: _n_payload([("Supreme Court issues major ruling", "https://nyt/a")], day="2026-06-10")
+
+
+def _run_live(tf, *, live_query=True):
+    return dea.run_discrete_event_acquisition_and_recall_probe(
+        live_query=live_query, seeds=[dea.DISCRETE_EVENT_SEEDS[0]],
+        transport_factory=tf, env_probe_fn=_probe, readiness_fn=_ready, gate_fn=_gate, synthetic_batch_fn=_synth)
+
+
+def test_live_recall_lift_found_on_actual_pair():
+    """ADR#80: 실 cross-source below-floor pair 를 probe 가 lift → live_recall_lift_found(reviewer-routing 후보)."""
+    out = _run_live(_tf_lift)
+    assert out["targeted_live_query_executed"] is True
+    assert out["live_recall_probe_applied"] is True
+    assert out["live_recall_lift_status"] == "live_recall_lift_found"
+    assert out["live_pairs_newly_routed_by_probe"] >= 1
+    assert out["live_pairs_sharing_entity_after_probe"] >= 1
+    assert out["max_live_recall_probe_score"] >= 0.2
+    assert out["recall_probe_root_cause_refinement"]["live_frontier_verdict"] == "live_recall_lift_found"
+
+
+def test_live_recall_lift_found_never_merge_or_gold():
+    """ADR#80 불변: live lift 가 나와도 merge 0·same_event 0·gold 0(reviewer-routing 후보일 뿐)."""
+    out = _run_live(_tf_lift)
+    assert out["merge_allowed"] is False
+    assert out["recall_probe_applies_to_merge"] is False
+    assert out["same_event_truth_exposed"] is False
+    assert out["production_gold_count"] == 0
+    assert out["current_r1_gap"] == 200
+
+
+def test_live_no_recall_lift_when_below_floor():
+    """ADR#80: cross pair 존재·probe 가 정규화는 했으나 routing floor 미달 → live_no_recall_lift(same-event 단정 아님)."""
+    out = _run_live(_tf_no_lift)
+    assert out["targeted_live_query_executed"] is True
+    assert out["live_recall_probe_applied"] is True              # cross pair 존재→probe 적용됨.
+    assert out["live_recall_lift_status"] == "live_no_recall_lift"
+    assert out["live_pairs_newly_routed_by_probe"] == 0
+    # probe 가 정규화로 score 를 만들었으나(>0·entity federalreserve 공유) routing floor(0.2) 미달 → 미lift.
+    assert 0.0 < out["max_live_recall_probe_score"] < 0.2
+
+
+def test_live_no_recall_lift_when_zero_comparison_pairs():
+    """ADR#80: live 실행됐으나 cross-source 비교쌍 0(overlap 부재·breadth lever) → live_no_recall_lift(blocked 아님)."""
+    out = _run_live(_tf_zero_overlap)
+    assert out["targeted_live_query_executed"] is True           # 양 provider records→실행됨(blocked 아님).
+    assert out["comparison_pair_count"] == 0                     # 다른 날짜→same-date cross pair 0.
+    assert out["live_recall_probe_applied"] is False             # live pair 부재→probe 미적용(None).
+    assert out["live_recall_lift_status"] == "live_no_recall_lift"
+    assert out["live_pairs_newly_routed_by_probe"] == 0
+
+
+def test_live_blocked_when_not_opted_in():
+    """ADR#80: live 미실행 → live_blocked_by_rate_or_opt_in(코드 실패 아닌 실행 블록·data 판정 아님)."""
+    out = _run_live(_tf_lift, live_query=False)
+    assert out["targeted_live_query_executed"] is False
+    assert out["live_recall_probe_applied"] is False
+    assert out["live_recall_lift_status"] == "live_blocked_by_rate_or_opt_in"
+    assert out["live_recall_lift_blocked_reason"]              # 실행 블록 사유 명시.
+
+
+def test_live_recall_frontier_aggregate_only_no_per_pair_score():
+    """ADR#80 §8: internal ops frontier 는 max aggregate + newly-routed count 만(per-pair score 미노출)."""
+    out = _run_live(_tf_lift)
+    fr = out["internal_ops_discrete_acquisition_frontier"]
+    assert "max_live_recall_probe_score" in fr
+    assert "live_pairs_newly_routed_by_probe" in fr
+    assert "live_recall_lift_status" in fr
+    assert "top_lift_samples" not in fr and "recall_probe_score" not in fr   # per-pair 미노출(aggregate only).
+    assert "Newly routed does not mean same event" in fr["required_copy"]
+    assert "Recall probe is reviewer-routing only, not merge" in fr["required_copy"]
+
+
+def test_live_recall_output_pii_safe():
+    """ADR#80: live 적용 출력에 exact score/rationale/predicted_status 키 0(재귀 가드 통과)."""
+    out = _run_live(_tf_lift)
+    blob = json.dumps(out, ensure_ascii=False)
+    assert '"score":' not in blob
+    assert '"rationale":' not in blob
+    assert '"predicted_status":' not in blob

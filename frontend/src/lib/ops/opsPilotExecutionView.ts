@@ -314,6 +314,8 @@ export function r1FrontierWarnings(
 export const OPS_DISCRETE_COPY = {
   recallProbeRoutingOnly: "Recall probe is reviewer-routing only, not merge",
   liftNotSameEvent: "Recall probe lift on synthetic does not assert same-event on live frontier",
+  newlyRoutedNotSameEvent: "Newly routed does not mean same event", // ADR#80 §7 required copy.
+  productionGoldZero: "Production gold remains 0 until human labels are returned", // ADR#80 §7 required copy.
   zeroNotProof: "Near-match 0 does not prove no same event",
   worklistNotTruth: "Production candidate is reviewer worklist, not truth",
   goldZeroUntilLabels: "R1 gold remains 0 until human labels are returned",
@@ -340,6 +342,9 @@ export function toR1DiscreteFrontierDisplayRows(
     { label: "Recall probe pairs newly routed", value: `${f.recall_probe_pairs_newly_routed}` },
     { label: "Recall probe applies to merge", value: String(f.recall_probe_applies_to_merge) },
     { label: "Recall probe lever demonstrated (synthetic)", value: String(f.recall_probe_lever_demonstrated) },
+    { label: "Live recall lift status", value: f.live_recall_lift_status },
+    { label: "Live recall probe max score (routing signal, not truth)", value: `${f.max_live_recall_probe_score}` },
+    { label: "Live pairs newly routed by probe (not same-event)", value: `${f.live_pairs_newly_routed_by_probe}` },
     { label: "Live candidate pairs (comparison, not match)", value: `${f.live_candidate_count}` },
     { label: "Production candidate status", value: f.production_candidate_status },
     { label: "Blocked reason", value: f.blocked_reason || "(none)" },
@@ -361,9 +366,13 @@ export function r1DiscreteFrontierWarnings(
   };
   ensure(OPS_DISCRETE_COPY.recallProbeRoutingOnly);
   ensure(OPS_DISCRETE_COPY.liftNotSameEvent);
+  ensure(OPS_DISCRETE_COPY.newlyRoutedNotSameEvent);
   ensure(OPS_DISCRETE_COPY.zeroNotProof);
   ensure(OPS_DISCRETE_COPY.worklistNotTruth);
-  if (f.production_gold_count === 0) ensure(OPS_DISCRETE_COPY.goldZeroUntilLabels);
+  if (f.production_gold_count === 0) {
+    ensure(OPS_DISCRETE_COPY.goldZeroUntilLabels);
+    ensure(OPS_DISCRETE_COPY.productionGoldZero);
+  }
   if (f.r2_r7_no_go) ensure(OPS_DISCRETE_COPY.laddersNoGo);
   return out;
 }

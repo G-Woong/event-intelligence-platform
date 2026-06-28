@@ -249,7 +249,11 @@ class InternalOpsAcquisitionFrontierStatus(BaseModel):
 
 
 class InternalOpsDiscreteAcquisitionFrontier(BaseModel):
-    """ADR#79 — discrete-event acquisition + deterministic recall probe frontier(read-only·public truth 아님).
+    """ADR#79/#80 — discrete-event acquisition + deterministic recall probe frontier(read-only·public truth 아님).
+
+    ADR#80: recall probe 를 ACTUAL live cross-source pair 에 적용한 결과를 **max aggregate + newly-routed count +
+    3분류 status**(live_recall_lift_found/live_no_recall_lift/live_blocked_by_rate_or_opt_in)로만 노출(per-pair score
+    미노출). newly routed 는 same-event 단정이 아니다(required_copy 명시).
 
     `r1_discrete_event_acquisition.run_discrete_event_acquisition_and_recall_probe` 의 sanitized
     `internal_ops_discrete_acquisition_frontier` 를 미러한다. discrete-event seed(shape·source)·near-match gap
@@ -270,6 +274,11 @@ class InternalOpsDiscreteAcquisitionFrontier(BaseModel):
     recall_probe_pairs_newly_routed: int
     recall_probe_applies_to_merge: bool
     recall_probe_lever_demonstrated: bool
+    # ADR#80 — recall probe 를 ACTUAL live cross-source pair 에 적용한 결과(aggregate only·per-pair score 미노출·§8).
+    max_live_recall_probe_score: float
+    live_pairs_newly_routed_by_probe: int
+    live_recall_lift_status: str       # live_recall_lift_found / live_no_recall_lift / live_blocked_by_rate_or_opt_in.
+    live_frontier_verdict: str
     live_candidate_count: int
     production_candidate_status: str
     blocked_reason: str

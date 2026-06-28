@@ -326,6 +326,11 @@ export interface InternalOpsDiscreteAcquisitionFrontier {
   recall_probe_pairs_newly_routed: number;
   recall_probe_applies_to_merge: boolean;
   recall_probe_lever_demonstrated: boolean;
+  // ADR#80 — recall probe applied to ACTUAL live cross-source pairs (aggregate only; per-pair score not exposed).
+  max_live_recall_probe_score: number;
+  live_pairs_newly_routed_by_probe: number;
+  live_recall_lift_status: string; // live_recall_lift_found / live_no_recall_lift / live_blocked_by_rate_or_opt_in
+  live_frontier_verdict: string;
   live_candidate_count: number;
   production_candidate_status: string;
   blocked_reason: string;

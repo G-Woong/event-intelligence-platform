@@ -285,6 +285,22 @@
 >
 > **구현/검증**: 신규 `r1_reviewer_pilot_batch.py`(`run_actual_input_gate` 단일 호출 re-check + 순수 builder freeze[`_frozen_pair_list` allowlist 파생·`_batch_signature` sha256·`_launch_status` 5-state·`build_operator_launch_checklist`]·`candidate_provenance=synthetic_fixture`·`pilot_batch_is_production_candidate=False`·전체 출력 재귀 PII 가드)+`reviewer_batch_launch.py`(`build_intake_plan` +`intake_dir` override·additive·기존 호출 무영향)+`schemas/internal_ops.py`(+`InternalOpsR1PilotBatchStatus`)+`api/internal_ops.py`(+`GET /api/internal/ops/r1-pilot-batch`·이중 게이트·read-only·503 sanitize·기존 무변경)+frontend(types +1·opsPilotExecutionView +toR1BatchDisplayRows/r1BatchWarnings/OPS_R1_BATCH_COPY·page +launch-readiness 패널·warnings dedupe·node:test +6). 신규 backend 테스트 **44**(r1 batch 36+API 8)·frontend **+6**·ruff(E/F/I/B/W−E501) **0**·ingestion **1353p**·frontend tsc0/lint0/test38·backend 비-live **1391p/101skip/0fail**·**production_gold_count 0·r1_status blocked_no_labels·frozen 5<<target 200(pilot_n)·launch_status ready_for_manual_launch**·merge/전송/입력 날조/secret 값 노출 0. 합성 fixture→production gold 둔갑 0(**template dataset_source=synthetic 태깅→라벨 회수해도 production gold 미승격·machinery 강제**). 신규 RISK 1(R-BatchFreezeAsTruth LOW). 부분진전 R-GoldAcquisitionPlanOnly/R-ReviewerPilotExecution/R-IdentityHumanLabeling/R-ReviewerAgreement/R-GoldSamplingBias/R-IdentityEvalDataset. **adversarial PROCEED-WITH-FIXES**(HIGH-1 template synthetic 태깅[machinery 강제]·MEDIUM-1 dry-run hard-stop 수정)·**code-review LGTM-WITH-NITS**(triple-consistency 22==22==22).
 
+> **ADR#80 — live discrete-event run + recall probe를 LIVE pair에 적용 + 3분류 + provider breadth**
+>
+> **선행**: ADR#79 안정 기준점 커밋(`7f3ef11`·20파일·지정 subject·closeout 25==25·NO UPSTREAM).
+>
+> **문제(§2·10문항)**: ADR#79 recall probe 는 synthetic fixture 에만 적용·실 live below-floor 쌍 (i)/(ii) 미분리. 코드 6개 정독: live pair 의 title 은 `cross_source_live_overlap_smoke` 내부 `disc["candidate_pairs"]` 에만 존재·`summarize_recall_probe` 가 동일 구조 → 최소 변경=**title 이 사는 smoke 레이어 1곳**·전문 노출 확대 0.
+>
+> **옵션 결정(§3·§4)**: **A+B(discrete-event live·승인 시)+C(live pair recall probe·핵심)+D+E+F 채택·G/H 금지.** per-turn live 승인 질의→**user 'Option 2 — bounded 실 네트워크 live run'**(1 seed·1d·Guardian/NYT·host_gate·raw body 0·secret 0·flaky 명시·코드/provider/data 실패 분리).
+>
+> **구현(§3·전부 additive·신규 0)**: smoke `emit_recall_probe`+`_build_recall_probe_diagnostic`(cross-source candidate_pairs 에 `summarize_recall_probe`·body-free)→targeted `_aggregate_recall_probe_diagnostic`(seed별 집계·`live_recall_probe_diagnostic`)→discrete `_classify_live_recall_lift` **3분류**(`live_recall_lift_found`/`live_no_recall_lift`/`live_blocked_by_rate_or_opt_in`)+`refine_root_cause_with_recall_probe` live verdict. internal ops +4 필드(`max_live_recall_probe_score`·`live_pairs_newly_routed_by_probe`·`live_recall_lift_status`·`live_frontier_verdict`·aggregate only)·**dict==pydantic==TS 26==26==26**·필수 문구("Newly routed does not mean same event"·"Production gold remains 0…"). merge_allowed=False·same_event 단정 0·AST merge 분리 유지.
+>
+> **🔴 실 LIVE RUN(§4·user 승인·측정·flaky)**: seed=SCOTUS "Supreme Court ruling"·1d·Guardian+NYT·2 calls·host_gate 준수·raw body 0·secret 0 → **comparison_pair_count=100·`live_recall_lift_status=live_no_recall_lift`·max_live 0.1765(<0.2)·newly_routed 0**·`blocked_no_publishable_pairs`·gold 0·gap 200·merge/llm/embedding/db False·`RESULT_CLASS: LIVE_OK`(코드 정상). **synthetic 성공(0.333)이 live seed(0.1765·lift 0)에 일반화 안 됨 실측**.
+>
+> **정직 해석(§5·단정 0)**: live lift 0(100쌍)·comparison_pair=100>0 → (ii) different-events 또는 정규화 사전 한계 쪽이나 **reviewer 라벨 없이 same/different 단정 0**. broad-lean seed → 더 좁은 single-ruling seed 재측정 필요. merge 불변.
+>
+> **검증/RISK**: **backend 전체 1549p/101skip/0fail**(975.89s·1535+14)·신규 smoke+4/targeted+4/discrete+6·frontend tsc0/lint0/test+3(46→49)·ruff 0·secret PASS·docs_lifecycle 0·dict==pydantic==TS 26. 신규 R-LiveRecallProbeGeneralization(MEDIUM·실측)·R-DiscreteEventSeedBias/R-AcquisitionFrontierPersistence/R-KOAnalyzerDependency(LOW). 부분진전 R-DeterministicNearMatchRecall(live lift 0)·R-CrossSourceNearMatchGap·R-ProviderPairNarrowness·R-LiveAcquisitionRateBudget·종결 0.
+>
 > **ADR#79 — discrete-event acquisition + deterministic recall probe(reviewer-routing recall·merge 분리) + provider breadth**
 >
 > **선행**: ADR#78 안정 기준점 커밋(`03829e4`·20파일·제공 메시지 그대로·NO UPSTREAM).

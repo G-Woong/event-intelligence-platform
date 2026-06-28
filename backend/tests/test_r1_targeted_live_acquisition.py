@@ -363,3 +363,50 @@ def test_adr77_baseline_preserved_as_counts_only():
 ])
 def test_six_state_classification_matrix(tf, expected):
     assert _run(tf)["production_candidate_status"] == expected
+
+
+# ── ADR#80: live recall probe aggregation(targeted 레이어·reviewer-routing only·merge 0) ──────────────────
+def _tf_lift(seed_id, provider):
+    """below-floor same-event paraphrase(fed≡federal reserve) → recall probe 가 routing 으로 lift."""
+    if provider == "guardian":
+        return lambda _u: _g_payload([("Fed raises rates again", "https://g/fed")])
+    return lambda _u: _n_payload([("Federal Reserve lifts interest rates", "https://nyt/fed")])
+
+
+def _run_rp(tf, *, live_query=True):
+    return run_targeted_live_acquisition_and_near_match_diagnostic(
+        live_query=live_query, seeds=[TARGETED_QUERY_SEEDS[0]], emit_recall_probe=True,
+        transport_factory=tf, env_probe_fn=_probe, readiness_fn=_ready, gate_fn=_gate, synthetic_batch_fn=_synth)
+
+
+def test_live_recall_probe_aggregated_on_lift():
+    """ADR#80: emit_recall_probe=True + below-floor live pair → live_recall_probe_diagnostic 집계(newly-routed·entity)."""
+    r = _run_rp(_tf_lift)
+    assert r["live_recall_probe_diagnostic"] is not None
+    assert r["live_pairs_newly_routed_by_probe"] >= 1
+    assert r["live_pairs_sharing_entity_after_probe"] >= 1
+    assert r["max_live_recall_probe_score"] >= 0.2
+    assert r["merge_allowed"] is False and r["same_event_truth_asserted"] is False
+
+
+def test_live_recall_probe_none_when_not_opted_in():
+    """opt-in off → live pair 부재 → live_recall_probe_diagnostic None·max 0(정직)."""
+    r = _run_rp(_tf_lift, live_query=False)
+    assert r["live_recall_probe_diagnostic"] is None
+    assert r["max_live_recall_probe_score"] == 0.0
+    assert r["live_pairs_newly_routed_by_probe"] == 0
+
+
+def test_live_recall_probe_default_off_preserves_adr78():
+    """emit_recall_probe 기본 off → live_recall_probe_diagnostic None(ADR#78 동작 보존·additive)."""
+    r = _run(_tf_lift)
+    assert r["live_recall_probe_diagnostic"] is None
+
+
+def test_live_recall_probe_output_pii_safe():
+    """ADR#80: live recall 집계가 들어가도 출력에 exact score/rationale/predicted_status 키 0(재귀 가드 통과)."""
+    r = _run_rp(_tf_lift)
+    blob = json.dumps(r, ensure_ascii=False)
+    assert '"score":' not in blob
+    assert '"rationale":' not in blob
+    assert '"predicted_status":' not in blob

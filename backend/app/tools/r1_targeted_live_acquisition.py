@@ -38,6 +38,7 @@ from backend.app.tools.cross_source_live_overlap_smoke import (
     _PROVIDER_A,
     run_cross_source_live_overlap_smoke,
 )
+from backend.app.tools.near_match_recall_probe import DEFAULT_ROUTING_FLOOR
 from backend.app.tools.r1_production_candidate_acquisition import (
     PCAND_BLOCKED_STATES,
     PROD_BATCH_ID,
@@ -463,6 +464,39 @@ def _aggregate_band_diagnostic(results: list[tuple[dict, dict]]) -> Optional[dic
     }
 
 
+def _aggregate_recall_probe_diagnostic(results: list[tuple[dict, dict]]) -> Optional[dict]:
+    """ADR#80 — seed 별 live recall_probe_diagnostic 합산(reviewer-routing recall·merge 0·body 0).
+
+    각 seed smoke 의 recall_probe_diagnostic(summarize_recall_probe 출력)을 합산: max score/lift·newly-routed 합·
+    entity 공유 합·top-lift 샘플 top-k(공유 정규화 토큰·feature 만·제목 전문 0). 전부 None 이면 None(live pair 부재).
+    per-pair score 는 internal diagnostic — 소비처 frontier 는 max aggregate·newly-routed count 만 surface(§8)."""
+    rps = [s.get("recall_probe_diagnostic") for _seed, s in results if s.get("recall_probe_diagnostic")]
+    if not rps:
+        return None
+    samples: list[dict] = []
+    for r in rps:
+        samples.extend(r.get("top_lift_samples") or [])
+    samples.sort(key=lambda s: (s.get("recall_lift") or 0.0, s.get("recall_probe_score") or 0.0), reverse=True)
+    return {
+        "probe_name": "near_match_recall_probe",
+        "candidate_pair_count": sum(int(r.get("candidate_pair_count") or 0) for r in rps),
+        "max_recall_probe_score": round(max((float(r.get("max_recall_probe_score") or 0.0) for r in rps), default=0.0), 4),
+        "max_recall_lift": round(max((float(r.get("max_recall_lift") or 0.0) for r in rps), default=0.0), 4),
+        "pairs_newly_routed_by_probe": sum(int(r.get("pairs_newly_routed_by_probe") or 0) for r in rps),
+        "pairs_newly_routed_sharing_entity": sum(int(r.get("pairs_newly_routed_sharing_entity") or 0) for r in rps),
+        "top_lift_samples": samples[:5],
+        "routing_floor": rps[0].get("routing_floor"),
+        "seed_recall_probe_diagnostic_count": len(rps),
+        "recall_probe_applies_to_reviewer_routing_only": True,
+        "recall_probe_applies_to_merge": False,
+        "score_exposed_to_reviewer": False,
+        "score_exposed_to_public": False,
+        "same_event_asserted": False,
+        "raw_body_stored": False,
+        "merge_allowed": False,
+    }
+
+
 def _acquisition_strategy_next(gap: dict, production_candidate_status: str) -> dict:
     """진단 + status → 다음 acquisition 전략(기계적·LLM 0). near-match 0 을 LLM 으로 바로 점프하지 않는다."""
     status = gap.get("near_match_gap_status")
@@ -504,6 +538,7 @@ def _acquisition_strategy_next(gap: dict, production_candidate_status: str) -> d
 def run_targeted_live_acquisition_and_near_match_diagnostic(
     *, directory: Optional[Any] = None, batch_id: str = PROD_BATCH_ID, as_of: Optional[str] = None,
     live_query: bool = False, seeds: Optional[list[dict]] = None,
+    emit_recall_probe: bool = False, recall_routing_floor: float = DEFAULT_ROUTING_FLOOR,
     transport_factory: Optional[Callable[[str, str], Optional[Callable[[str], Optional[str]]]]] = None,
     env_probe_fn: Optional[Callable[[str], dict]] = None, host_gate: Any = None,
     readiness_fn: Optional[Callable[[], dict]] = None, gate_fn: Optional[Callable[..., dict]] = None,
@@ -532,13 +567,16 @@ def run_targeted_live_acquisition_and_near_match_diagnostic(
             topic=s["topic"], topic_key=s.get("topic_key", s["seed_id"]),
             time_window=s.get("time_window", "1d"), live_query=live_query,
             transport_a=ta, transport_b=tb, env_probe_fn=env_probe_fn, host_gate=host_gate,
-            emit_band_diagnostic=True)
+            emit_band_diagnostic=True, emit_recall_probe=emit_recall_probe,
+            recall_routing_floor=recall_routing_floor)
         results.append((s, smoke))
 
     best_smoke = _select_best_smoke(results)
     live_call_count = _live_call_count(results)
     live_call_performed = any(bool(sm.get("live_query_attempted")) for _s, sm in results)
     agg_band = _aggregate_band_diagnostic(results)
+    # ADR#80: seed 별 live recall probe 집계(emit_recall_probe 시·live pair 존재 시 dict; 아니면 None).
+    agg_recall_probe = _aggregate_recall_probe_diagnostic(results)
 
     # ── near-match gap 진단(§5·양가 보존) ──
     gap = classify_near_match_gap(
@@ -623,6 +661,12 @@ def run_targeted_live_acquisition_and_near_match_diagnostic(
         "root_cause_confidence": gap["root_cause_confidence"],
         "diagnostic_basis": gap["diagnostic_basis"],
         "band_diagnostic": agg_band,
+        # ADR#80: live cross-source pair 에 적용한 recall probe 집계(emit_recall_probe 시·live pair 존재 시 dict).
+        # reviewer-routing recall only·merge 0·per-pair score internal(소비처 frontier 는 aggregate 만 surface·§8).
+        "live_recall_probe_diagnostic": agg_recall_probe,
+        "max_live_recall_probe_score": (agg_recall_probe or {}).get("max_recall_probe_score", 0.0),
+        "live_pairs_newly_routed_by_probe": (agg_recall_probe or {}).get("pairs_newly_routed_by_probe", 0),
+        "live_pairs_sharing_entity_after_probe": (agg_recall_probe or {}).get("pairs_newly_routed_sharing_entity", 0),
         "raw_body_stored": False,
         "same_event_truth_asserted": False,
         # targeted live acquisition(§6·opt-in·governed).

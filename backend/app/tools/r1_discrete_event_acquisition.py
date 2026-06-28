@@ -45,6 +45,47 @@ from backend.app.tools.reviewer_pilot_handoff import _assert_pii_safe
 
 OPERATION_NAME = "r1_discrete_event_acquisition_and_recall_probe"
 
+# ── §3 live recall-probe 3분류(코드 실패 vs provider/seed/data 실패 분리·정직) ───────────────────────────────
+# live_recall_lift_found: live fetch 성공·probe 가 below-floor live pair 를 reviewer-routing 으로 올림((i) lever live 작동).
+# live_no_recall_lift: live fetch 성공·비교쌍 비교했으나 probe lift 0(different-events 또는 overlap 부재 — same-event 단정 아님).
+# live_blocked_by_rate_or_opt_in: live fetch 미실행(opt-in off/host_gate/rate-limit/credential/network — data 판정 아님).
+LIVE_RECALL_LIFT_FOUND = "live_recall_lift_found"
+LIVE_NO_RECALL_LIFT = "live_no_recall_lift"
+LIVE_BLOCKED_BY_RATE_OR_OPT_IN = "live_blocked_by_rate_or_opt_in"
+
+
+def _classify_live_recall_lift(
+    *, live_executed: bool, comparison_pair_count: int, live_diag: Optional[dict],
+) -> dict:
+    """live recall probe 결과 → 3분류(§3·코드 실패 vs provider/seed/data 실패 분리). same_event 단정 0.
+
+    live 미실행 → blocked(rate/opt-in/host_gate/credential·data 판정 아님). live 실행+probe lift>0 → lift_found
+    ((i) detector-miss lever 가 ACTUAL pair 에서 작동·reviewer-routing 후보 신호일 뿐 merge/same-event 아님). live
+    실행+lift 0 → no_lift(comparison_pair>0 이면 different-events/normalization 한계, =0 이면 overlap 부재=breadth)."""
+    newly = int((live_diag or {}).get("pairs_newly_routed_by_probe") or 0)
+    entity = int((live_diag or {}).get("pairs_newly_routed_sharing_entity") or 0)
+    if not live_executed:
+        status = LIVE_BLOCKED_BY_RATE_OR_OPT_IN
+        reason = ("live cross-source fetch did not execute (opt-in off / host_gate / rate-limit / missing "
+                  "credentials / network) — no live pairs to probe; this is an execution block, not a data verdict")
+    elif newly > 0:
+        status = LIVE_RECALL_LIFT_FOUND
+        reason = ""
+    elif comparison_pair_count > 0:
+        status = LIVE_NO_RECALL_LIFT
+        reason = ("live ran and compared pairs but the probe lifted none into reviewer routing — either "
+                  "different-events under the seed or a normalization-dictionary limit; NOT a same-event verdict")
+    else:
+        status = LIVE_NO_RECALL_LIFT
+        reason = ("live ran but produced 0 cross-source comparison pairs (overlap absence) — a provider-breadth "
+                  "lever, not a detector or recall-probe limit")
+    return {
+        "live_recall_lift_status": status,
+        "live_recall_lift_blocked_reason": reason,
+        "live_pairs_newly_routed_by_probe": newly,
+        "live_pairs_sharing_entity_after_probe": entity,
+    }
+
 # ── discrete-event seed 검증 어휘(§5: 단일 이산 사건·1d·named entity·event phrase; broad umbrella 거부) ─────────
 # event phrase 명사(이산 사건 신호) — entity 만 있는 broad anchor 와 구분.
 _EVENT_NOUNS = frozenset({
@@ -125,25 +166,63 @@ def _recall_probe_section(routing_floor: float) -> dict:
     return summary
 
 
-def refine_root_cause_with_recall_probe(gap: dict, probe_summary: dict) -> dict:
+def refine_root_cause_with_recall_probe(
+    gap: dict, probe_summary: dict, *,
+    live_diag: Optional[dict] = None, live_classification: Optional[dict] = None,
+) -> dict:
     """recall probe 결과로 (i)/(ii) 분리를 **구조적으로 진전**시키되 단정하지 않는다(ambiguity 보존).
 
-    probe 가 synthetic 에서 lever 작동(below-floor 같은-사건 lift)을 증명 → (i) recall-miss 는 **실재하고 고칠 수
-    있는 경로**임이 확인됨. 그러나 실 ADR#77/#78 below-floor 쌍이 (i)인지 (ii)인지는 **discrete-event 1d live
-    candidate pair 에 probe 를 적용해야** 알 수 있다(이번 턴 user opt synthetic-only → 미실행). same_event 단정 0."""
+    synthetic probe 가 lever 작동(below-floor 같은-사건 lift)을 증명 → (i) recall-miss 는 실재·고칠 수 있는 경로.
+    ADR#80: probe 를 **discrete-event LIVE candidate pair 에 적용**한 결과(live_classification)로 live_frontier_verdict
+    를 3분류(lift_found/no_lift/blocked)로 갱신한다. live lift 가 나와도 **same_event 단정 0·merge 0·reviewer-routing
+    후보일 뿐** — reviewer 라벨 필요. live 미적용(diag None) 시 synthetic-only deferred verdict 유지(정직)."""
     lifted = int(probe_summary.get("pairs_newly_routed_by_probe") or 0)
     entity_lifts = int(probe_summary.get("pairs_newly_routed_sharing_entity") or 0)
+    lc = live_classification or {}
+    live_status = lc.get("live_recall_lift_status")
+    live_newly = int(lc.get("live_pairs_newly_routed_by_probe") or 0)
+    live_entity = int(lc.get("live_pairs_sharing_entity_after_probe") or 0)
+    live_applied = live_diag is not None
+
+    if live_status == LIVE_RECALL_LIFT_FOUND:
+        verdict = LIVE_RECALL_LIFT_FOUND
+        interp = (
+            f"the recall probe lifted {live_newly} ACTUAL live cross-source below-floor pair(s) into reviewer "
+            f"routing ({live_entity} sharing an entity-canonical token) — the (i) detector-miss lever fired on real "
+            "Guardian/NYT pairs. this is a REVIEWER-ROUTING candidate signal, NOT a same-event assertion and NOT a "
+            "merge; reviewer labels remain required. newly routed does not mean same event")
+    elif live_status == LIVE_NO_RECALL_LIFT:
+        verdict = LIVE_NO_RECALL_LIFT
+        interp = (
+            "the recall probe applied to ACTUAL live cross-source pairs lifted none into reviewer routing — the live "
+            "below-floor pairs are either different-events under the seed or beyond the curated normalization "
+            "dictionary (or no cross-source overlap was produced). this does NOT assert same/different event; it "
+            "points to provider-breadth / KO-source levers next. merge path untouched")
+    elif live_status == LIVE_BLOCKED_BY_RATE_OR_OPT_IN:
+        verdict = LIVE_BLOCKED_BY_RATE_OR_OPT_IN
+        interp = (
+            "the live cross-source fetch did not execute (opt-in off / host_gate / rate-limit / missing credentials "
+            "/ network) so the probe had no live pairs to apply to — this is an EXECUTION block, separate from any "
+            "data verdict. the synthetic lever still holds; retry the bounded live run (seed dispersed across "
+            "turns/scheduled, host/rate honored). no same-event asserted")
+    else:
+        verdict = "deferred_no_live_candidate_pairs_this_turn"
+        interp = (
+            "recall probe lifts KNOWN below-floor same-event paraphrases into reviewer routing via "
+            "organization/acronym alias + light stemming (the (i) recall-miss lever is real on known synthetic "
+            "cases). the ACTUAL live below-floor pairs were not probed this turn (live not applied); separating (i)/"
+            "(ii) requires applying the probe to discrete-event 1d LIVE pairs. no same-event asserted; merge untouched")
+
     return {
         "recall_probe_lever_demonstrated": lifted > 0,
         "known_paraphrase_pairs_lifted": lifted,
         "known_paraphrase_pairs_lifted_sharing_entity": entity_lifts,
-        "live_frontier_verdict": "deferred_no_live_candidate_pairs_this_turn",
-        "interpretation": (
-            "recall probe lifts KNOWN below-floor same-event paraphrases into reviewer routing via "
-            "organization/acronym alias + light stemming (the (i) recall-miss lever is real and works on known "
-            "synthetic cases). whether the ACTUAL ADR#77/#78 live below-floor pairs are (i) detector-miss or (ii) "
-            "different-events remains UNRESOLVED — separating them requires applying this probe to discrete-event "
-            "1d LIVE candidate pairs (deferred this turn). no same-event asserted; merge path untouched"),
+        "live_recall_probe_applied": live_applied,
+        "live_recall_lift_status": live_status,
+        "live_pairs_newly_routed_by_probe": live_newly,
+        "live_pairs_sharing_entity_after_probe": live_entity,
+        "live_frontier_verdict": verdict,
+        "interpretation": interp,
         "near_match_gap_status": gap.get("near_match_gap_status"),
         "root_cause_confidence": gap.get("root_cause_confidence"),
         "same_event_truth_asserted": False,
@@ -153,10 +232,12 @@ def refine_root_cause_with_recall_probe(gap: dict, probe_summary: dict) -> dict:
 def _discrete_acquisition_frontier(
     *, base_frontier: dict, seed_validations: list[dict], selected: Optional[dict],
     probe_summary: dict, refine: dict, provider_ready: bool, korean_ready: bool,
+    max_live_recall_probe_score: float,
 ) -> dict:
-    """§9 internal ops sanitized acquisition frontier(same_event truth·score·rationale·predicted·raw body·PII·secret 0).
+    """§7 internal ops sanitized acquisition frontier(same_event truth·per-pair score·rationale·predicted·raw body·PII·secret 0).
 
-    ADR#78 frontier 를 discrete-seed + recall-probe 표면으로 확장(read-only·public truth 아님)."""
+    ADR#78 frontier 를 discrete-seed + recall-probe 표면으로 확장(read-only·public truth 아님). ADR#80: live recall
+    probe 결과를 **max aggregate + newly-routed count + 3분류 status** 로만 surface(per-pair score 미노출·§8)."""
     return {
         "contract": "InternalOpsDiscreteAcquisitionFrontier",
         "discrete_event_seed_selected": selected.get("seed_id") if selected else None,
@@ -170,6 +251,11 @@ def _discrete_acquisition_frontier(
         "recall_probe_pairs_newly_routed": probe_summary.get("pairs_newly_routed_by_probe"),
         "recall_probe_applies_to_merge": False,
         "recall_probe_lever_demonstrated": refine.get("recall_probe_lever_demonstrated"),
+        # ADR#80 live recall probe(aggregate only·§8 — per-pair score 미노출).
+        "max_live_recall_probe_score": round(float(max_live_recall_probe_score or 0.0), 4),
+        "live_pairs_newly_routed_by_probe": refine.get("live_pairs_newly_routed_by_probe"),
+        "live_recall_lift_status": refine.get("live_recall_lift_status"),
+        "live_frontier_verdict": refine.get("live_frontier_verdict"),
         "live_candidate_count": base_frontier.get("live_candidate_count"),
         "production_candidate_status": base_frontier.get("production_candidate_status"),
         "blocked_reason": base_frontier.get("blocked_reason"),
@@ -180,10 +266,13 @@ def _discrete_acquisition_frontier(
         "current_r1_gap": base_frontier.get("current_r1_gap"),
         "production_gold_count": base_frontier.get("production_gold_count"),
         "r2_r7_no_go": True,
-        "required_copy": list(REQUIRED_OPS_COPY) + [
+        "required_copy": list(dict.fromkeys([
+            *REQUIRED_OPS_COPY,
             "Recall probe is reviewer-routing only, not merge",
             "Recall probe lift on synthetic does not assert same-event on live frontier",
-        ],
+            "Newly routed does not mean same event",                        # ADR#80 §7.
+            "Production gold remains 0 until human labels are returned",     # ADR#80 §7.
+        ])),
         "flags": {"no_public_truth": True, "no_same_event_truth": True, "no_score": True,
                   "no_rationale": True, "no_predicted_status": True, "no_raw_body": True, "no_secret": True},
     }
@@ -213,18 +302,28 @@ def run_discrete_event_acquisition_and_recall_probe(
     valid_input_seeds = [s for s, v in zip(use_seeds, seed_validations, strict=True) if v["valid"]]
     selected = valid_seeds_meta[0] if valid_seeds_meta else None
 
-    # ── ADR#78 targeted gate/diagnostic/provider/Korean 재사용(dry/live·둔갑 0) ──
+    # ── ADR#78 targeted gate/diagnostic/provider/Korean 재사용(dry/live·둔갑 0) + ADR#80 live recall probe 적용 ──
     base = run_targeted_live_acquisition_and_near_match_diagnostic(
         directory=directory, batch_id=batch_id, as_of=as_of, live_query=live_query,
         seeds=valid_input_seeds or None,
+        emit_recall_probe=True, recall_routing_floor=recall_routing_floor,
         transport_factory=transport_factory, env_probe_fn=env_probe_fn, host_gate=host_gate,
         readiness_fn=readiness_fn, gate_fn=gate_fn, synthetic_batch_fn=synthetic_batch_fn)
 
     # ── deterministic recall probe(Lane C·synthetic known-paraphrase·reviewer-routing only·merge 불변) ──
     probe_summary = _recall_probe_section(recall_routing_floor)
+
+    # ── ADR#80: recall probe 를 ACTUAL live cross-source pair 에 적용한 결과 3분류(코드 vs provider/data 실패 분리) ──
+    live_recall_diag = base.get("live_recall_probe_diagnostic")
+    live_classification = _classify_live_recall_lift(
+        live_executed=bool(base["targeted_live_query_executed"]),
+        comparison_pair_count=int(base["live_candidate_count"] or 0),
+        live_diag=live_recall_diag)
+    max_live_recall_probe_score = float(base.get("max_live_recall_probe_score") or 0.0)
     refine = refine_root_cause_with_recall_probe(
         {"near_match_gap_status": base["near_match_gap_status"],
-         "root_cause_confidence": base["root_cause_confidence"]}, probe_summary)
+         "root_cause_confidence": base["root_cause_confidence"]}, probe_summary,
+        live_diag=live_recall_diag, live_classification=live_classification)
 
     production_candidate_status = base["production_candidate_status"]
     blocked = production_candidate_status in PCAND_BLOCKED_STATES
@@ -239,7 +338,8 @@ def run_discrete_event_acquisition_and_recall_probe(
     discrete_frontier = _discrete_acquisition_frontier(
         base_frontier=base["internal_ops_acquisition_frontier"], seed_validations=seed_validations,
         selected=selected, probe_summary=probe_summary, refine=refine,
-        provider_ready=provider_ready, korean_ready=korean_ready)
+        provider_ready=provider_ready, korean_ready=korean_ready,
+        max_live_recall_probe_score=max_live_recall_probe_score)
 
     # block_reasons: discrete seed 거부 + base 승계(중복 제거).
     block_reasons: list[str] = list(base.get("block_reasons") or [])
@@ -284,13 +384,21 @@ def run_discrete_event_acquisition_and_recall_probe(
         "root_cause_confidence": base["root_cause_confidence"],
         "recall_probe_root_cause_refinement": refine,
         "same_event_truth_asserted": False,
-        # deterministic recall probe(Lane C·핵심).
+        # deterministic recall probe(Lane C·핵심) — synthetic known-paraphrase 검증(ADR#79 계약 보존).
         "max_recall_probe_score": probe_summary["max_recall_probe_score"],
         "recall_probe_summary": probe_summary,
         "deterministic_recall_probe_ready": True,
         "recall_probe_applies_to_reviewer_routing_only": True,
         "recall_probe_applies_to_merge": False,
         "normalization_features_tested": list(NORMALIZATION_FEATURES),
+        # ADR#80: recall probe 를 ACTUAL live cross-source pair 에 적용(reviewer-routing recall·merge 0·same_event 0).
+        "live_recall_probe_applied": live_recall_diag is not None,
+        "live_recall_lift_status": live_classification["live_recall_lift_status"],
+        "live_recall_lift_blocked_reason": live_classification["live_recall_lift_blocked_reason"],
+        "max_live_recall_probe_score": round(max_live_recall_probe_score, 4),
+        "live_pairs_newly_routed_by_probe": live_classification["live_pairs_newly_routed_by_probe"],
+        "live_pairs_sharing_entity_after_probe": live_classification["live_pairs_sharing_entity_after_probe"],
+        "live_recall_probe_diagnostic": live_recall_diag,
         # production candidate(ADR#76 gate 재사용·freeze-only-live-derived·둔갑 0).
         "production_candidate_status": production_candidate_status,
         "production_candidate_batch_ready": base["production_candidate_batch_ready"],
@@ -395,6 +503,11 @@ def main(argv: Optional[list[str]] = None) -> int:
           f"applies_to_merge={out['recall_probe_applies_to_merge']}")
     print(f"  · refinement: lever_demonstrated={out['recall_probe_root_cause_refinement']['recall_probe_lever_demonstrated']} "
           f"live_verdict={out['recall_probe_root_cause_refinement']['live_frontier_verdict']}")
+    print(f"- live_recall_probe: applied={out['live_recall_probe_applied']} status={out['live_recall_lift_status']} "
+          f"max_live_score={out['max_live_recall_probe_score']} live_newly_routed={out['live_pairs_newly_routed_by_probe']} "
+          f"(sharing_entity={out['live_pairs_sharing_entity_after_probe']})")
+    if out["live_recall_lift_blocked_reason"]:
+        print(f"  · live_note: {out['live_recall_lift_blocked_reason']}")
     print(f"- production_candidate: status={out['production_candidate_status']} provenance={out['candidate_provenance']} "
           f"frozen={out['production_frozen_pair_count']}")
     print(f"- plans: provider_breadth_ready={out['provider_breadth_plan_ready']} korean_ready={out['korean_source_path_ready']}")

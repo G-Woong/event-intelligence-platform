@@ -474,3 +474,59 @@ def test_36_band_diagnostic_emitted_body_free():
     for s in bd["top_below_floor_samples"]:
         assert set(s.keys()) >= {"shared_tokens", "title_token_jaccard", "source_role_left"}
         assert "title_left" not in s and "body" not in s   # 제목 전문/본문 키 부재.
+
+
+# ── ADR#80: live cross-source pair recall probe (37-40) ──────────────────────────────────────────────────
+def _g_lift(_url):
+    return _g_payload([("Fed raises rates again", "https://g.test/fed")])
+
+
+def _n_lift(_url):
+    return _n_payload([("Federal Reserve lifts interest rates", "https://nyt.test/fed")])
+
+
+def test_37_recall_probe_diagnostic_off_by_default():
+    """emit_recall_probe 기본 off → recall_probe_diagnostic None(ADR#64/#78 동작 보존)."""
+    out = _both_ok()
+    assert "recall_probe_diagnostic" in out
+    assert out["recall_probe_diagnostic"] is None
+    # opt-in off + emit_recall_probe 여도 live pair 부재 → None(정직).
+    assert run_cross_source_live_overlap_smoke(live_query=False, emit_recall_probe=True)["recall_probe_diagnostic"] is None
+
+
+def test_38_recall_probe_lifts_below_floor_live_pair():
+    """ADR#80: emit_recall_probe=True → below-floor cross-source live pair 를 reviewer-routing 으로 lift(entity 공유)."""
+    out = run_cross_source_live_overlap_smoke(
+        live_query=True, env_probe_fn=_probe(True), transport_a=_g_lift, transport_b=_n_lift,
+        emit_band_diagnostic=True, emit_recall_probe=True)
+    rp = out["recall_probe_diagnostic"]
+    assert isinstance(rp, dict)
+    assert rp["candidate_pair_count"] >= 1
+    assert rp["pairs_newly_routed_by_probe"] >= 1            # baseline<0.2 → 정규화 후 routing floor 넘김.
+    assert rp["pairs_newly_routed_sharing_entity"] >= 1      # federalreserve(fed≡federal reserve) 공유.
+    assert rp["max_recall_probe_score"] >= 0.2
+
+
+def test_39_recall_probe_never_merge_or_same_event():
+    """ADR#80 불변: recall probe lift 가 있어도 merge/same_event 0(reviewer-routing only)."""
+    out = run_cross_source_live_overlap_smoke(
+        live_query=True, env_probe_fn=_probe(True), transport_a=_g_lift, transport_b=_n_lift,
+        emit_recall_probe=True)
+    rp = out["recall_probe_diagnostic"]
+    assert rp["merge_allowed"] is False
+    assert rp["recall_probe_applies_to_merge"] is False
+    assert rp["same_event_asserted"] is False
+    assert rp["score_exposed_to_reviewer"] is False and rp["score_exposed_to_public"] is False
+    assert out["merge_allowed"] is False                     # smoke 자체도 merge 0.
+
+
+def test_40_recall_probe_diagnostic_body_free():
+    """ADR#80: recall_probe_diagnostic 는 제목 전문/secret/exact-score 키 미노출(공유 정규화 토큰·feature 만)."""
+    out = run_cross_source_live_overlap_smoke(
+        live_query=True, env_probe_fn=_probe(True), transport_a=_g_lift, transport_b=_n_lift,
+        emit_recall_probe=True)
+    blob = json.dumps(out["recall_probe_diagnostic"], ensure_ascii=False)
+    assert _SENTINEL not in blob
+    assert '"score":' not in blob              # exact forbidden key 부재(recall_probe_score 는 별 키·통과).
+    for s in out["recall_probe_diagnostic"]["top_lift_samples"]:
+        assert "title_left" not in s and "body" not in s and "raw_body" not in s

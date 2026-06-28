@@ -729,6 +729,8 @@ describe("ADR#78 acquisition frontier view", () => {
 const OPS_DISCRETE_COPY = {
   recallProbeRoutingOnly: "Recall probe is reviewer-routing only, not merge",
   liftNotSameEvent: "Recall probe lift on synthetic does not assert same-event on live frontier",
+  newlyRoutedNotSameEvent: "Newly routed does not mean same event",
+  productionGoldZero: "Production gold remains 0 until human labels are returned",
   zeroNotProof: "Near-match 0 does not prove no same event",
   worklistNotTruth: "Production candidate is reviewer worklist, not truth",
   goldZeroUntilLabels: "R1 gold remains 0 until human labels are returned",
@@ -752,6 +754,9 @@ function toR1DiscreteFrontierDisplayRows(f) {
     { label: "Recall probe pairs newly routed", value: `${f.recall_probe_pairs_newly_routed}` },
     { label: "Recall probe applies to merge", value: String(f.recall_probe_applies_to_merge) },
     { label: "Recall probe lever demonstrated (synthetic)", value: String(f.recall_probe_lever_demonstrated) },
+    { label: "Live recall lift status", value: f.live_recall_lift_status },
+    { label: "Live recall probe max score (routing signal, not truth)", value: `${f.max_live_recall_probe_score}` },
+    { label: "Live pairs newly routed by probe (not same-event)", value: `${f.live_pairs_newly_routed_by_probe}` },
     { label: "Live candidate pairs (comparison, not match)", value: `${f.live_candidate_count}` },
     { label: "Production candidate status", value: f.production_candidate_status },
     { label: "Blocked reason", value: f.blocked_reason || "(none)" },
@@ -769,9 +774,13 @@ function r1DiscreteFrontierWarnings(f) {
   };
   ensure(OPS_DISCRETE_COPY.recallProbeRoutingOnly);
   ensure(OPS_DISCRETE_COPY.liftNotSameEvent);
+  ensure(OPS_DISCRETE_COPY.newlyRoutedNotSameEvent);
   ensure(OPS_DISCRETE_COPY.zeroNotProof);
   ensure(OPS_DISCRETE_COPY.worklistNotTruth);
-  if (f.production_gold_count === 0) ensure(OPS_DISCRETE_COPY.goldZeroUntilLabels);
+  if (f.production_gold_count === 0) {
+    ensure(OPS_DISCRETE_COPY.goldZeroUntilLabels);
+    ensure(OPS_DISCRETE_COPY.productionGoldZero);
+  }
   if (f.r2_r7_no_go) ensure(OPS_DISCRETE_COPY.laddersNoGo);
   return out;
 }
@@ -791,6 +800,10 @@ const SAMPLE_DISCRETE_FRONTIER = {
   recall_probe_pairs_newly_routed: 2,
   recall_probe_applies_to_merge: false,
   recall_probe_lever_demonstrated: true,
+  max_live_recall_probe_score: 0.0,
+  live_pairs_newly_routed_by_probe: 0,
+  live_recall_lift_status: "live_blocked_by_rate_or_opt_in",
+  live_frontier_verdict: "live_blocked_by_rate_or_opt_in",
   live_candidate_count: 0,
   production_candidate_status: "blocked_no_live_opt_in",
   blocked_reason: "blocked_no_live_opt_in",
@@ -802,7 +815,9 @@ const SAMPLE_DISCRETE_FRONTIER = {
   required_copy: [
     "Near-match 0 does not prove no same event",
     "Recall probe is reviewer-routing only, not merge",
-    "Recall probe lift on synthetic does not assert same-event on live frontier",
+    "Newly routed does not mean same event",
+    "Production gold remains 0 until human labels are returned",
+    "R2~R7 remain No-Go",
   ],
   flags: {
     no_public_truth: true, no_same_event_truth: true, no_score: true, no_rationale: true,
@@ -861,5 +876,40 @@ describe("ADR#79 discrete acquisition + recall probe frontier view", () => {
       () => assertOpsContractSafe({ ...SAMPLE_DISCRETE_FRONTIER, extra: [{ same_event: true }] }),
       /forbidden field: same_event/,
     );
+  });
+
+  // ── ADR#80: live recall probe applied to ACTUAL pairs (aggregate only) ──
+  it("surfaces live recall probe as aggregate only (status + max score + newly-routed; no per-pair score)", () => {
+    const byLabel = Object.fromEntries(
+      toR1DiscreteFrontierDisplayRows(SAMPLE_DISCRETE_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Live recall lift status"], "live_blocked_by_rate_or_opt_in");
+    assert.equal(byLabel["Live recall probe max score (routing signal, not truth)"], "0");
+    assert.equal(byLabel["Live pairs newly routed by probe (not same-event)"], "0");
+  });
+
+  it("displays a live_recall_lift_found state without asserting same-event (still no forbidden field)", () => {
+    const lift = {
+      ...SAMPLE_DISCRETE_FRONTIER,
+      live_recall_lift_status: "live_recall_lift_found",
+      live_frontier_verdict: "live_recall_lift_found",
+      max_live_recall_probe_score: 0.3333,
+      live_pairs_newly_routed_by_probe: 1,
+      live_candidate_count: 1,
+    };
+    assert.doesNotThrow(() => assertOpsContractSafe(lift));
+    const byLabel = Object.fromEntries(
+      toR1DiscreteFrontierDisplayRows(lift).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Live recall lift status"], "live_recall_lift_found");
+    assert.equal(byLabel["Live recall probe max score (routing signal, not truth)"], "0.3333");
+    assert.equal(byLabel["Live pairs newly routed by probe (not same-event)"], "1");
+    assert.ok(r1DiscreteFrontierWarnings(lift).includes(OPS_DISCRETE_COPY.newlyRoutedNotSameEvent));
+  });
+
+  it("warns: newly routed != same event + production gold remains 0", () => {
+    const w = r1DiscreteFrontierWarnings(SAMPLE_DISCRETE_FRONTIER);
+    assert.ok(w.includes(OPS_DISCRETE_COPY.newlyRoutedNotSameEvent));
+    assert.ok(w.includes(OPS_DISCRETE_COPY.productionGoldZero));
   });
 });

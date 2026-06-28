@@ -30,6 +30,10 @@ import json
 import sys
 from typing import Any, Callable, Optional
 
+from backend.app.tools.near_match_recall_probe import (
+    DEFAULT_ROUTING_FLOOR,
+    summarize_recall_probe,
+)
 from backend.app.tools.near_match_reviewer_queue import (
     build_gold_seed_report,
     build_near_match_reviewer_queue,
@@ -204,6 +208,22 @@ def _build_band_diagnostic(
     }
 
 
+def _build_recall_probe_diagnostic(disc: dict, *, routing_floor: float) -> Optional[dict]:
+    """ADR#80 — live cross-source candidate pair 에 deterministic recall probe 적용(reviewer-routing recall·merge 0).
+
+    `disc["candidate_pairs"]`(title_left/right 보유·discover emit_candidate_pairs=True 산출)의 **cross-source(source_id
+    상이)** 쌍에 `summarize_recall_probe` 적용 → body-free 집계(max score·newly-routed·entity 공유·feature 분해·제목
+    전문 0). merge 미적용·same_event 단정 0·per-pair score 는 internal diagnostic(reviewer/public 미노출·소비처 계약이
+    aggregate 만 surface). cross-source candidate 0 이면 None(정직 — live pair 부재).
+
+    probe 가 적용되는 candidate_pairs 는 band 무관 전체 cross-source 쌍 — `pairs_newly_routed_by_probe` 는 그중
+    baseline(merge-path) routing floor 미달이나 정규화 후 floor 를 넘은 쌍(= (i) recall-miss lever 가 live 에서 작동한 수)."""
+    cands = [p for p in (disc.get("candidate_pairs") or []) if _is_cross_source(p)]
+    if not cands:
+        return None
+    return summarize_recall_probe(cands, routing_floor=routing_floor)
+
+
 def run_cross_source_live_overlap_smoke(
     *, provider_b: str = _DEFAULT_PROVIDER_B,
     topic: str = "central bank rate decision", topic_key: str = "central_bank_rate",
@@ -216,6 +236,7 @@ def run_cross_source_live_overlap_smoke(
     packet_id: str = "cross_source_near_match_pkt",
     semantic_scoring: bool = False, scorer_mode: str = MODE_DETERMINISTIC,
     scorer_top_k: int = DEFAULT_TOP_K, emit_band_diagnostic: bool = False,
+    emit_recall_probe: bool = False, recall_routing_floor: float = DEFAULT_ROUTING_FLOOR,
 ) -> dict:
     """opt-in secret-safe cross-source live overlap smoke(§4 계약). 기본 live_query=False → 시도 0.
 
@@ -251,6 +272,7 @@ def run_cross_source_live_overlap_smoke(
     live_query_attempted = False
     reviewer_queue_obj: Optional[dict] = None   # ADR#76: 실 live 후보 freeze 가 소비할 cross-source reviewer queue(미생성 시 None).
     band_diagnostic: Optional[dict] = None      # ADR#78: near-match gap 진단 metadata(emit_band_diagnostic 시·양 provider ok 일 때만·body 0).
+    recall_probe_diagnostic: Optional[dict] = None   # ADR#80: live cross-source pair recall probe 집계(emit_recall_probe 시·양 provider ok 일 때만·body 0·merge 0).
 
     # ── gate ──
     if not live_query:
@@ -292,7 +314,7 @@ def run_cross_source_live_overlap_smoke(
                 dataset_source = "live_derived"   # 실 records — fixture 둔갑 0(records 0/실패면 None 유지).
                 disc = discover_overlap(
                     combined_records, discovery_mode="cross_source_live", real_fetch=True,
-                    emit_candidate_pairs=emit_band_diagnostic)
+                    emit_candidate_pairs=emit_band_diagnostic or emit_recall_probe)
                 stats = _cross_source_stats(disc)
                 cross_pair, cross_fp = stats["cross_source_pair_count"], stats["cross_fingerprint"]
                 # near/hard pair 를 **cross-source(source_id 상이)만** 남긴 discovery 로 queue 충원
@@ -322,6 +344,11 @@ def run_cross_source_live_overlap_smoke(
                     band_diagnostic = _build_band_diagnostic(
                         disc, cross_pair=cross_pair, cross_fp=cross_fp,
                         cross_near=cross_near, cross_hard=cross_hard)
+                # ADR#80: live cross-source candidate pair 에 deterministic recall probe 적용(reviewer-routing recall·
+                # merge 0·body 0). title 이 사는 이 레이어에서만 적용 — 출력은 aggregate+feature(제목 전문 미노출).
+                if emit_recall_probe:
+                    recall_probe_diagnostic = _build_recall_probe_diagnostic(
+                        disc, routing_floor=recall_routing_floor)
                 # cross-source candidate 0 분해(정직 — source scarcity 를 모델 실패로 뭉뚱그리지 않음).
                 if cross_pair == 0:
                     block_reasons.append("no_cross_source_overlap")
@@ -381,6 +408,9 @@ def run_cross_source_live_overlap_smoke(
         # ADR#78: near-match gap 진단 metadata(emit_band_diagnostic 시·양 provider ok 일 때만 dict; 아니면 None).
         # band 분포·최고중첩 below-floor 샘플(공유 토큰·Jaccard·role·host)·정규화 표면 — raw body 0·same_event 단정 0.
         "band_diagnostic": band_diagnostic,
+        # ADR#80: live cross-source pair recall probe 집계(emit_recall_probe 시·양 provider ok 일 때만 dict; 아니면 None).
+        # max_recall_probe_score·pairs_newly_routed_by_probe·entity 공유·feature 분해 — reviewer-routing only·merge 0·body 0.
+        "recall_probe_diagnostic": recall_probe_diagnostic,
         "labeler_prediction_hidden": labeler_prediction_hidden,
         "semantic_scoring_requested": bool(semantic_scoring),
         "semantic_scoring": semantic_scoring_result,   # ADR#65 opt-in 결과(off/미도달 시 None·커밋 ADR#64 동작 보존).
