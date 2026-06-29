@@ -106,6 +106,8 @@ DATE_PINNED_REQUIRED_COPY: tuple[str, ...] = (
     "The live query targets the operator event, never a curated seed fallback",
     "Provider date parameters are not trusted until verified by a control experiment",
     "Out-of-window records cannot become production candidates",
+    "Federal Register is official evidence, not a news article",
+    "Official-news bridge is reviewer-routing only, not same-event truth",
     "Production candidate freeze is a reviewer worklist, not same-event truth",
     "Production gold remains 0 until human labels are returned",
     "R2~R7 remain No-Go",
@@ -260,6 +262,15 @@ def build_date_pinned_live_run_frontier(*, out: dict) -> dict:
         "date_filter_mechanism_confidence": out["date_filter_mechanism_confidence"],
         "out_of_window_records_dropped": int(out["out_of_window_records_dropped"] or 0),
         "window_honoring_source_status": out["window_honoring_source_status"],
+        # ADR#86 FR adapter/live + official×news bridge(§13·sanitized·aggregate-only·score 0·body 0).
+        "federal_register_adapter_status": out["federal_register_adapter_status"],
+        "federal_register_live_status": out["federal_register_live_status"],
+        "federal_register_date_filter_capability": out["federal_register_date_filter_capability"],
+        "official_news_bridge_status": out["official_news_bridge_status"],
+        "official_records_count": int(out["official_records_count"] or 0),
+        "news_records_count": int(out["news_records_count"] or 0),
+        "bridge_candidate_count": int(out["bridge_candidate_count"] or 0),
+        "official_news_freeze_eligible_count": int(out["official_news_freeze_eligible_count"] or 0),
         "ko_source_lane_status": out["ko_source_lane_status"],
         "ko_named_seed_needed": bool(out["ko_named_seed_needed"]),
         "ko_floor_current": int(out["ko_floor_current"] or 0),
@@ -349,6 +360,43 @@ def _snapshot_run_id(target: dict) -> str:
     return "datepin_" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:12]
 
 
+def _fr_adapter_status(readiness: dict) -> str:
+    """readiness 후보 행에서 federal_register adapter_status('wired'/'not_wired') 추출(ADR#86)."""
+    for r in readiness.get("candidates") or []:
+        if r.get("source_id") == "federal_register":
+            return r.get("adapter_status") or "unknown"
+    return "unknown"
+
+
+def _adr86_official_news_fields(
+    *, readiness: dict, fr_live_result: Optional[dict], bridge_result: Optional[dict],
+) -> dict:
+    """ADR#86 sanitized frontier 필드(FR adapter/live + official×news bridge·aggregate-only·secret 0·body 0).
+
+    fr_live_result(federal_register_live_smoke) 주입 시 live status/date_filter_capability 노출, 없으면 not_run/
+    documented_unverified. bridge_result(official_news_role_bridge) 주입 시 bridge status/count, 없으면 모듈은
+    구축·테스트 완료이나 이번 턴 live in-window pair 미생성(bridge_built_not_run). raw title/url/score 0."""
+    frl = fr_live_result or {}
+    br = bridge_result or {}
+    fr_dfc = frl.get("date_filter_capability") or "documented_unverified"
+    if bridge_result:
+        bridge_status = (
+            "freeze_eligible_bridge_candidates" if int(br.get("freeze_eligible_bridge_count") or 0) > 0
+            else (br.get("blocked_reason") or "no_official_news_bridge_candidate"))
+    else:
+        bridge_status = "bridge_built_not_run"   # 모듈 구축·테스트 완료·이번 턴 live in-window official×news pair 0.
+    return {
+        "federal_register_adapter_status": _fr_adapter_status(readiness),
+        "federal_register_live_status": frl.get("fr_live_status") or "not_run",
+        "federal_register_date_filter_capability": fr_dfc,
+        "official_news_bridge_status": bridge_status,
+        "official_records_count": int(frl.get("in_window_records") or 0),
+        "news_records_count": int(br.get("news_record_count") or 0),
+        "bridge_candidate_count": int(br.get("bridge_candidate_count") or 0),
+        "official_news_freeze_eligible_count": int(br.get("freeze_eligible_bridge_count") or 0),
+    }
+
+
 def run_bounded_live_breadth_run(
     *, directory: Optional[Any] = None, batch_id: str = PROD_BATCH_ID, as_of: Optional[str] = None,
     live_query: bool = False, operator_event: Optional[dict] = None, pinned_event: Optional[dict] = None,
@@ -363,6 +411,8 @@ def run_bounded_live_breadth_run(
     synthetic_batch_fn: Optional[Callable[..., dict]] = None,
     persist_snapshot: bool = False,
     fidelity_result: Optional[dict] = None,
+    federal_register_live_result: Optional[dict] = None,
+    official_news_bridge_result: Optional[dict] = None,
 ) -> dict:
     """ADR#82/#83/#84 단일 진입 — base(breadth/seed/KO/actual-input) + date-pin gate + date-pinned live executor +
     freeze + reviewer handoff bridge + sanitized snapshot.
@@ -508,7 +558,9 @@ def run_bounded_live_breadth_run(
                     "smoke": smoke, "pcand": pcand}
     snapshot = build_sanitized_live_snapshot(
         target, executor_out, run_id=_snapshot_run_id(target), live_run_status=live_run_status,
-        date_window_enforced=date_window_enforced, fidelity_result=fidelity_result)
+        date_window_enforced=date_window_enforced, fidelity_result=fidelity_result,
+        federal_register_live_result=federal_register_live_result,
+        official_news_bridge_result=official_news_bridge_result)
     if not live_executed:
         sanitized_snapshot_status = "not_written_no_live_run"
         sanitized_live_snapshot_written = False
@@ -538,8 +590,13 @@ def run_bounded_live_breadth_run(
         (_fr.get("provider_date_window_status") or "executed") if _fid_executed
         else "control_experiment_pending")
     window_honoring_source_status = (
-        f"{readiness['recommended_adapter']}_recommended_adr86" if readiness.get("recommended_adapter")
-        else "no_window_honoring_candidate")
+        f"{readiness['recommended_adapter']}_adapter_wired" if readiness.get("adapter_wired_this_turn")
+        else (f"{readiness['recommended_adapter']}_recommended_adr86" if readiness.get("recommended_adapter")
+              else "no_window_honoring_candidate"))
+    # ── ADR#86: FR adapter/live + official×news bridge sanitized 필드(주입 시 live·없으면 not_run/built_not_run) ──
+    _adr86 = _adr86_official_news_fields(
+        readiness=readiness, fr_live_result=federal_register_live_result,
+        bridge_result=official_news_bridge_result)
 
     out = {
         "operation_name": BOUNDED_OPERATION_NAME,
@@ -619,6 +676,15 @@ def run_bounded_live_breadth_run(
         "next_adapter_for_adr86": readiness.get("next_adapter_for_adr86"),
         "window_honoring_source_readiness": readiness,
         "provider_date_window_fidelity": fidelity_result,
+        # ADR#86 FR adapter/live + official×news bridge(sanitized·§13·aggregate-only·secret 0·body 0·score 0).
+        "federal_register_adapter_status": _adr86["federal_register_adapter_status"],
+        "federal_register_live_status": _adr86["federal_register_live_status"],
+        "federal_register_date_filter_capability": _adr86["federal_register_date_filter_capability"],
+        "official_news_bridge_status": _adr86["official_news_bridge_status"],
+        "official_records_count": _adr86["official_records_count"],
+        "news_records_count": _adr86["news_records_count"],
+        "bridge_candidate_count": _adr86["bridge_candidate_count"],
+        "official_news_freeze_eligible_count": _adr86["official_news_freeze_eligible_count"],
         # KO source lane(§3-E·§8).
         "ko_source_lane_status": ko_lane["ko_source_lane_status"],
         "ko_named_seed_needed": ko_lane["ko_named_seed_needed"],

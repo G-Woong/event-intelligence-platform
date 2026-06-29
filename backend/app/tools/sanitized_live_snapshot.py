@@ -56,9 +56,34 @@ def _sanitize_fidelity(fr: Optional[dict]) -> Optional[dict]:
     }
 
 
+def _sanitize_fr_bridge(fr_live: Optional[dict], bridge: Optional[dict]) -> Optional[dict]:
+    """ADR#86 FR live smoke + official×news bridge → snapshot aggregate(count/status 만). official_records/raw title/
+    url/shared_tokens/score 전부 제외(§12·§13 aggregate-only). 둘 다 없으면 None."""
+    if not fr_live and not bridge:
+        return None
+    frl = fr_live or {}
+    br = bridge or {}
+    return {
+        "federal_register_live_status": frl.get("fr_live_status") or "not_run",
+        "date_filter_capability": frl.get("date_filter_capability") or "documented_unverified",
+        "fr_records_returned": int(frl.get("records_returned") or 0),
+        "fr_in_window_records": int(frl.get("in_window_records") or 0),
+        "fr_out_of_window_records": int(frl.get("out_of_window_records") or 0),
+        "official_news_bridge_status": (
+            (br.get("blocked_reason") or "freeze_eligible_bridge_candidates") if bridge
+            else "bridge_built_not_run"),
+        "official_record_count": int(br.get("official_record_count") or 0),
+        "news_record_count": int(br.get("news_record_count") or 0),
+        "bridge_candidate_count": int(br.get("bridge_candidate_count") or 0),
+        "freeze_eligible_bridge_count": int(br.get("freeze_eligible_bridge_count") or 0),
+    }
+
+
 def build_sanitized_live_snapshot(
     target: dict, executor_out: dict, *, run_id: str, live_run_status: Optional[str] = None,
     date_window_enforced: bool = True, fidelity_result: Optional[dict] = None,
+    federal_register_live_result: Optional[dict] = None,
+    official_news_bridge_result: Optional[dict] = None,
 ) -> dict:
     """target(build_live_query_target) + executor_out(execute_date_pinned_bounded_live_run) → sanitized snapshot
     (§8·aggregate 만·per-pair score/raw body/secret/PII/same_event 0). PURE(no write).
@@ -99,6 +124,9 @@ def build_sanitized_live_snapshot(
         "candidate_provenance": pcand.get("candidate_provenance") or "none",
         # ADR#85 control experiment(메커니즘·effect·counts·variant→class·aggregate-only·제목 전문 0).
         "control_experiment": _sanitize_fidelity(fidelity_result),
+        # ADR#86 FR live smoke + official×news bridge(count/status aggregate·official_records/title/url/score 0).
+        "window_honoring_source": _sanitize_fr_bridge(
+            federal_register_live_result, official_news_bridge_result),
         "live_run_status": live_run_status,
         "block_reasons": list(smoke.get("block_reasons") or []),
         "next_actions": list(pcand.get("next_actions") or [])[:3],

@@ -37,8 +37,10 @@ _CANDIDATES: dict[str, dict] = {
         "cross_source_pairing_with_news": "role_bridge_required",   # official×news → ADR#86 정책.
         "implementation_cost": "low",
         "recommended_for_adr86_adapter": True,
-        "next_action": ("ADR#86: wire run_provider_query adapter (url: conditions[term]+publication_date[gte/lte]; "
-                        "parser: results[].title/html_url/publication_date); add official×news role-bridge policy"),
+        "next_action": ("ADR#86 wired: run_provider_query federal_register adapter (key-free · "
+                        "conditions[term]+publication_date[gte/lte] · enforce_window) + official_news_role_bridge "
+                        "built; next: live date-honoring verification + in-window official×news freeze "
+                        "(out-of-window cannot freeze · documented_unverified → live_verified/live_weak after smoke)"),
         "risk": ("regulatory documents(rules/notices) 반환 — general news 가 아니므로 news 와 cross-source near-match "
                  "전에 official×article pairing 정책 필요(role guard 약화 금지)"),
     },
@@ -82,11 +84,17 @@ _WIRED_CONTEXT: dict[str, dict] = {
 
 
 def _wired_providers() -> frozenset[str]:
+    # ADR#86: ALL_ADAPTER_PROVIDERS(news + official) 기준 — run_provider_query 가 dispatch 가능한 전체. FR 이
+    # official adapter 로 배선되면 여기 포함되어 adapter_status="wired" 로 반영(news-pairing set 과 별개).
     try:
-        from backend.app.tools.provider_query_adapters import ADAPTER_WIRED_PROVIDERS
-        return frozenset(ADAPTER_WIRED_PROVIDERS)
+        from backend.app.tools.provider_query_adapters import ALL_ADAPTER_PROVIDERS
+        return frozenset(ALL_ADAPTER_PROVIDERS)
     except Exception:
-        return frozenset()
+        try:   # fallback: 구 심볼(ADR#85 호환).
+            from backend.app.tools.provider_query_adapters import ADAPTER_WIRED_PROVIDERS
+            return frozenset(ADAPTER_WIRED_PROVIDERS)
+        except Exception:
+            return frozenset()
 
 
 def _candidate_row(sid: str, spec: dict, *, wired: frozenset[str]) -> dict:
@@ -129,6 +137,9 @@ def build_window_honoring_source_readiness(
 
     recommended = [r for r in rows if r["recommended_for_adr86_adapter"]]
     recommended_id = recommended[0]["source_id"] if recommended else None
+    # ADR#86: 권고 adapter 가 실제 wired 됐는가(FR 이 ALL_ADAPTER_PROVIDERS 에 들어오면 True). 단 wired ≠ live date
+    # honoring 검증 — date_filter_confidence 는 여전히 documented_unverified(live smoke 가 별도로 verify).
+    recommended_now_wired = bool(recommended_id and recommended_id in wired)
     # source role guard: 모든 후보 role 이 anchor publishable(official/news)인지 — 비-publishable anchor 승격 0.
     guard_preserved = all(r["source_role"] in _ANCHOR_ROLES for r in rows)
 
@@ -139,11 +150,13 @@ def build_window_honoring_source_readiness(
         "wired_context": context_rows,
         "recommended_adapter": recommended_id,
         "recommended_reason": (
-            "Federal Register: key-free·official·명시 publication_date[gte/lte] 범위 필터(date_filter_confidence "
-            "documented_unverified — 문서 근거 강하나 실 호출로 미검증)·rate/attribution risk low — window-honoring "
-            "후보 중 가장 깨끗하나 ADR#86 에서 실 date-honoring 을 검증해야 함. official×news role-bridge 는 ADR#86 정책."
+            "Federal Register: key-free·official·명시 publication_date[gte/lte] 범위 필터·rate/attribution risk low — "
+            "window-honoring 후보 중 가장 깨끗. ADR#86 에서 run_provider_query adapter 배선 + official×news role-bridge "
+            "구축 완료(adapter_wired). 단 date_filter_confidence 는 여전히 documented_unverified — wired ≠ live "
+            "date-honoring 검증이므로 bounded live smoke 가 live_verified/live_weak 로 별도 확정해야 함."
             if recommended_id == "federal_register" else "no recommended candidate"),
-        "adapter_wired_this_turn": False,             # ADR#85 는 spec 만 — 실배선은 ADR#86.
+        # ADR#86: 권고 adapter(FR)가 이번 턴 실제 배선됨(ALL_ADAPTER_PROVIDERS 포함). ADR#85 의 spec-only 에서 전환.
+        "adapter_wired_this_turn": recommended_now_wired,
         "next_adapter_for_adr86": recommended_id,
         "window_honoring_source_readiness_ready": True,
         # ── 불변 경계(source role guard·support not truth) ──

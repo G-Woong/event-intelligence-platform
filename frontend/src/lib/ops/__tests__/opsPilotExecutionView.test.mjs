@@ -1298,6 +1298,14 @@ function toR1DatePinnedLiveRunFrontierDisplayRows(f) {
     { label: "Mechanism confidence (never high from one run)", value: f.date_filter_mechanism_confidence },
     { label: "Out-of-window records dropped", value: `${f.out_of_window_records_dropped}` },
     { label: "Window-honoring source status", value: f.window_honoring_source_status },
+    { label: "Federal Register adapter (official, not news)", value: f.federal_register_adapter_status },
+    { label: "Federal Register live status", value: f.federal_register_live_status },
+    { label: "FR date-filter capability (live-verified honoring)", value: f.federal_register_date_filter_capability },
+    { label: "Official×news bridge status (routing only, not truth)", value: f.official_news_bridge_status },
+    { label: "Official records (in-window)", value: `${f.official_records_count}` },
+    { label: "News records (for bridge)", value: `${f.news_records_count}` },
+    { label: "Official×news bridge candidates (not same-event)", value: `${f.bridge_candidate_count}` },
+    { label: "Bridge freeze-eligible (in-window both)", value: `${f.official_news_freeze_eligible_count}` },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -1351,7 +1359,15 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
   date_filter_mechanism_primary: "undetermined",
   date_filter_mechanism_confidence: "none",
   out_of_window_records_dropped: 0,
-  window_honoring_source_status: "federal_register_recommended_adr86",
+  window_honoring_source_status: "federal_register_adapter_wired",
+  federal_register_adapter_status: "wired",
+  federal_register_live_status: "not_run",
+  federal_register_date_filter_capability: "documented_unverified",
+  official_news_bridge_status: "bridge_built_not_run",
+  official_records_count: 0,
+  news_records_count: 0,
+  bridge_candidate_count: 0,
+  official_news_freeze_eligible_count: 0,
   ko_source_lane_status: "ready_5_keyfree_live_ko_news_anchors",
   ko_named_seed_needed: true,
   ko_floor_current: 0,
@@ -1369,6 +1385,8 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
     "The live query targets the operator event, never a curated seed fallback",
     "Provider date parameters are not trusted until verified by a control experiment",
     "Out-of-window records cannot become production candidates",
+    "Federal Register is official evidence, not a news article",
+    "Official-news bridge is reviewer-routing only, not same-event truth",
     "Production candidate freeze is a reviewer worklist, not same-event truth",
     "Production gold remains 0 until human labels are returned",
     "R2~R7 remain No-Go",
@@ -1446,9 +1464,29 @@ describe("ADR#83 date-pinned live query plumbing + bounded live run + freeze fro
     assert.equal(byLabel["Date-filter mechanism (hypothesis, not asserted)"], "undetermined");
     assert.equal(byLabel["Mechanism confidence (never high from one run)"], "none");
     assert.notEqual(byLabel["Mechanism confidence (never high from one run)"], "high");
-    // window-honoring hedge: Federal Register 권고(ADR#86).
-    assert.equal(byLabel["Window-honoring source status"], "federal_register_recommended_adr86");
+    // window-honoring hedge: Federal Register adapter 배선됨(ADR#86 — recommended→wired).
+    assert.equal(byLabel["Window-honoring source status"], "federal_register_adapter_wired");
     assert.equal(byLabel["Out-of-window records dropped"], "0");
+  });
+
+  it("(ADR#86) shows Federal Register official adapter wired + official×news bridge (routing only, not truth)", () => {
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    // FR=official 증거(news 아님)·adapter 배선됨. live 미실행이면 not_run·date_filter 는 documented_unverified.
+    assert.equal(byLabel["Federal Register adapter (official, not news)"], "wired");
+    assert.equal(byLabel["Federal Register live status"], "not_run");
+    assert.equal(byLabel["FR date-filter capability (live-verified honoring)"], "documented_unverified");
+    // official×news bridge=reviewer-routing only(same-event truth 아님)·official 단독 freeze 금지.
+    assert.equal(byLabel["Official×news bridge status (routing only, not truth)"], "bridge_built_not_run");
+    assert.equal(byLabel["Official×news bridge candidates (not same-event)"], "0");
+    assert.equal(byLabel["Bridge freeze-eligible (in-window both)"], "0");
+  });
+
+  it("(ADR#86) warns: Federal Register is official evidence + official-news bridge is routing only", () => {
+    const w = r1DatePinnedLiveRunFrontierWarnings(SAMPLE_DATE_PINNED_FRONTIER);
+    assert.ok(w.includes("Federal Register is official evidence, not a news article"));
+    assert.ok(w.includes("Official-news bridge is reviewer-routing only, not same-event truth"));
   });
 
   it("warns: operator event required + occurrence=assertion + date-pin != occurrence + query targets operator event + freeze != truth + gold 0 + No-Go", () => {

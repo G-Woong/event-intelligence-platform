@@ -467,6 +467,16 @@ export interface InternalOpsDatePinnedLiveRunFrontier {
   date_filter_mechanism_confidence: string;
   out_of_window_records_dropped: number;
   window_honoring_source_status: string;
+  // ADR#86: Federal Register window-honoring adapter(key-free·official) + official×news role-bridge.
+  // FR=official 증거(news 아님)·bridge=reviewer-routing only·official 단독 freeze 금지·date_filter live 검증.
+  federal_register_adapter_status: string;
+  federal_register_live_status: string;
+  federal_register_date_filter_capability: string;
+  official_news_bridge_status: string;
+  official_records_count: number;
+  news_records_count: number;
+  bridge_candidate_count: number;
+  official_news_freeze_eligible_count: number;
   // KO source lane(§8).
   ko_source_lane_status: string;
   ko_named_seed_needed: boolean;

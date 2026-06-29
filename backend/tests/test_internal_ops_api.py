@@ -759,8 +759,12 @@ def test_r1_date_pinned_response_keys_are_sanitized_subset(client, monkeypatch):
         "candidate_provenance", "sanitized_snapshot_status", "date_window_enforced", "reviewer_handoff_ready",
         "provider_date_window_fidelity_status", "control_experiment_status", "date_filter_mechanism_primary",
         "date_filter_mechanism_confidence", "out_of_window_records_dropped", "window_honoring_source_status",
+        "federal_register_adapter_status", "federal_register_live_status",
+        "federal_register_date_filter_capability", "official_news_bridge_status",
+        "official_records_count", "news_records_count", "bridge_candidate_count",
+        "official_news_freeze_eligible_count",
         "ko_source_lane_status", "ko_named_seed_needed",
         "ko_floor_current", "ko_floor_required", "blocked_reason", "acquisition_next_action",
         "current_r1_gap", "production_gold_count", "r2_r7_no_go", "required_copy", "flags",
     }
-    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(38 field·ADR#85 +6).
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(46 field·ADR#86 +8).

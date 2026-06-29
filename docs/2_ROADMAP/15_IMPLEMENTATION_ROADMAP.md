@@ -285,6 +285,24 @@
 >
 > **구현/검증**: 신규 `r1_reviewer_pilot_batch.py`(`run_actual_input_gate` 단일 호출 re-check + 순수 builder freeze[`_frozen_pair_list` allowlist 파생·`_batch_signature` sha256·`_launch_status` 5-state·`build_operator_launch_checklist`]·`candidate_provenance=synthetic_fixture`·`pilot_batch_is_production_candidate=False`·전체 출력 재귀 PII 가드)+`reviewer_batch_launch.py`(`build_intake_plan` +`intake_dir` override·additive·기존 호출 무영향)+`schemas/internal_ops.py`(+`InternalOpsR1PilotBatchStatus`)+`api/internal_ops.py`(+`GET /api/internal/ops/r1-pilot-batch`·이중 게이트·read-only·503 sanitize·기존 무변경)+frontend(types +1·opsPilotExecutionView +toR1BatchDisplayRows/r1BatchWarnings/OPS_R1_BATCH_COPY·page +launch-readiness 패널·warnings dedupe·node:test +6). 신규 backend 테스트 **44**(r1 batch 36+API 8)·frontend **+6**·ruff(E/F/I/B/W−E501) **0**·ingestion **1353p**·frontend tsc0/lint0/test38·backend 비-live **1391p/101skip/0fail**·**production_gold_count 0·r1_status blocked_no_labels·frozen 5<<target 200(pilot_n)·launch_status ready_for_manual_launch**·merge/전송/입력 날조/secret 값 노출 0. 합성 fixture→production gold 둔갑 0(**template dataset_source=synthetic 태깅→라벨 회수해도 production gold 미승격·machinery 강제**). 신규 RISK 1(R-BatchFreezeAsTruth LOW). 부분진전 R-GoldAcquisitionPlanOnly/R-ReviewerPilotExecution/R-IdentityHumanLabeling/R-ReviewerAgreement/R-GoldSamplingBias/R-IdentityEvalDataset. **adversarial PROCEED-WITH-FIXES**(HIGH-1 template synthetic 태깅[machinery 강제]·MEDIUM-1 dry-run hard-stop 수정)·**code-review LGTM-WITH-NITS**(triple-consistency 22==22==22).
 
+> **ADR#86 — Federal Register window-honoring adapter 실배선 + official×news role-bridge + FR live date-honoring 검증**
+>
+> **선행**: ADR#85(date-window fidelity 통제실험 + window-honoring readiness) 커밋(`049a716`·push 0·NO UPSTREAM). ADR#85 가 남긴 미배선 hedge(FR=spec only)·official×news 미설계를 실배선·검증.
+>
+> **분석(§5·먼저 보고)**: 코드베이스가 이미 FR 을 거의 다 안다 — endpoint `_SERVICE_CONFIGS`·필드 매핑 `_audit_common`(results[].title/html_url/publication_date)·query param `api_probe`(conditions[term]·fields[]) 존재 → adapter 잔여=url+parser+2-set 분리. **통합 리스크**: `ADAPTER_WIRED_PROVIDERS=frozenset(_ADAPTERS)` 가 news-pairing 3곳 소비+test 잠금 → FR 추가 시 executor 가 FR 을 second_provider 오선택 회귀 → **2-set 분리**(ADAPTER_WIRED_PROVIDERS=news·ALL_ADAPTER_PROVIDERS=dispatch)로 해결.
+>
+> **구현(§7·additive·byte-보존)**: ① FR adapter(`FEDERAL_REGISTER_ADAPTER`·key-free·official_record·`_federal_register_url` conditions[publication_date][gte/lte]·`parse_federal_register_items`·2-set 분리로 guardian×nyt byte-identical)·② 신규 `official_news_role_bridge.py`(PURE·title-Jaccard 미사용·date 근접+entity/action token·reviewer-routing only·same_event/merge/kg-edge/score 0)·③ 신규 `federal_register_live_smoke.py`(§10 status·live_verified/live_weak)·④ orchestrator/snapshot/frontier +8 필드 **dict==pydantic==TS==mjs 46==46==46==46**·API allowed 46·required_copy +2.
+>
+> **FR live smoke 결과(§10·bounded·key-free·실 live·raw body 0)**: operator window [06-25,06-26]. "asylum metering" 31건→필터 0건·"enforcement" **25/25 in-window·out-of-window 0·`live_verified`**. **FR date filter 가 응답을 실제 제약**(Guardian/NYT date_filter_ignored 와 정반대)→news 측 date_filter_ignored 보강(FR=regulatory 도메인≠news·보강 신호). **parser 버그 발견+수정**(FR count=0 시 results 키 생략→no_records·test_47).
+>
+> **freeze 결과(§11·정직)**: official×news in-window same-event pair **0**(FR=regulatory enforcement 문서 ≠ news subject·도메인 불일치)→bridge_candidate 0→**freeze 0·gold 0·gap 200·reviewer_handoff_ready False**. blocked_reason 세분화.
+>
+> **옵션 결정(§6)**: A+B(FR adapter·**실배선**)+C(FR live smoke·**실행·live_verified**)+D(role-bridge·**구축**)+E(freeze 재시도·0)+F(handoff·ready=False)+G(frontier +8)+H(GDELT planning·이연). I 금지.
+>
+> **검증**: 신규/수정 backend +27·**전체 1732p/101skip/0fail**·ingestion 1353p·frontend tsc0/lint0/test78·secret PASS·docs_lifecycle 0·ruff 0·dict==pydantic==TS==mjs 46·adversarial NO CARDINAL-VIOLATION·code-review LGTM-WITH-NITS(비차단 finding 전부 처리).
+>
+> **RISK**: 부분진전 R-WindowHonoringSourceScarcity(FR adapter wired·live_verified→MEDIUM→부분완화·**종결 금지**)·R-ProviderDateWindowFidelity(window-honoring control 로 date_filter_ignored 보강)·신규 R-OfficialNewsDomainMismatch(MEDIUM·FR=regulatory≠news subject·bridge 수율 risk). 종결 0. **다음**: official 문서+news 보도가 같은 subject·같은 window 인 regulatory-class event→official×news live-derived freeze→reviewer labels. **adapter wired ≠ same-event 후보 확보·live_verified ≠ production candidate·bridge candidate ≠ truth**·R2~R7 No-Go.
+
 > **ADR#85 — provider date-window fidelity 통제실험(메커니즘 분해) + window-honoring source readiness + live-derived freeze 재시도**
 >
 > **선행**: ADR#84(date-pinned bounded live run + date-window fidelity 결손 발견) 커밋(`b8443b8`·push 0·NO UPSTREAM). 미확정 메커니즘을 통제실험으로 분해.

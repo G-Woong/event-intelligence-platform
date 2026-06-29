@@ -275,7 +275,7 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     f = out["internal_ops_date_pinned_live_run_frontier"]
     model = InternalOpsDatePinnedLiveRunFrontier(**f)   # raises on missing/type mismatch.
     assert set(f.keys()) == set(InternalOpsDatePinnedLiveRunFrontier.model_fields.keys())
-    assert len(f) == 38
+    assert len(f) == 46
     assert model.r2_r7_no_go is True
     assert model.latest_date_pinned_live_run_status == BLOCKED_MISSING_OPERATOR_EVENT
     # ADR#84: no live run(synthetic base) → date window 미강제·handoff 미준비(freeze 없음).
@@ -287,7 +287,14 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     assert f["date_filter_mechanism_primary"] == "undetermined"
     assert f["date_filter_mechanism_confidence"] == "none"
     assert f["date_filter_mechanism_confidence"] != "high"
-    assert f["window_honoring_source_status"] == "federal_register_recommended_adr86"
+    # ADR#86: FR adapter 배선됨(recommended→wired) + official×news bridge(미주입 → built_not_run·count 0).
+    assert f["window_honoring_source_status"] == "federal_register_adapter_wired"
+    assert f["federal_register_adapter_status"] == "wired"
+    assert f["federal_register_live_status"] == "not_run"
+    assert f["federal_register_date_filter_capability"] == "documented_unverified"
+    assert f["official_news_bridge_status"] == "bridge_built_not_run"
+    assert f["bridge_candidate_count"] == 0
+    assert f["official_news_freeze_eligible_count"] == 0
     assert len(f["flags"]) == 7
 
 
@@ -302,3 +309,27 @@ def test_date_pinned_frontier_no_forbidden_or_raw_entity_fields():
     assert "named_entity" not in f
     assert "event_phrase" not in f
     assert "live_query_text" not in f
+
+
+def test_adr86_fr_live_and_bridge_results_surface_in_frontier():
+    # ADR#86: FR live smoke(live_verified) + official×news bridge(routing 후보 3·freeze-eligible 0) 주입 시
+    # frontier 가 sanitized 로 노출. official 단독 freeze 금지 — freeze-eligible 0 이면 동결 0(정직).
+    fr_live = {"fr_live_status": "fr_live_ok_in_window", "date_filter_capability": "live_verified",
+               "in_window_records": 25, "records_returned": 25, "live_query_executed": True}
+    bridge = {"official_record_count": 25, "news_record_count": 10, "bridge_candidate_count": 3,
+              "freeze_eligible_bridge_count": 0, "blocked_reason": "bridge_candidates_not_in_window"}
+    out = run_bounded_live_breadth_run(
+        base_result=_synthetic_base(), federal_register_live_result=fr_live,
+        official_news_bridge_result=bridge)
+    f = out["internal_ops_date_pinned_live_run_frontier"]
+    assert f["federal_register_adapter_status"] == "wired"
+    assert f["federal_register_live_status"] == "fr_live_ok_in_window"
+    assert f["federal_register_date_filter_capability"] == "live_verified"   # FR 이 window 존중(live 검증).
+    assert f["official_records_count"] == 25 and f["news_records_count"] == 10
+    assert f["bridge_candidate_count"] == 3
+    assert f["official_news_freeze_eligible_count"] == 0   # in-window 동시 pair 0 → freeze 0(production gold 0 유지).
+    assert f["official_news_bridge_status"] == "bridge_candidates_not_in_window"
+    assert f["production_gold_count"] == 0   # bridge 후보는 truth/gold 아님(불변).
+    # bridge 후보가 있어도 raw title/score/same_event 는 frontier 에 미노출(forbidden 0).
+    for forbidden in ("score", "rationale", "predicted_status", "same_event", "shared_tokens"):
+        assert forbidden not in f

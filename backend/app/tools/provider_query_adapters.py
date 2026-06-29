@@ -112,9 +112,36 @@ NYT_ADAPTER = ProviderQueryAdapter(
     host_min_spacing_seconds=_NYT_HOST_MIN_SPACING_SECONDS,
 )
 
-_ADAPTERS: dict[str, ProviderQueryAdapter] = {"guardian": GUARDIAN_ADAPTER, "nyt": NYT_ADAPTER}
-# 이 모듈의 contract adapter 로 fetch 되는 provider(= ADR#60 native gdelt/rss 가 **아닌** 신규 wired provider).
-ADAPTER_WIRED_PROVIDERS = frozenset(_ADAPTERS)
+# ── 3rd 실 adapter: Federal Register Articles API(ADR#86·**key-free**·official·topic+publication_date 범위) ──────
+# ADR#84/#85 가 입증한 blocker: Guardian/NYT 는 from-date/to-date 가 URL 에 정확히 들어가도 응답이 그 window 를
+# 무시할 수 있다(date_filter_ignored leading·medium). 그 hedge 로 **명시적 date 범위 필터**를 문서화한 official source
+# 를 배선한다 — conditions[publication_date][gte]/[lte](공식 documented range). key-free(auth=none)라 credential gate
+# 0. robots/tos: U.S. 정부 1차 공식 출처(public domain·자기 문서)라 재배포 risk 최저. 본 adapter 는 title+html_url+
+# publication_date 만 쓰고 **본문 미저장·public IU 미생성**. record_type=official_record → role=official(authority 5·
+# anchor-eligible·publishable). **단 official×news 는 title-Jaccard news 페어링에 섞지 않는다**(§9 role-bridge 별도
+# lane) — 그래서 ALL_ADAPTER_PROVIDERS(dispatch)에는 넣되 ADAPTER_WIRED_PROVIDERS(news 페어링)에서는 제외한다.
+_FR_HOST = "www.federalregister.gov"
+_FR_HOST_MIN_SPACING_SECONDS = 3   # public gov API·key-free·관대하나 보수적 shared-gate floor(no-bypass).
+
+FEDERAL_REGISTER_ADAPTER = ProviderQueryAdapter(
+    provider_id="federal_register", query_capable=True, auth_required=False,
+    required_env_vars=(), fetch_implemented=True,
+    supports_topic_query=True, supports_time_window=True, supports_source_pair=False,
+    max_records=_DEFAULT_MAX_RECORDS, rate_limit_policy_id="federal_register",
+    host=_FR_HOST, host_gate_key=_FR_HOST,
+    host_min_spacing_seconds=_FR_HOST_MIN_SPACING_SECONDS,
+)
+
+_ADAPTERS: dict[str, ProviderQueryAdapter] = {
+    "guardian": GUARDIAN_ADAPTER, "nyt": NYT_ADAPTER, "federal_register": FEDERAL_REGISTER_ADAPTER}
+# official-role adapter — run_provider_query 로 fetch 되나 news×news title-Jaccard 페어링엔 섞지 않는다(§9 role-bridge).
+_OFFICIAL_ROLE_ADAPTERS = frozenset({"federal_register"})
+# 이 모듈의 contract adapter 로 fetch 되는 **news-pairing** provider(= ADR#60 native gdelt/rss 가 아닌 신규 wired news
+# provider·cross_source_live_overlap_smoke 가 묶는 publishable news 쌍). official 은 제외 — test/소비처 계약상 {guardian,
+# nyt} 유지(ADR#86 가 FR 을 official 로 추가해도 news pool/executor 의 second_provider 오선택을 구조적으로 차단).
+ADAPTER_WIRED_PROVIDERS = frozenset(_ADAPTERS) - _OFFICIAL_ROLE_ADAPTERS
+# run_provider_query 가 dispatch 가능한 **전체** adapter(news + official). readiness/dispatch 표면(+federal_register).
+ALL_ADAPTER_PROVIDERS = frozenset(_ADAPTERS)
 
 
 # ── governance 단일 출처 재사용(defensive import·실패해도 fail-closed/no-op) ────────────────────────────
@@ -313,9 +340,76 @@ def parse_nyt_items(
     return recs
 
 
-_URL_BUILDERS: dict[str, Callable[..., str]] = {"guardian": _guardian_url, "nyt": _nyt_url}
+def _federal_register_url(
+    endpoint: str, *, topic: str, from_date: str, to_date: str, max_records: int,
+    omit_date_window: bool = False, order: Optional[str] = None,
+) -> str:
+    """Federal Register Articles API URL(ADR#86·conditions[term]·conditions[publication_date][gte/lte]·per_page·order·
+    fields[]). **key 불요**(public·auth=none) — url 에 secret 없음(애초에 key-free). fields[] 는 title/html_url/
+    publication_date/abstract/document_number 만 요청(본문 미요청·미저장). date 형식은 YYYY-MM-DD(gte/lte inclusive).
+
+    date 범위는 **명시적 공식 필터**(Guardian/NYT 의 from-date/to-date 와 달리 official documented range) — 그러나
+    ADR#84/#85 교훈상 문서 지원 ≠ 응답 제약이므로 enforce_window(post-filter)와 live smoke 로 실검증한다(이번 턴 핵심).
+    가산 knob(default=문서 spec 보존): omit_date_window=True 면 gte/lte 제외(date-param 유/무 대조군·FR 자체 date-fidelity
+    control), order(None→'newest'; 'relevance'/'oldest' override). urlencode 가 bracket 을 percent-encode 하나 FR API 가
+    수용(conditions%5Bterm%5D)."""
+    pairs: list[tuple[str, str]] = [("conditions[term]", topic)]
+    if not omit_date_window:
+        pairs.append(("conditions[publication_date][gte]", from_date))
+        pairs.append(("conditions[publication_date][lte]", to_date))
+    pairs.append(("per_page", str(max_records)))
+    pairs.append(("order", order or "newest"))
+    # 저장하는 필드만 요청(title/html_url/publication_date) + document_number(식별·미저장). abstract 는 본문성이라
+    # contract 가 저장 금지 → 애초에 요청도 안 함(adversarial LOW-2: 불필요한 body 표면 축소·wire 메모리 최소).
+    for fld in ("title", "html_url", "publication_date", "document_number"):
+        pairs.append(("fields[]", fld))
+    return endpoint + "?" + urlencode(pairs)
+
+
+def parse_federal_register_items(
+    payload: str, *, max_records: int = _DEFAULT_MAX_RECORDS,
+) -> Optional[list[dict]]:
+    """Federal Register Articles JSON → `_rec`(title≤512·canonical=html_url·published=publication_date·**본문 미저장**).
+
+    공식 shape: {"count": N, "results": [{"title","html_url","publication_date","abstract","document_number", ...}]}.
+    파싱 실패/results 부재 → None(parser_error). record_type=official_record → source role=official(authority 5·
+    anchor-eligible·publishable). abstract 는 **저장하지 않는다**(본문 위장 차단·title+canonical+date 만·§8 contract).
+    publication_date 는 이미 YYYY-MM-DD(date) — _iso_date 가 그대로 통과."""
+    try:
+        data = json.loads(payload)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    results = data.get("results")
+    if results is None:
+        # FR 은 count==0 일 때 "results" 키를 **생략**하고 {count, description} 만 반환(실측 ADR#86). **count==0** 일
+        # 때만 정상 빈 응답 → [](→ no_records). count>0 인데 results 누락(이상 응답)이나 count 부재는 None(parser_error)
+        # 으로 정직 분리(adversarial LOW-5: "count" 키 존재만으로 강등하지 않음).
+        return [] if data.get("count") == 0 else None
+    if not isinstance(results, list):
+        return None
+    recs: list[dict] = []
+    for doc in results[:max_records]:
+        if not isinstance(doc, dict):
+            continue
+        title = (doc.get("title") or "").strip()
+        url = (doc.get("html_url") or "").strip()
+        if not title or not url:
+            continue
+        recs.append(_rec(
+            record_type="official_record", source_id="federal_register",
+            title_or_label=title[:512], canonical_url=url, source_url_or_evidence=url,
+            published_at_or_observed_at=_iso_date(doc.get("publication_date")),
+            body_state_or_signal="present"))   # source 측 문서 존재 신호일 뿐 — 저장 안 함(abstract/본문 미반영).
+    return recs
+
+
+_URL_BUILDERS: dict[str, Callable[..., str]] = {
+    "guardian": _guardian_url, "nyt": _nyt_url, "federal_register": _federal_register_url}
 _PARSERS: dict[str, Callable[..., Optional[list[dict]]]] = {
-    "guardian": parse_guardian_items, "nyt": parse_nyt_items}
+    "guardian": parse_guardian_items, "nyt": parse_nyt_items,
+    "federal_register": parse_federal_register_items}
 
 
 # ── 공통 governed live query(opt-in·network·CI 아님; transport 주입 시 결정론·network 0) ──────────────────

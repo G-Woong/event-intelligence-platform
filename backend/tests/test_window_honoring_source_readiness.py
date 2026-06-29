@@ -46,9 +46,13 @@ def test_source_role_guard_preserved_only_publishable_roles():
     assert all(r["anchor_eligible"] for r in out["candidates"])
 
 
-def test_no_adapter_wired_this_turn_spec_only():
+def test_federal_register_adapter_now_wired_adr86():
     out = build_window_honoring_source_readiness()
-    assert out["adapter_wired_this_turn"] is False   # ADR#85 는 spec 만·실배선은 ADR#86.
+    assert out["adapter_wired_this_turn"] is True   # ADR#86: FR adapter 실배선(ADR#85 spec-only → wired).
+    fr = next(r for r in out["candidates"] if r["source_id"] == "federal_register")
+    assert fr["adapter_status"] == "wired"
+    # wired ≠ live date-honoring 검증 — confidence 는 여전히 documented_unverified(live smoke 가 별도 verify).
+    assert fr["date_filter_confidence"] == "documented_unverified"
 
 
 def test_boundaries_support_not_truth():

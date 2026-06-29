@@ -15,10 +15,13 @@ import pytest
 from backend.app.tools.provider_query_adapters import (
     ADAPTER_CONTRACT_VERSION,
     ADAPTER_WIRED_PROVIDERS,
+    ALL_ADAPTER_PROVIDERS,
     ProviderQueryResult,
+    _federal_register_url,
     _guardian_url,
     _nyt_url,
     adapter_descriptor,
+    parse_federal_register_items,
     parse_guardian_items,
     parse_nyt_items,
     provider_adapter_contract,
@@ -470,6 +473,111 @@ def test_39_run_provider_query_forwards_knobs_to_request_url():
     assert "from-date=" not in seen["url"] and "to-date=" not in seen["url"]
     assert "order-by=relevance" in seen["url"]
     assert _SECRET not in seen["url"]   # key 값은 url 에 절대 미포함(keyless·secret hygiene).
+
+
+# ══ Section E — Federal Register 3rd adapter (ADR#86 · key-free official · window-honoring date filter) ══════
+def _fr_payload(results=None, count=None):
+    if results is None:
+        results = [
+            {"title": "Rule on Asylum Eligibility and Border Procedures",
+             "html_url": "https://www.federalregister.gov/documents/2026/06/25/x1",
+             "publication_date": "2026-06-25", "abstract": "SHOULD NOT BE STORED",
+             "document_number": "2026-13001"},
+            {"title": "Notice of Final Agency Action on Metering",
+             "html_url": "https://www.federalregister.gov/documents/2026/06/26/x2",
+             "publication_date": "2026-06-26", "abstract": "SHOULD NOT BE STORED",
+             "document_number": "2026-13002"},
+        ]
+    return json.dumps({"count": count if count is not None else len(results), "results": results})
+
+
+def test_40_federal_register_adapter_dispatch_and_role_separation():
+    # FR 은 dispatch 전체(ALL_ADAPTER_PROVIDERS)에는 있으나 news 페어링(ADAPTER_WIRED_PROVIDERS)엔 없다(§9 role 분리).
+    assert "federal_register" in ALL_ADAPTER_PROVIDERS
+    assert "federal_register" not in ADAPTER_WIRED_PROVIDERS
+    assert sorted(ADAPTER_WIRED_PROVIDERS) == ["guardian", "nyt"]   # news 페어링 set 불변(byte-보존).
+    d = adapter_descriptor("federal_register")
+    assert d is not None and d["fetch_implemented"] is True   # _ADAPTERS 등재 → descriptor 존재.
+
+
+def test_41_federal_register_url_has_explicit_date_range_filter():
+    from urllib.parse import unquote
+    u = _federal_register_url("https://e", topic="scotus asylum metering",
+                              from_date="2026-06-25", to_date="2026-06-26", max_records=5)
+    dec = unquote(u)
+    assert "conditions[term]=scotus" in dec
+    assert "conditions[publication_date][gte]=2026-06-25" in dec   # 명시적 official 범위 필터(gte/lte).
+    assert "conditions[publication_date][lte]=2026-06-26" in dec
+    assert "per_page=5" in dec and "order=newest" in dec
+    assert "fields[]=title" in dec and "fields[]=html_url" in dec   # 본문 미요청 — 메타 필드만.
+    assert _SECRET not in u   # key-free — url 에 secret 없음(애초에 key 불요).
+
+
+def test_42_federal_register_url_knobs_omit_date_and_order():
+    from urllib.parse import unquote
+    nod = unquote(_federal_register_url("https://e", topic="q", from_date="2026-06-25",
+                                        to_date="2026-06-26", max_records=5, omit_date_window=True))
+    # date 필터([gte]/[lte])만 빠진다 — fields[]=publication_date(요청 메타 필드)는 그대로(대조군은 필터 유/무).
+    assert "[gte]" not in nod and "[lte]" not in nod and "order=newest" in nod
+    rel = unquote(_federal_register_url("https://e", topic="q", from_date="2026-06-25",
+                                        to_date="2026-06-26", max_records=5, order="relevance"))
+    assert "order=relevance" in rel and "conditions[publication_date][gte]=2026-06-25" in rel
+
+
+def test_43_federal_register_parser_official_role_no_body_stored():
+    recs = parse_federal_register_items(_fr_payload())
+    assert len(recs) == 2
+    for r in recs:
+        assert r["record_type"] == "official_record"   # → source_type 'official'(authority 5·anchor-eligible).
+        assert r["source_id"] == "federal_register"
+        assert r["canonical_url"].startswith("https://www.federalregister.gov/")
+        assert r["published_at_or_observed_at"] in ("2026-06-25", "2026-06-26")
+        # abstract/본문은 _rec 에 저장 필드가 없음 — raw body 미저장 불변(값이 어디에도 안 새는지).
+        assert "SHOULD NOT BE STORED" not in json.dumps(r, ensure_ascii=False)
+
+
+def test_44_federal_register_key_free_no_credentials_required():
+    # FR 은 auth_required=False — env_missing(키 없음)이어도 missing_credentials 로 막히지 않고 fetch 한다(key-free).
+    qr = run_provider_query("federal_register", topic="x", transport=lambda _u: _fr_payload(),
+                            env_status_fn=env_missing, today="2026-06-26")
+    assert qr.status == "ok" and qr.records_count == 2
+    assert qr.secret_exposed is False and qr.raw_body_stored is False
+    assert qr.provenance == "live_derived"
+
+
+def test_45_federal_register_enforce_window_drops_out_of_window():
+    # provider 가 window 밖 문서를 섞어 반환해도 enforce_window=True 면 [2026-06-25, 2026-06-26] 밖은 drop.
+    mixed = _fr_payload(results=[
+        {"title": "in-window rule", "html_url": "https://www.federalregister.gov/d/in",
+         "publication_date": "2026-06-25", "document_number": "a"},
+        {"title": "out-of-window notice", "html_url": "https://www.federalregister.gov/d/out",
+         "publication_date": "2026-06-29", "document_number": "b"},
+    ])
+    qr = run_provider_query("federal_register", topic="x", transport=lambda _u: mixed,
+                            env_status_fn=env_missing, today="2026-06-26", enforce_window=True)
+    assert qr.status == "ok" and qr.records_count == 1
+    assert qr.records[0]["published_at_or_observed_at"] == "2026-06-25"
+
+
+def test_46_federal_register_parser_error_and_no_records():
+    # count 도 results 도 없는 진짜 unexpected shape → None → parser_error(둔갑 0).
+    bad = run_provider_query("federal_register", topic="x", transport=lambda _u: json.dumps({"x": 1}),
+                             env_status_fn=env_missing)
+    assert bad.status == "parser_error"
+    # 빈 results → no_records(정직).
+    empty = run_provider_query("federal_register", topic="x", transport=lambda _u: _fr_payload(results=[]),
+                               env_status_fn=env_missing)
+    assert empty.status == "no_records"
+
+
+def test_47_federal_register_count_zero_omits_results_key_is_no_records():
+    # FR 실측(ADR#86 live): count==0 이면 "results" 키를 **생략**하고 {count, description} 만 반환 → parser_error 가
+    # 아니라 no_records(정직 분리). count 키 존재가 정상 빈 응답의 신호.
+    zero = json.dumps({"count": 0, "description": "Documents matching your search"})
+    assert parse_federal_register_items(zero) == []
+    qr = run_provider_query("federal_register", topic="x", transport=lambda _u: zero,
+                            env_status_fn=env_missing)
+    assert qr.status == "no_records" and qr.block_reason == "no_records"
 
 
 if __name__ == "__main__":

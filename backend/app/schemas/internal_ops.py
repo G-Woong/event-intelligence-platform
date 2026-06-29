@@ -434,6 +434,17 @@ class InternalOpsDatePinnedLiveRunFrontier(BaseModel):
     date_filter_mechanism_confidence: str
     out_of_window_records_dropped: int
     window_honoring_source_status: str
+    # ADR#86 Federal Register window-honoring adapter(key-free·official) + official×news role-bridge.
+    # FR 은 official 증거(news 기사 아님)·bridge 는 reviewer-routing only(same-event truth 아님)·official 단독 freeze 금지.
+    # date_filter_capability 는 live smoke 가 documented_unverified→live_verified/live_weak 로 확정(문서 지원 ≠ 응답 제약).
+    federal_register_adapter_status: str
+    federal_register_live_status: str
+    federal_register_date_filter_capability: str
+    official_news_bridge_status: str
+    official_records_count: int
+    news_records_count: int
+    bridge_candidate_count: int
+    official_news_freeze_eligible_count: int
     ko_source_lane_status: str
     ko_named_seed_needed: bool
     ko_floor_current: int
