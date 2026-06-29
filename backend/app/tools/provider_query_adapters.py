@@ -198,14 +198,22 @@ def _iso_date(pub: Optional[str]) -> Optional[str]:
 # ── Guardian: URL builder(secret 은 실 network 경로에서만) + parser(공식 shape·본문 미저장) ────────────────
 def _guardian_url(
     endpoint: str, *, topic: str, from_date: str, to_date: str, max_records: int,
+    omit_date_window: bool = False, order: Optional[str] = None,
 ) -> str:
     """Guardian Content API /search URL(q·from-date·to-date·page-size·order-by). **api-key 는 URL 에 넣지 않는다**
     — secret hygiene(adversarial LOW-2 하드닝): url 문자열을 항상 keyless 로 유지해 향후 로깅 사고를 구조적으로 차단.
-    실 network 경로는 key 를 httpx `params` 로만 전달한다(run_provider_query)."""
-    return endpoint + "?" + urlencode({
-        "q": topic, "from-date": from_date, "to-date": to_date,
-        "page-size": str(max_records), "order-by": "newest",
-    })
+    실 network 경로는 key 를 httpx `params` 로만 전달한다(run_provider_query).
+
+    ADR#85 통제실험 가산 knob(default=현행 byte 보존): omit_date_window=True 면 from-date/to-date 를 URL 에서 제외
+    (date-param 유/무 대조군), order(None→'newest' 유지; 'relevance'/'oldest' override)로 newest-지배 가설 분리.
+    둘 다 default 면 param 순서·값이 ADR#62~#84 와 byte-identical(q→from-date→to-date→page-size→order-by)."""
+    pairs: list[tuple[str, str]] = [("q", topic)]
+    if not omit_date_window:
+        pairs.append(("from-date", from_date))
+        pairs.append(("to-date", to_date))
+    pairs.append(("page-size", str(max_records)))
+    pairs.append(("order-by", order or "newest"))
+    return endpoint + "?" + urlencode(pairs)
 
 
 def parse_guardian_items(
@@ -246,14 +254,21 @@ def parse_guardian_items(
 
 def _nyt_url(
     endpoint: str, *, topic: str, from_date: str, to_date: str, max_records: int,
+    omit_date_window: bool = False, order: Optional[str] = None,
 ) -> str:
     """NYT Article Search /articlesearch.json URL(q·begin_date·end_date·sort=newest). **api-key 는 URL 에 넣지 않는다**
     — keyless(secret hygiene·Guardian 과 동일); 실 network 경로는 key 를 httpx `params` 로만 전달(run_provider_query).
-    NYT date 형식은 YYYYMMDD(대시 제거). page-size 파라미터 없음(고정 10/page) — max_records 는 parser 가 cap."""
-    return endpoint + "?" + urlencode({
-        "q": topic, "begin_date": from_date.replace("-", ""), "end_date": to_date.replace("-", ""),
-        "sort": "newest",
-    })
+    NYT date 형식은 YYYYMMDD(대시 제거). page-size 파라미터 없음(고정 10/page) — max_records 는 parser 가 cap.
+
+    ADR#85 통제실험 가산 knob(default=현행 byte 보존): omit_date_window=True 면 begin_date/end_date 제외(date-param
+    유/무 대조군), order(None→'newest' 유지; 'relevance'/'oldest' override)로 newest-지배 분리. 둘 다 default 면
+    param 순서·값이 ADR#64~#84 와 byte-identical(q→begin_date→end_date→sort)."""
+    pairs: list[tuple[str, str]] = [("q", topic)]
+    if not omit_date_window:
+        pairs.append(("begin_date", from_date.replace("-", "")))
+        pairs.append(("end_date", to_date.replace("-", "")))
+    pairs.append(("sort", order or "newest"))
+    return endpoint + "?" + urlencode(pairs)
 
 
 def parse_nyt_items(
@@ -311,12 +326,17 @@ def run_provider_query(
     env_status_fn: Optional[Callable[[list[str]], dict[str, str]]] = None,
     host_gate: Any = None, today: Optional[str] = None,
     enforce_window: bool = False,
+    omit_date_window: bool = False, order: Optional[str] = None,
 ) -> ProviderQueryResult:
     """contract adapter 로 bounded governed live query. gate 순서(fail-closed): adapter 미배선→fetcher_not_wired;
     credential missing→missing_credentials(**network 전**); rate-limit cooldown→rate_limited; host gate→
     host_gate_blocked; 그 다음에만 fetch. 실패는 §5 status 로 분류. secret 값 0·raw body 미저장·no DB/merge/LLM.
 
-    transport(url)→payload 주입 시 결정론(test·network 0·key 불요). 미주입 시 실 network(opt-in·key os.getenv·로그 0)."""
+    transport(url)→payload 주입 시 결정론(test·network 0·key 불요). 미주입 시 실 network(opt-in·key os.getenv·로그 0).
+
+    ADR#85 통제실험 가산 knob(default=ADR#62~#84 byte 보존): omit_date_window(request URL 에서 date param 제외·
+    date-param 유/무 대조군), order(None→adapter 기본 newest; 'relevance' 등 override·newest-지배 가설 분리). 이 knob 은
+    **URL 구성에만** 영향 — enforce_window(응답 post-filter)와 독립이라 variant 별로 조합 가능."""
     adapter = _ADAPTERS.get(provider)
     if adapter is None:
         return ProviderQueryResult(
@@ -367,7 +387,8 @@ def run_provider_query(
     parser = _PARSERS[provider]
 
     # 5) fetch — transport(test·key 불요) OR 실 network(opt-in·key os.getenv·params 전용·로그 0).
-    url = url_builder(endpoint, topic=topic, from_date=from_date, to_date=to_date, max_records=maxr)
+    url = url_builder(endpoint, topic=topic, from_date=from_date, to_date=to_date, max_records=maxr,
+                      omit_date_window=omit_date_window, order=order)
     if transport is not None:
         payload = transport(url)   # url 은 keyless — fake transport 가 받아도 secret 0.
         if payload is None:

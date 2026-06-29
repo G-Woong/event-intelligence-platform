@@ -16,6 +16,8 @@ from backend.app.tools.provider_query_adapters import (
     ADAPTER_CONTRACT_VERSION,
     ADAPTER_WIRED_PROVIDERS,
     ProviderQueryResult,
+    _guardian_url,
+    _nyt_url,
     adapter_descriptor,
     parse_guardian_items,
     parse_nyt_items,
@@ -420,6 +422,54 @@ def test_34_enforce_window_all_out_of_window_distinct_block_reason():
     qr2 = run_provider_query("guardian", topic="x", transport=lambda _u: _guardian_payload(results=[]),
                              env_status_fn=env_present, today="2026-06-26", enforce_window=True)
     assert qr2.status == "no_records" and qr2.block_reason == "no_records"
+
+
+# ── ADR#85 통제실험 가산 knob(omit_date_window·order) — default byte-identity 보존 + variant 구성 ──────────────
+def test_35_guardian_url_default_byte_identical():
+    # default(knob 미사용) URL 은 ADR#62~#84 와 param 순서·값이 동일(date param 포함·order-by=newest).
+    u = _guardian_url("https://e", topic="q x", from_date="2026-06-25", to_date="2026-06-26", max_records=25)
+    assert u == "https://e?q=q+x&from-date=2026-06-25&to-date=2026-06-26&page-size=25&order-by=newest"
+
+
+def test_36_guardian_url_omit_date_window_drops_date_params():
+    # omit_date_window=True → from-date/to-date 가 URL 에서 빠진다(date-param 유/무 대조군). order-by 는 유지.
+    u = _guardian_url("https://e", topic="q", from_date="2026-06-25", to_date="2026-06-26",
+                      max_records=25, omit_date_window=True)
+    assert "from-date=" not in u and "to-date=" not in u and "order-by=newest" in u
+
+
+def test_37_guardian_url_order_override():
+    # order='relevance' → order-by=relevance(newest-지배 가설 분리). date param 은 그대로.
+    u = _guardian_url("https://e", topic="q", from_date="2026-06-25", to_date="2026-06-26",
+                      max_records=25, order="relevance")
+    assert "order-by=relevance" in u and "from-date=2026-06-25" in u
+
+
+def test_38_nyt_url_default_and_knobs():
+    # NYT default byte-identical(begin/end·sort=newest); omit_date_window 는 begin/end 제외; order override.
+    d = _nyt_url("https://e", topic="q x", from_date="2026-06-25", to_date="2026-06-26", max_records=25)
+    assert d == "https://e?q=q+x&begin_date=20260625&end_date=20260626&sort=newest"
+    nod = _nyt_url("https://e", topic="q", from_date="2026-06-25", to_date="2026-06-26",
+                   max_records=25, omit_date_window=True)
+    assert "begin_date=" not in nod and "end_date=" not in nod and "sort=newest" in nod
+    rel = _nyt_url("https://e", topic="q", from_date="2026-06-25", to_date="2026-06-26",
+                   max_records=25, order="relevance")
+    assert "sort=relevance" in rel
+
+
+def test_39_run_provider_query_forwards_knobs_to_request_url():
+    # run_provider_query 가 knob 을 실제 요청 URL(transport 가 받는 url)로 전달하는지 — secret 0·키 불요.
+    seen = {}
+
+    def cap(u):
+        seen["url"] = u
+        return _guardian_payload(results=[])
+
+    run_provider_query("guardian", topic="x y", transport=cap, env_status_fn=env_present,
+                       today="2026-06-26", omit_date_window=True, order="relevance")
+    assert "from-date=" not in seen["url"] and "to-date=" not in seen["url"]
+    assert "order-by=relevance" in seen["url"]
+    assert _SECRET not in seen["url"]   # key 값은 url 에 절대 미포함(keyless·secret hygiene).
 
 
 if __name__ == "__main__":

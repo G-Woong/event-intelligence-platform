@@ -42,6 +42,9 @@ from backend.app.tools.sanitized_live_snapshot import (
     build_sanitized_live_snapshot,
     write_sanitized_live_snapshot,
 )
+from backend.app.tools.window_honoring_source_readiness import (
+    build_window_honoring_source_readiness,
+)
 
 BOUNDED_OPERATION_NAME = "bounded_live_breadth_run_and_candidate_freeze_attempt"
 DATE_PINNED_OPERATION_NAME = "date_pinned_live_query_and_freeze_attempt"
@@ -101,6 +104,8 @@ DATE_PINNED_REQUIRED_COPY: tuple[str, ...] = (
     "occurrence_date is an operator assertion, not a code-verified fact",
     "A date pin does not prove the event occurred or that both sources cover it",
     "The live query targets the operator event, never a curated seed fallback",
+    "Provider date parameters are not trusted until verified by a control experiment",
+    "Out-of-window records cannot become production candidates",
     "Production candidate freeze is a reviewer worklist, not same-event truth",
     "Production gold remains 0 until human labels are returned",
     "R2~R7 remain No-Go",
@@ -248,6 +253,13 @@ def build_date_pinned_live_run_frontier(*, out: dict) -> dict:
         "sanitized_snapshot_status": out["sanitized_snapshot_status"],
         "date_window_enforced": bool(out["date_window_enforced"]),
         "reviewer_handoff_ready": bool(out["reviewer_handoff_ready"]),
+        # ADR#85 date-window fidelity(§12·sanitized·메커니즘은 confidence 와 함께·단정 0).
+        "provider_date_window_fidelity_status": out["provider_date_window_fidelity_status"],
+        "control_experiment_status": out["control_experiment_status"],
+        "date_filter_mechanism_primary": out["date_filter_mechanism_primary"],
+        "date_filter_mechanism_confidence": out["date_filter_mechanism_confidence"],
+        "out_of_window_records_dropped": int(out["out_of_window_records_dropped"] or 0),
+        "window_honoring_source_status": out["window_honoring_source_status"],
         "ko_source_lane_status": out["ko_source_lane_status"],
         "ko_named_seed_needed": bool(out["ko_named_seed_needed"]),
         "ko_floor_current": int(out["ko_floor_current"] or 0),
@@ -350,6 +362,7 @@ def run_bounded_live_breadth_run(
     readiness_fn: Optional[Callable[[], dict]] = None, gate_fn: Optional[Callable[..., dict]] = None,
     synthetic_batch_fn: Optional[Callable[..., dict]] = None,
     persist_snapshot: bool = False,
+    fidelity_result: Optional[dict] = None,
 ) -> dict:
     """ADR#82/#83/#84 단일 진입 — base(breadth/seed/KO/actual-input) + date-pin gate + date-pinned live executor +
     freeze + reviewer handoff bridge + sanitized snapshot.
@@ -495,7 +508,7 @@ def run_bounded_live_breadth_run(
                     "smoke": smoke, "pcand": pcand}
     snapshot = build_sanitized_live_snapshot(
         target, executor_out, run_id=_snapshot_run_id(target), live_run_status=live_run_status,
-        date_window_enforced=date_window_enforced)
+        date_window_enforced=date_window_enforced, fidelity_result=fidelity_result)
     if not live_executed:
         sanitized_snapshot_status = "not_written_no_live_run"
         sanitized_live_snapshot_written = False
@@ -514,6 +527,19 @@ def run_bounded_live_breadth_run(
     # ── ⑩ reviewer handoff bridge(§7·ADR#84·freeze→contact 직전·전송 0) — freeze 없으면 ready=False(blocker 표면화) ──
     handoff = build_reviewer_handoff_bridge(pcand or {}, live_run_status=live_run_status)
     reviewer_handoff_ready = bool(handoff["reviewer_handoff_ready"])
+
+    # ── ⑪ ADR#85 date-window fidelity 보강 — readiness 는 pure(항상)·control experiment 결과는 주입 시에만 ──
+    # fidelity_result(provider_date_window_fidelity.run_date_window_fidelity_probe) 가 있으면 메커니즘/symptom 을
+    # frontier 에 노출; 없으면 control_experiment_pending(단정 0). window-honoring readiness 는 network 0(FR 권고).
+    readiness = build_window_honoring_source_readiness()
+    _fr = fidelity_result or {}
+    _fid_executed = bool(_fr.get("live_query_executed"))
+    provider_date_window_fidelity_status = (
+        (_fr.get("provider_date_window_status") or "executed") if _fid_executed
+        else "control_experiment_pending")
+    window_honoring_source_status = (
+        f"{readiness['recommended_adapter']}_recommended_adr86" if readiness.get("recommended_adapter")
+        else "no_window_honoring_candidate")
 
     out = {
         "operation_name": BOUNDED_OPERATION_NAME,
@@ -583,6 +609,16 @@ def run_bounded_live_breadth_run(
         "expected_label_files_ready": bool(handoff["expected_label_files_ready"]),
         "validation_command_ready": bool(handoff["validation_command_ready"]),
         "placement_guide_ready": bool(handoff["placement_guide_ready"]),
+        # ADR#85 date-window fidelity(control experiment + window-honoring readiness·sanitized·§12).
+        "provider_date_window_fidelity_status": provider_date_window_fidelity_status,
+        "control_experiment_status": "executed" if _fid_executed else "not_run",
+        "date_filter_mechanism_primary": _fr.get("mechanism_primary_hypothesis") or "undetermined",
+        "date_filter_mechanism_confidence": _fr.get("mechanism_confidence") or "none",
+        "out_of_window_records_dropped": int(_fr.get("out_of_window_records_dropped") or 0),
+        "window_honoring_source_status": window_honoring_source_status,
+        "next_adapter_for_adr86": readiness.get("next_adapter_for_adr86"),
+        "window_honoring_source_readiness": readiness,
+        "provider_date_window_fidelity": fidelity_result,
         # KO source lane(§3-E·§8).
         "ko_source_lane_status": ko_lane["ko_source_lane_status"],
         "ko_named_seed_needed": ko_lane["ko_named_seed_needed"],

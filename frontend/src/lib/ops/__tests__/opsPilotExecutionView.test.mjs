@@ -1292,6 +1292,12 @@ function toR1DatePinnedLiveRunFrontierDisplayRows(f) {
     { label: "Sanitized snapshot status", value: f.sanitized_snapshot_status },
     { label: "Date window enforced (out-of-window dropped)", value: String(f.date_window_enforced) },
     { label: "Reviewer handoff ready (pre-contact; no sending)", value: String(f.reviewer_handoff_ready) },
+    { label: "Provider date-window fidelity status", value: f.provider_date_window_fidelity_status },
+    { label: "Control experiment status", value: f.control_experiment_status },
+    { label: "Date-filter mechanism (hypothesis, not asserted)", value: f.date_filter_mechanism_primary },
+    { label: "Mechanism confidence (never high from one run)", value: f.date_filter_mechanism_confidence },
+    { label: "Out-of-window records dropped", value: `${f.out_of_window_records_dropped}` },
+    { label: "Window-honoring source status", value: f.window_honoring_source_status },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -1340,6 +1346,12 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
   sanitized_snapshot_status: "not_written_no_live_run",
   date_window_enforced: false,
   reviewer_handoff_ready: false,
+  provider_date_window_fidelity_status: "control_experiment_pending",
+  control_experiment_status: "not_run",
+  date_filter_mechanism_primary: "undetermined",
+  date_filter_mechanism_confidence: "none",
+  out_of_window_records_dropped: 0,
+  window_honoring_source_status: "federal_register_recommended_adr86",
   ko_source_lane_status: "ready_5_keyfree_live_ko_news_anchors",
   ko_named_seed_needed: true,
   ko_floor_current: 0,
@@ -1355,6 +1367,8 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
     "occurrence_date is an operator assertion, not a code-verified fact",
     "A date pin does not prove the event occurred or that both sources cover it",
     "The live query targets the operator event, never a curated seed fallback",
+    "Provider date parameters are not trusted until verified by a control experiment",
+    "Out-of-window records cannot become production candidates",
     "Production candidate freeze is a reviewer worklist, not same-event truth",
     "Production gold remains 0 until human labels are returned",
     "R2~R7 remain No-Go",
@@ -1420,6 +1434,21 @@ describe("ADR#83 date-pinned live query plumbing + bounded live run + freeze fro
     );
     assert.equal(byLabel["Date window enforced (out-of-window dropped)"], "false");
     assert.equal(byLabel["Reviewer handoff ready (pre-contact; no sending)"], "false");
+  });
+
+  it("(ADR#85) shows date-window fidelity control experiment status + mechanism (hypothesis, not asserted) + window-honoring source", () => {
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    // control experiment 미실행 → pending/not_run·메커니즘 미확정(절대 단정 0).
+    assert.equal(byLabel["Provider date-window fidelity status"], "control_experiment_pending");
+    assert.equal(byLabel["Control experiment status"], "not_run");
+    assert.equal(byLabel["Date-filter mechanism (hypothesis, not asserted)"], "undetermined");
+    assert.equal(byLabel["Mechanism confidence (never high from one run)"], "none");
+    assert.notEqual(byLabel["Mechanism confidence (never high from one run)"], "high");
+    // window-honoring hedge: Federal Register 권고(ADR#86).
+    assert.equal(byLabel["Window-honoring source status"], "federal_register_recommended_adr86");
+    assert.equal(byLabel["Out-of-window records dropped"], "0");
   });
 
   it("warns: operator event required + occurrence=assertion + date-pin != occurrence + query targets operator event + freeze != truth + gold 0 + No-Go", () => {

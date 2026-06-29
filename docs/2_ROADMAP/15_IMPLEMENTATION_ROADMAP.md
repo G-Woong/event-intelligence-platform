@@ -285,6 +285,22 @@
 >
 > **구현/검증**: 신규 `r1_reviewer_pilot_batch.py`(`run_actual_input_gate` 단일 호출 re-check + 순수 builder freeze[`_frozen_pair_list` allowlist 파생·`_batch_signature` sha256·`_launch_status` 5-state·`build_operator_launch_checklist`]·`candidate_provenance=synthetic_fixture`·`pilot_batch_is_production_candidate=False`·전체 출력 재귀 PII 가드)+`reviewer_batch_launch.py`(`build_intake_plan` +`intake_dir` override·additive·기존 호출 무영향)+`schemas/internal_ops.py`(+`InternalOpsR1PilotBatchStatus`)+`api/internal_ops.py`(+`GET /api/internal/ops/r1-pilot-batch`·이중 게이트·read-only·503 sanitize·기존 무변경)+frontend(types +1·opsPilotExecutionView +toR1BatchDisplayRows/r1BatchWarnings/OPS_R1_BATCH_COPY·page +launch-readiness 패널·warnings dedupe·node:test +6). 신규 backend 테스트 **44**(r1 batch 36+API 8)·frontend **+6**·ruff(E/F/I/B/W−E501) **0**·ingestion **1353p**·frontend tsc0/lint0/test38·backend 비-live **1391p/101skip/0fail**·**production_gold_count 0·r1_status blocked_no_labels·frozen 5<<target 200(pilot_n)·launch_status ready_for_manual_launch**·merge/전송/입력 날조/secret 값 노출 0. 합성 fixture→production gold 둔갑 0(**template dataset_source=synthetic 태깅→라벨 회수해도 production gold 미승격·machinery 강제**). 신규 RISK 1(R-BatchFreezeAsTruth LOW). 부분진전 R-GoldAcquisitionPlanOnly/R-ReviewerPilotExecution/R-IdentityHumanLabeling/R-ReviewerAgreement/R-GoldSamplingBias/R-IdentityEvalDataset. **adversarial PROCEED-WITH-FIXES**(HIGH-1 template synthetic 태깅[machinery 강제]·MEDIUM-1 dry-run hard-stop 수정)·**code-review LGTM-WITH-NITS**(triple-consistency 22==22==22).
 
+> **ADR#85 — provider date-window fidelity 통제실험(메커니즘 분해) + window-honoring source readiness + live-derived freeze 재시도**
+>
+> **선행**: ADR#84(date-pinned bounded live run + date-window fidelity 결손 발견) 커밋(`b8443b8`·push 0·NO UPSTREAM). 미확정 메커니즘을 통제실험으로 분해.
+>
+> **분석(§4)**: 호출 체인 원자 분해 — `_guardian_url`/`_nyt_url` 가 `order-by=newest`/`sort=newest` 를 **하드코딩**(newest-지배 1순위 정황)·GDELT/FR endpoint 는 registry 에 이미 존재(adapter 잔여=url+parser)·GDELT rate-fragile(60s·429 storm).
+>
+> **구현(§6·additive·byte-보존)**: ① 가산 knob `omit_date_window`/`order`(default byte-identical)·② 신규 `provider_date_window_fidelity.py`(5-variant 통제실험·메커니즘 분류 confidence low/medium·**절대 high 금지**·`pace_seconds` host floor 사전 대기=gate **bypass 아님**·aggregate-only)·③ 신규 `window_honoring_source_readiness.py`(FR 권고·role guard 보존)·④ snapshot `control_experiment` block·frontier +6 필드 **dict==pydantic==TS==mjs 38==38==38==38**·API allowed 38.
+>
+> **통제실험 결과(§8·paced·gate-respected·실 live)**: Guardian 5-variant·NYT 4-variant **전부 실행**(secret 0·raw body 0). 전 비교 variant 동일(반환 전부 당일 2026-06-29·요청 window 밖·overlap 0.107/0.044·in-window 0): date_param **weak**(original==no_date)·order_newest **weak**(relevance==newest)·query_relevance **weak**(exact_phrase==original)·coverage zero_in_returned → **order-by=newest·loose-q 약화(이 run 비차별 lever·newest-dominance 미배제)**·**`date_filter_ignored` leading(medium·cross-provider)**·zero_in_window_coverage 잔존(low·미분리). enforce_window 전부 drop→comparison 0→**freeze 0·gold 0·gap 200**.
+>
+> **신규 blocker(발견+보정)**: R-ControlExperimentRateBudget(host gate min_spacing 이 multi-variant probing 차단→`pace_seconds` 사전 대기로 정직 준수).
+>
+> **옵션 결정(§5)**: A+B(통제실험·**실행**)+C(window-honoring 분석·**FR 권고·실배선 ADR#86**)+D(enforce 재실행·no_in_window)+E(freeze 재시도·0)+F(handoff·ready=False)+G(frontier +6)+H(guard). I 금지. **ADR#86 이연**: FR/GDELT adapter 실배선 + official×news role-bridge(FR=official role·GDELT rate-fragile/aggregator).
+>
+> **RISK**: 부분진전 R-ProviderDateWindowFidelity(통제실험 실행·order/q 제거·date_filter_ignored medium·**종결 금지**)·신규 R-ControlExperimentRateBudget(LOW·pace 보정)·R-WindowHonoringSourceScarcity(MEDIUM·FR role-bridge/GDELT rate). 종결 0. **다음**: FR adapter(ADR#86) 또는 in-window 보도 실재 event→freeze→reviewer labels. **통제실험 실행 ≠ 메커니즘 완전 확정·메커니즘 분해 ≠ production candidate 확보**·R2~R7 No-Go.
+
 > **ADR#84 — date-pinned bounded live run + production candidate freeze attempt + reviewer handoff bridge (첫 실 live run 실행·provider date-window fidelity 결손 발견)**
 >
 > **선행**: ADR#83(date-pinned live query plumbing) 커밋(`0774f1c`·22파일·push 0·NO UPSTREAM).

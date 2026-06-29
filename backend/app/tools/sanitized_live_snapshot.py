@@ -32,15 +32,40 @@ def _redact_hash(text: Optional[str]) -> Optional[str]:
     return "sha256:" + hashlib.sha256(t.encode("utf-8")).hexdigest()[:16]
 
 
+def _sanitize_fidelity(fr: Optional[dict]) -> Optional[dict]:
+    """ADR#85 control experiment 결과 → snapshot 용 sanitized 투영(메커니즘/effect/counts + variant→result_class 만·
+    제목 전문·raw body·per-pair score 미노출). fidelity 미실행 시 None."""
+    if not fr:
+        return None
+    return {
+        "live_query_executed": bool(fr.get("live_query_executed")),
+        "provider": fr.get("provider"),
+        "provider_date_window_status": fr.get("provider_date_window_status"),
+        "mechanism_primary_hypothesis": fr.get("mechanism_primary_hypothesis"),
+        "mechanism_confidence": fr.get("mechanism_confidence"),
+        "date_param_effect": fr.get("date_param_effect"),
+        "order_by_newest_effect": fr.get("order_by_newest_effect"),
+        "query_relevance_effect": fr.get("query_relevance_effect"),
+        "in_window_coverage_effect": fr.get("in_window_coverage_effect"),
+        "in_window_records_found": int(fr.get("in_window_records_found") or 0),
+        "out_of_window_records_dropped": int(fr.get("out_of_window_records_dropped") or 0),
+        "no_in_window_records": bool(fr.get("no_in_window_records")),
+        "control_experiment_variants_count": int(fr.get("control_experiment_variants_count") or 0),
+        "variant_result_classes": {
+            r.get("variant"): r.get("result_class") for r in (fr.get("variant_results") or [])},
+    }
+
+
 def build_sanitized_live_snapshot(
     target: dict, executor_out: dict, *, run_id: str, live_run_status: Optional[str] = None,
-    date_window_enforced: bool = True,
+    date_window_enforced: bool = True, fidelity_result: Optional[dict] = None,
 ) -> dict:
     """target(build_live_query_target) + executor_out(execute_date_pinned_bounded_live_run) → sanitized snapshot
     (§8·aggregate 만·per-pair score/raw body/secret/PII/same_event 0). PURE(no write).
 
     date_window_enforced 는 **실제 executor 호출 인자에서 파생**해 전달한다(상수 둔갑 금지·adversarial MEDIUM-2):
-    enforce_window 적용 여부를 사실대로 기록해야 enforce 전/후 run 을 snapshot 으로 구분할 수 있다."""
+    enforce_window 적용 여부를 사실대로 기록해야 enforce 전/후 run 을 snapshot 으로 구분할 수 있다.
+    fidelity_result(ADR#85 control experiment)가 있으면 메커니즘/effect/counts 를 aggregate 로 첨부(제목 전문 0)."""
     smoke = (executor_out or {}).get("smoke") or {}
     pcand = (executor_out or {}).get("pcand") or {}
     band = smoke.get("band_diagnostic") or {}
@@ -72,6 +97,8 @@ def build_sanitized_live_snapshot(
         "production_candidate_status": pcand.get("production_candidate_status"),
         "production_frozen_pair_count": int(pcand.get("production_frozen_pair_count") or 0),
         "candidate_provenance": pcand.get("candidate_provenance") or "none",
+        # ADR#85 control experiment(메커니즘·effect·counts·variant→class·aggregate-only·제목 전문 0).
+        "control_experiment": _sanitize_fidelity(fidelity_result),
         "live_run_status": live_run_status,
         "block_reasons": list(smoke.get("block_reasons") or []),
         "next_actions": list(pcand.get("next_actions") or [])[:3],

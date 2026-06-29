@@ -426,6 +426,14 @@ class InternalOpsDatePinnedLiveRunFrontier(BaseModel):
     # reviewer handoff bridge readiness(freeze 없으면 False·전송 0). 둘 다 sanitized boolean(truth/score/PII 미노출).
     date_window_enforced: bool
     reviewer_handoff_ready: bool
+    # ADR#85 date-window fidelity: control experiment(메커니즘은 confidence 와 함께·단정 0) + window-honoring readiness.
+    # 요청 date param 은 control experiment 검증 전까지 신뢰하지 않으며, out-of-window record 는 production candidate 불가.
+    provider_date_window_fidelity_status: str
+    control_experiment_status: str
+    date_filter_mechanism_primary: str
+    date_filter_mechanism_confidence: str
+    out_of_window_records_dropped: int
+    window_honoring_source_status: str
     ko_source_lane_status: str
     ko_named_seed_needed: bool
     ko_floor_current: int

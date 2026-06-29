@@ -460,6 +460,13 @@ export interface InternalOpsDatePinnedLiveRunFrontier {
   // ADR#84: provider out-of-window record drop 강제 + freeze→contact 직전 handoff readiness(freeze 없으면 false).
   date_window_enforced: boolean;
   reviewer_handoff_ready: boolean;
+  // ADR#85: date-window fidelity control experiment(메커니즘은 confidence 와 함께·단정 0) + window-honoring readiness.
+  provider_date_window_fidelity_status: string;
+  control_experiment_status: string;
+  date_filter_mechanism_primary: string;
+  date_filter_mechanism_confidence: string;
+  out_of_window_records_dropped: number;
+  window_honoring_source_status: string;
   // KO source lane(§8).
   ko_source_lane_status: string;
   ko_named_seed_needed: boolean;

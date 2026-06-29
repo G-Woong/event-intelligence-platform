@@ -130,5 +130,50 @@ def test_write_skips_when_no_live_run(tmp_path):
     assert not (tmp_path / "adr84_nolive.json").exists()
 
 
+# ── ADR#85: control experiment(fidelity) 결과를 snapshot 에 aggregate-only 로 첨부(제목 전문·score 미노출) ──────────
+_FIDELITY = {
+    "operation_name": "provider_date_window_fidelity",
+    "provider": "guardian",
+    "live_query_executed": True,
+    "provider_date_window_status": "returns_out_of_window",
+    "mechanism_primary_hypothesis": "order_by_newest_dominance",
+    "mechanism_confidence": "medium",
+    "date_param_effect": "weak",
+    "order_by_newest_effect": "strong",
+    "query_relevance_effect": "weak",
+    "in_window_coverage_effect": "zero_in_returned",
+    "in_window_records_found": 1,
+    "out_of_window_records_dropped": 2,
+    "no_in_window_records": False,
+    "control_experiment_variants_count": 5,
+    "variant_results": [
+        {"variant": "original", "result_class": "out_of_window_only", "title_or_label": "LEAK ME"},
+        {"variant": "relevance_order", "result_class": "in_window_related", "title_or_label": "LEAK ME TOO"},
+    ],
+}
+
+
+def test_control_experiment_block_is_aggregate_only_no_titles():
+    s = build_sanitized_live_snapshot(
+        TARGET, EXECUTOR_OUT_LIVE, run_id="adr85", live_run_status="live_no_routing_candidates",
+        fidelity_result=_FIDELITY)
+    ce = s["control_experiment"]
+    assert ce is not None
+    assert ce["mechanism_primary_hypothesis"] == "order_by_newest_dominance"
+    assert ce["mechanism_confidence"] == "medium"
+    assert ce["mechanism_confidence"] != "high"          # 단일 bounded run 은 절대 high 금지.
+    assert ce["out_of_window_records_dropped"] == 2
+    # variant→result_class 만 보존(제목 전문 미노출).
+    assert ce["variant_result_classes"] == {
+        "original": "out_of_window_only", "relevance_order": "in_window_related"}
+    # 제목 전문이 snapshot 어디에도 새지 않는다.
+    assert "LEAK ME" not in json.dumps(s, ensure_ascii=False)
+
+
+def test_control_experiment_none_when_no_fidelity():
+    s = build_sanitized_live_snapshot(TARGET, EXECUTOR_OUT_LIVE, run_id="adr85b")
+    assert s["control_experiment"] is None   # fidelity 미주입 → 첨부 없음(정직).
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
