@@ -36,6 +36,7 @@ from backend.app.tools.r1_production_candidate_acquisition import PROD_BATCH_ID
 from backend.app.tools.r1_provider_breadth_acquisition import (
     run_provider_breadth_named_seed_ko_path,
 )
+from backend.app.tools.regulatory_event_seed_bank import build_regulatory_event_seed_bank
 from backend.app.tools.reviewer_handoff_bridge import build_reviewer_handoff_bridge
 from backend.app.tools.reviewer_pilot_handoff import _assert_pii_safe
 from backend.app.tools.sanitized_live_snapshot import (
@@ -108,6 +109,8 @@ DATE_PINNED_REQUIRED_COPY: tuple[str, ...] = (
     "Out-of-window records cannot become production candidates",
     "Federal Register is official evidence, not a news article",
     "Official-news bridge is reviewer-routing only, not same-event truth",
+    "Official record alone is not a production cross-source candidate",
+    "A regulatory-class seed needs an agency/entity, an action, and a confirmed date window",
     "Production candidate freeze is a reviewer worklist, not same-event truth",
     "Production gold remains 0 until human labels are returned",
     "R2~R7 remain No-Go",
@@ -271,6 +274,12 @@ def build_date_pinned_live_run_frontier(*, out: dict) -> dict:
         "news_records_count": int(out["news_records_count"] or 0),
         "bridge_candidate_count": int(out["bridge_candidate_count"] or 0),
         "official_news_freeze_eligible_count": int(out["official_news_freeze_eligible_count"] or 0),
+        # ADR#87 regulatory seed bank + official×news live acquisition(sanitized·aggregate-only).
+        "regulatory_seed_bank_status": out["regulatory_seed_bank_status"],
+        "selected_regulatory_seed_id": out["selected_regulatory_seed_id"],
+        "official_news_live_status": out["official_news_live_status"],
+        "official_news_production_candidate_status": out["official_news_production_candidate_status"],
+        "official_news_reviewer_handoff_ready": bool(out["official_news_reviewer_handoff_ready"]),
         "ko_source_lane_status": out["ko_source_lane_status"],
         "ko_named_seed_needed": bool(out["ko_named_seed_needed"]),
         "ko_floor_current": int(out["ko_floor_current"] or 0),
@@ -397,6 +406,22 @@ def _adr86_official_news_fields(
     }
 
 
+def _adr87_official_news_acquisition_fields(*, acq: Optional[dict], bank: dict) -> dict:
+    """ADR#87 sanitized frontier 필드(regulatory seed bank + official×news live acquisition·aggregate-only·secret 0).
+
+    bank(regulatory_event_seed_bank)는 network 0 라 항상 산출(seed bank readiness + selected seed). acq
+    (official_news_live_acquisition) 주입 시 live status/production candidate/handoff 노출, 없으면 not_run(이번 턴
+    operator 가 official×news live 미실행). raw title/url/score 0."""
+    a = acq or {}
+    return {
+        "regulatory_seed_bank_status": "ready" if bank.get("regulatory_event_seed_bank_ready") else "not_ready",
+        "selected_regulatory_seed_id": bank.get("selected_seed_id"),
+        "official_news_live_status": a.get("official_news_live_status") or "not_run",
+        "official_news_production_candidate_status": a.get("production_candidate_status") or "blocked",
+        "official_news_reviewer_handoff_ready": bool(a.get("reviewer_handoff_ready")),
+    }
+
+
 def run_bounded_live_breadth_run(
     *, directory: Optional[Any] = None, batch_id: str = PROD_BATCH_ID, as_of: Optional[str] = None,
     live_query: bool = False, operator_event: Optional[dict] = None, pinned_event: Optional[dict] = None,
@@ -413,6 +438,7 @@ def run_bounded_live_breadth_run(
     fidelity_result: Optional[dict] = None,
     federal_register_live_result: Optional[dict] = None,
     official_news_bridge_result: Optional[dict] = None,
+    official_news_acquisition_result: Optional[dict] = None,
 ) -> dict:
     """ADR#82/#83/#84 단일 진입 — base(breadth/seed/KO/actual-input) + date-pin gate + date-pinned live executor +
     freeze + reviewer handoff bridge + sanitized snapshot.
@@ -594,9 +620,16 @@ def run_bounded_live_breadth_run(
         else (f"{readiness['recommended_adapter']}_recommended_adr86" if readiness.get("recommended_adapter")
               else "no_window_honoring_candidate"))
     # ── ADR#86: FR adapter/live + official×news bridge sanitized 필드(주입 시 live·없으면 not_run/built_not_run) ──
+    # ADR#87: official_news_acquisition_result 주입 시 그 안의 FR live + bridge sub-result 를 ADR#86 필드 소스로
+    # 사용(직접 주입 federal_register_live_result/official_news_bridge_result 가 우선·둘 다 없으면 acq 에서 파생).
+    _acq = official_news_acquisition_result or {}
+    _fr_live_src = federal_register_live_result or _acq.get("federal_register_live_result")
+    _bridge_src = official_news_bridge_result or _acq.get("official_news_bridge_result")
     _adr86 = _adr86_official_news_fields(
-        readiness=readiness, fr_live_result=federal_register_live_result,
-        bridge_result=official_news_bridge_result)
+        readiness=readiness, fr_live_result=_fr_live_src, bridge_result=_bridge_src)
+    # ── ADR#87: regulatory seed bank(network 0·항상) + official×news live acquisition status(주입 시·없으면 not_run) ──
+    _reg_bank = build_regulatory_event_seed_bank()
+    _adr87 = _adr87_official_news_acquisition_fields(acq=official_news_acquisition_result, bank=_reg_bank)
 
     out = {
         "operation_name": BOUNDED_OPERATION_NAME,
@@ -685,6 +718,12 @@ def run_bounded_live_breadth_run(
         "news_records_count": _adr86["news_records_count"],
         "bridge_candidate_count": _adr86["bridge_candidate_count"],
         "official_news_freeze_eligible_count": _adr86["official_news_freeze_eligible_count"],
+        # ADR#87 regulatory seed bank + official×news live acquisition(sanitized·aggregate-only·secret 0·score 0).
+        "regulatory_seed_bank_status": _adr87["regulatory_seed_bank_status"],
+        "selected_regulatory_seed_id": _adr87["selected_regulatory_seed_id"],
+        "official_news_live_status": _adr87["official_news_live_status"],
+        "official_news_production_candidate_status": _adr87["official_news_production_candidate_status"],
+        "official_news_reviewer_handoff_ready": _adr87["official_news_reviewer_handoff_ready"],
         # KO source lane(§3-E·§8).
         "ko_source_lane_status": ko_lane["ko_source_lane_status"],
         "ko_named_seed_needed": ko_lane["ko_named_seed_needed"],

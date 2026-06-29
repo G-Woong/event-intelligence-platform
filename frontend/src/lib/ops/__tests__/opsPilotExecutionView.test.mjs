@@ -1306,6 +1306,11 @@ function toR1DatePinnedLiveRunFrontierDisplayRows(f) {
     { label: "News records (for bridge)", value: `${f.news_records_count}` },
     { label: "Official×news bridge candidates (not same-event)", value: `${f.bridge_candidate_count}` },
     { label: "Bridge freeze-eligible (in-window both)", value: `${f.official_news_freeze_eligible_count}` },
+    { label: "Regulatory seed bank status", value: f.regulatory_seed_bank_status },
+    { label: "Selected regulatory seed", value: f.selected_regulatory_seed_id ?? "(none)" },
+    { label: "Official×news live status", value: f.official_news_live_status },
+    { label: "Official×news production candidate (worklist, not truth)", value: f.official_news_production_candidate_status },
+    { label: "Official×news reviewer handoff ready (no sending)", value: String(f.official_news_reviewer_handoff_ready) },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -1368,6 +1373,11 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
   news_records_count: 0,
   bridge_candidate_count: 0,
   official_news_freeze_eligible_count: 0,
+  regulatory_seed_bank_status: "ready",
+  selected_regulatory_seed_id: "epa_final_rule_emissions",
+  official_news_live_status: "not_run",
+  official_news_production_candidate_status: "blocked",
+  official_news_reviewer_handoff_ready: false,
   ko_source_lane_status: "ready_5_keyfree_live_ko_news_anchors",
   ko_named_seed_needed: true,
   ko_floor_current: 0,
@@ -1387,6 +1397,8 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
     "Out-of-window records cannot become production candidates",
     "Federal Register is official evidence, not a news article",
     "Official-news bridge is reviewer-routing only, not same-event truth",
+    "Official record alone is not a production cross-source candidate",
+    "A regulatory-class seed needs an agency/entity, an action, and a confirmed date window",
     "Production candidate freeze is a reviewer worklist, not same-event truth",
     "Production gold remains 0 until human labels are returned",
     "R2~R7 remain No-Go",
@@ -1487,6 +1499,48 @@ describe("ADR#83 date-pinned live query plumbing + bounded live run + freeze fro
     const w = r1DatePinnedLiveRunFrontierWarnings(SAMPLE_DATE_PINNED_FRONTIER);
     assert.ok(w.includes("Federal Register is official evidence, not a news article"));
     assert.ok(w.includes("Official-news bridge is reviewer-routing only, not same-event truth"));
+  });
+
+  it("(ADR#87) shows regulatory seed bank ready + selected seed + official×news live status (not run, no opt-in)", () => {
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    // regulatory seed bank=official×news 동시 포착 가능 event shape(network 0·항상 ready). selected seed 노출.
+    assert.equal(byLabel["Regulatory seed bank status"], "ready");
+    assert.equal(byLabel["Selected regulatory seed"], "epa_final_rule_emissions");
+    // official×news live=fetch→bridge→freeze 분류(미실행이면 not_run)·production candidate=worklist(truth 아님)·handoff 미준비.
+    assert.equal(byLabel["Official×news live status"], "not_run");
+    assert.equal(byLabel["Official×news production candidate (worklist, not truth)"], "blocked");
+    assert.equal(byLabel["Official×news reviewer handoff ready (no sending)"], "false");
+  });
+
+  it("(ADR#87) reflects a frozen official×news live run (worklist ready, handoff ready, no sending/gold)", () => {
+    const frozen = {
+      ...SAMPLE_DATE_PINNED_FRONTIER,
+      official_news_live_status: "production_batch_frozen",
+      official_news_production_candidate_status: "production_batch_frozen",
+      official_news_reviewer_handoff_ready: true,
+      federal_register_live_status: "fr_live_ok_in_window",
+      federal_register_date_filter_capability: "live_verified",
+      bridge_candidate_count: 1,
+      official_news_freeze_eligible_count: 1,
+    };
+    // 동결 상태여도 contract 안전(forbidden 0)·production gold 0(worklist≠truth).
+    assert.doesNotThrow(() => assertOpsContractSafe(frozen));
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(frozen).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Official×news live status"], "production_batch_frozen");
+    assert.equal(byLabel["Official×news reviewer handoff ready (no sending)"], "true");
+    assert.equal(byLabel["Production gold count"], "0");
+  });
+
+  it("(ADR#87) warns: official record alone is not a cross-source candidate + regulatory seed needs agency/action/date", () => {
+    const w = r1DatePinnedLiveRunFrontierWarnings(SAMPLE_DATE_PINNED_FRONTIER);
+    assert.ok(w.includes("Official record alone is not a production cross-source candidate"));
+    assert.ok(
+      w.includes("A regulatory-class seed needs an agency/entity, an action, and a confirmed date window"),
+    );
   });
 
   it("warns: operator event required + occurrence=assertion + date-pin != occurrence + query targets operator event + freeze != truth + gold 0 + No-Go", () => {

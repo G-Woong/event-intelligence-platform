@@ -275,7 +275,7 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     f = out["internal_ops_date_pinned_live_run_frontier"]
     model = InternalOpsDatePinnedLiveRunFrontier(**f)   # raises on missing/type mismatch.
     assert set(f.keys()) == set(InternalOpsDatePinnedLiveRunFrontier.model_fields.keys())
-    assert len(f) == 46
+    assert len(f) == 51
     assert model.r2_r7_no_go is True
     assert model.latest_date_pinned_live_run_status == BLOCKED_MISSING_OPERATOR_EVENT
     # ADR#84: no live run(synthetic base) → date window 미강제·handoff 미준비(freeze 없음).
@@ -295,6 +295,12 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     assert f["official_news_bridge_status"] == "bridge_built_not_run"
     assert f["bridge_candidate_count"] == 0
     assert f["official_news_freeze_eligible_count"] == 0
+    # ADR#87: regulatory seed bank 항상 ready(network 0) + official×news live 미주입 → not_run·handoff 미준비.
+    assert f["regulatory_seed_bank_status"] == "ready"
+    assert f["selected_regulatory_seed_id"] == "epa_final_rule_emissions"
+    assert f["official_news_live_status"] == "not_run"
+    assert f["official_news_production_candidate_status"] == "blocked"
+    assert f["official_news_reviewer_handoff_ready"] is False
     assert len(f["flags"]) == 7
 
 
@@ -331,5 +337,34 @@ def test_adr86_fr_live_and_bridge_results_surface_in_frontier():
     assert f["official_news_bridge_status"] == "bridge_candidates_not_in_window"
     assert f["production_gold_count"] == 0   # bridge 후보는 truth/gold 아님(불변).
     # bridge 후보가 있어도 raw title/score/same_event 는 frontier 에 미노출(forbidden 0).
+    for forbidden in ("score", "rationale", "predicted_status", "same_event", "shared_tokens"):
+        assert forbidden not in f
+
+
+def test_adr87_official_news_acquisition_surfaces_in_frontier():
+    # ADR#87: official×news live acquisition(freeze 성공) 주입 시 frontier 가 sanitized 로 노출 — FR live + bridge
+    # sub-result 가 ADR#86 필드도 채우고, ADR#87 live/freeze/handoff status 가 surface(production gold 0 유지).
+    acq = {
+        "official_news_live_status": "production_batch_frozen",
+        "production_candidate_status": "production_batch_frozen",
+        "reviewer_handoff_ready": True,
+        "federal_register_live_result": {
+            "fr_live_status": "fr_live_ok_in_window", "date_filter_capability": "live_verified",
+            "in_window_records": 1, "records_returned": 1, "live_query_executed": True},
+        "official_news_bridge_result": {
+            "official_record_count": 1, "news_record_count": 1, "bridge_candidate_count": 1,
+            "freeze_eligible_bridge_count": 1, "blocked_reason": ""},
+    }
+    out = run_bounded_live_breadth_run(
+        base_result=_synthetic_base(), official_news_acquisition_result=acq)
+    f = out["internal_ops_date_pinned_live_run_frontier"]
+    assert f["regulatory_seed_bank_status"] == "ready"
+    assert f["official_news_live_status"] == "production_batch_frozen"
+    assert f["official_news_production_candidate_status"] == "production_batch_frozen"
+    assert f["official_news_reviewer_handoff_ready"] is True
+    # acq sub-result 가 ADR#86 필드 소스로 파생됨.
+    assert f["federal_register_live_status"] == "fr_live_ok_in_window"
+    assert f["bridge_candidate_count"] == 1 and f["official_news_freeze_eligible_count"] == 1
+    assert f["production_gold_count"] == 0   # freeze 는 worklist·gold 아님(불변).
     for forbidden in ("score", "rationale", "predicted_status", "same_event", "shared_tokens"):
         assert forbidden not in f

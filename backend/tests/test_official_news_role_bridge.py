@@ -10,6 +10,7 @@ import json
 from backend.app.tools.official_news_role_bridge import (
     BRIDGE_TYPE,
     build_official_news_bridge,
+    iter_freeze_eligible_record_pairs,
 )
 
 # official(FR) 문서 — record_type=official_record → role official.
@@ -113,3 +114,69 @@ def test_09_empty_inputs_blocked_reason():
     out = build_official_news_bridge([], [], date_window=_WINDOW)
     assert out["bridge_candidate_count"] == 0
     assert out["blocked_reason"] == "no_official_or_news_records"
+
+
+# ── ADR#87: iter_freeze_eligible_record_pairs (freeze worklist 입력·실제 record 참조·단일 술어) ──────────────
+def test_10_iter_freeze_eligible_returns_record_pairs_with_titles():
+    pairs = iter_freeze_eligible_record_pairs([_FR_IN], [_NEWS_IN], date_window=_WINDOW)
+    # build 의 freeze_eligible_count 와 일치(동일 술어).
+    out = build_official_news_bridge([_FR_IN], [_NEWS_IN], date_window=_WINDOW)
+    assert len(pairs) == out["freeze_eligible_bridge_count"] == 1
+    p = pairs[0]
+    assert p["pair_id"] == "oxn_0001"
+    # 원본 record(title 포함) 참조 — reviewer worklist 구성용.
+    assert p["official_record"]["title_or_label"].startswith("Final Rule")
+    assert p["news_record"]["title_or_label"].startswith("Supreme Court")
+    assert "asylum" in p["shared_tokens"]
+
+
+def test_11_iter_freeze_eligible_out_of_window_empty():
+    news_out = dict(_NEWS_IN, published_at_or_observed_at="2026-06-29",
+                    canonical_url="https://www.theguardian.com/world/2026/jun/29/asylum")
+    assert iter_freeze_eligible_record_pairs([_FR_IN], [news_out], date_window=_WINDOW) == []
+
+
+def test_12_iter_freeze_eligible_no_window_fail_closed():
+    # window 없으면 in-window 미지 → freeze 불가(build 와 동일·fail-closed).
+    assert iter_freeze_eligible_record_pairs([_FR_IN], [_NEWS_IN], date_window=None) == []
+
+
+def test_13_iter_freeze_eligible_role_guard():
+    # community record 는 anchor 아님 → freeze pair 0.
+    community = {"record_type": "community_signal", "source_id": "reddit",
+                 "title_or_label": "asylum metering border thread",
+                 "canonical_url": "https://reddit.test/x", "published_at_or_observed_at": "2026-06-25"}
+    assert iter_freeze_eligible_record_pairs([_FR_IN], [community], date_window=_WINDOW) == []
+
+
+# ── ADR#87: golden candidate dict (refactor byte-identity 락·_evaluate_official_news_pair 출력 shape/값 고정) ──
+def test_14_candidate_dict_golden_shape_and_values():
+    out = build_official_news_bridge([_FR_IN], [_NEWS_IN], date_window=_WINDOW)
+    c = out["bridge_candidates"][0]
+    # 전체 키 집합 고정(술어 추출 refactor 가 필드를 drop/추가/rename 하지 않음을 보장).
+    assert set(c.keys()) == {
+        "pair_id", "bridge_type", "source_id_official", "source_id_news",
+        "source_role_official", "source_role_news", "date_official", "date_news",
+        "date_proximity_days", "shared_token_count", "shared_tokens",
+        "canonical_host_official", "canonical_host_news", "official_in_window", "news_in_window",
+        "both_canonical_present", "both_published_present", "bridge_candidate", "freeze_eligible",
+        "same_event_asserted", "reviewer_routing_only", "merge_allowed", "kg_edge_allowed",
+        "public_iu_allowed"}
+    # 결정적 값 고정(official-outer/news-inner·idx 1-based).
+    assert c["pair_id"] == "oxn_0001"
+    assert c["bridge_type"] == "official_news"
+    assert c["source_id_official"] == "federal_register" and c["source_id_news"] == "guardian"
+    assert c["source_role_official"] == "official" and c["source_role_news"] == "article"
+    assert c["date_official"] == "2026-06-25" and c["date_news"] == "2026-06-26"
+    assert c["date_proximity_days"] == 1
+    assert c["canonical_host_official"] == "www.federalregister.gov"
+    assert c["canonical_host_news"] == "www.theguardian.com"
+    assert c["official_in_window"] is True and c["news_in_window"] is True
+    assert c["both_canonical_present"] is True and c["both_published_present"] is True
+    assert c["bridge_candidate"] is True and c["freeze_eligible"] is True
+    assert c["same_event_asserted"] is False and c["reviewer_routing_only"] is True
+    assert c["merge_allowed"] is False and c["kg_edge_allowed"] is False and c["public_iu_allowed"] is False
+    # shared_tokens = 정규화 교집합(정렬·entity/action proxy). asylum/metering/border 공유.
+    assert c["shared_tokens"] == sorted(c["shared_tokens"])
+    assert {"asylum", "metering", "border"} <= set(c["shared_tokens"])
+    assert c["shared_token_count"] == len(c["shared_tokens"])

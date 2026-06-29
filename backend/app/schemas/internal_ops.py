@@ -445,6 +445,13 @@ class InternalOpsDatePinnedLiveRunFrontier(BaseModel):
     news_records_count: int
     bridge_candidate_count: int
     official_news_freeze_eligible_count: int
+    # ADR#87 regulatory seed bank + official×news live acquisition(sanitized·aggregate-only·score 0·body 0).
+    # seed bank=official×news 동시 포착 가능 regulatory event shape·live status=fetch→bridge→freeze 분류·handoff=freeze→contact-PRE.
+    regulatory_seed_bank_status: str
+    selected_regulatory_seed_id: str | None
+    official_news_live_status: str
+    official_news_production_candidate_status: str
+    official_news_reviewer_handoff_ready: bool
     ko_source_lane_status: str
     ko_named_seed_needed: bool
     ko_floor_current: int

@@ -477,6 +477,13 @@ export interface InternalOpsDatePinnedLiveRunFrontier {
   news_records_count: number;
   bridge_candidate_count: number;
   official_news_freeze_eligible_count: number;
+  // ADR#87: regulatory seed bank(official×news 동시 포착 가능 event shape) + official×news live acquisition status.
+  // live status=fetch→bridge→freeze 분류·handoff=freeze→contact-PRE(전송 0)·official 단독 candidate 금지.
+  regulatory_seed_bank_status: string;
+  selected_regulatory_seed_id: string | null;
+  official_news_live_status: string;
+  official_news_production_candidate_status: string;
+  official_news_reviewer_handoff_ready: boolean;
   // KO source lane(§8).
   ko_source_lane_status: string;
   ko_named_seed_needed: boolean;

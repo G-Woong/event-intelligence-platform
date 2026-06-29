@@ -76,6 +76,62 @@ def _in_window(date_str: Optional[str], window: Optional[tuple[str, str]]) -> Op
     return s <= d <= e
 
 
+def _evaluate_official_news_pair(
+    o: dict, n: dict, *, idx: int, date_window: Optional[tuple[str, str]],
+    date_tolerance_days: int, min_shared_tokens: int,
+) -> dict:
+    """단일 (official, news) 쌍 → bridge candidate dict(PURE·title-free). build_official_news_bridge 와
+    iter_freeze_eligible_record_pairs 가 **공유하는 freeze_eligible 술어 단일 출처** — 두 소비처가 같은 판정을
+    쓰도록 한 곳에서 계산(드리프트 차단). 출력은 정규화 공유 토큰·canonical host·날짜만(제목 전문 0)."""
+    o_role = _role(o)
+    o_pub = o.get("published_at_or_observed_at")
+    o_url = o.get("canonical_url")
+    n_role = _role(n)
+    n_pub = n.get("published_at_or_observed_at")
+    n_url = n.get("canonical_url")
+    shared = sorted(_title_tokens(o.get("title_or_label")) & _title_tokens(n.get("title_or_label")))
+    both_canonical = bool(o_url) and bool(n_url)
+    both_published = bool(o_pub) and bool(n_pub)
+    od, nd = _iso(o_pub), _iso(n_pub)
+    proximity = abs((od - nd).days) if (od is not None and nd is not None) else None
+    o_in = _in_window(o_pub, date_window)
+    n_in = _in_window(n_pub, date_window)
+    date_close = proximity is not None and proximity <= max(0, date_tolerance_days)
+    is_candidate = bool(
+        both_canonical and both_published and date_close
+        and len(shared) >= max(1, min_shared_tokens))
+    # §9 freeze 계약: bridge_candidate ∧ official in-window ∧ news in-window(date-compatible) ∧ canonical 양측.
+    freeze_eligible = bool(
+        is_candidate and o_in is True and n_in is True and both_canonical)
+    return {
+        "pair_id": f"oxn_{idx:04d}",
+        "bridge_type": BRIDGE_TYPE,
+        "source_id_official": o.get("source_id"),
+        "source_id_news": n.get("source_id"),
+        "source_role_official": o_role,
+        "source_role_news": n_role,
+        "date_official": o_pub,
+        "date_news": n_pub,
+        "date_proximity_days": proximity,
+        "shared_token_count": len(shared),
+        "shared_tokens": shared,            # 정규화 entity/action 교집합(제목 전문 아님·body 0).
+        "canonical_host_official": _host(o_url),
+        "canonical_host_news": _host(n_url),
+        "official_in_window": o_in,
+        "news_in_window": n_in,
+        "both_canonical_present": both_canonical,
+        "both_published_present": both_published,
+        "bridge_candidate": is_candidate,
+        "freeze_eligible": freeze_eligible,
+        # 불변 — bridge 는 routing 표식이지 truth 가 아니다.
+        "same_event_asserted": False,
+        "reviewer_routing_only": True,
+        "merge_allowed": False,
+        "kg_edge_allowed": False,
+        "public_iu_allowed": False,
+    }
+
+
 def build_official_news_bridge(
     official_records: Optional[list[dict]], news_records: Optional[list[dict]], *,
     date_window: Optional[tuple[str, str]] = None,
@@ -97,56 +153,11 @@ def build_official_news_bridge(
     candidates: list[dict] = []
     idx = 0
     for o in officials:
-        o_role = _role(o)
-        o_pub = o.get("published_at_or_observed_at")
-        o_url = o.get("canonical_url")
-        o_tokens = _title_tokens(o.get("title_or_label"))
-        o_in = _in_window(o_pub, date_window)
         for n in news:
-            n_role = _role(n)
-            n_pub = n.get("published_at_or_observed_at")
-            n_url = n.get("canonical_url")
-            shared = sorted(o_tokens & _title_tokens(n.get("title_or_label")))
-            both_canonical = bool(o_url) and bool(n_url)
-            both_published = bool(o_pub) and bool(n_pub)
-            od, nd = _iso(o_pub), _iso(n_pub)
-            proximity = abs((od - nd).days) if (od is not None and nd is not None) else None
-            n_in = _in_window(n_pub, date_window)
-            date_close = proximity is not None and proximity <= max(0, date_tolerance_days)
-            is_candidate = bool(
-                both_canonical and both_published and date_close
-                and len(shared) >= max(1, min_shared_tokens))
-            # §9 freeze 계약: bridge_candidate ∧ official in-window ∧ news in-window(date-compatible) ∧ canonical 양측.
-            freeze_eligible = bool(
-                is_candidate and o_in is True and n_in is True and both_canonical)
             idx += 1
-            candidates.append({
-                "pair_id": f"oxn_{idx:04d}",
-                "bridge_type": BRIDGE_TYPE,
-                "source_id_official": o.get("source_id"),
-                "source_id_news": n.get("source_id"),
-                "source_role_official": o_role,
-                "source_role_news": n_role,
-                "date_official": o_pub,
-                "date_news": n_pub,
-                "date_proximity_days": proximity,
-                "shared_token_count": len(shared),
-                "shared_tokens": shared,            # 정규화 entity/action 교집합(제목 전문 아님·body 0).
-                "canonical_host_official": _host(o_url),
-                "canonical_host_news": _host(n_url),
-                "official_in_window": o_in,
-                "news_in_window": n_in,
-                "both_canonical_present": both_canonical,
-                "both_published_present": both_published,
-                "bridge_candidate": is_candidate,
-                "freeze_eligible": freeze_eligible,
-                # 불변 — bridge 는 routing 표식이지 truth 가 아니다.
-                "same_event_asserted": False,
-                "reviewer_routing_only": True,
-                "merge_allowed": False,
-                "kg_edge_allowed": False,
-                "public_iu_allowed": False,
-            })
+            candidates.append(_evaluate_official_news_pair(
+                o, n, idx=idx, date_window=date_window,
+                date_tolerance_days=date_tolerance_days, min_shared_tokens=min_shared_tokens))
 
     bridge_candidates = [c for c in candidates if c["bridge_candidate"]]
     freeze_eligible = [c for c in bridge_candidates if c["freeze_eligible"]]
@@ -183,6 +194,40 @@ def build_official_news_bridge(
         "bridge_score_exposed": False,      # 단일 composite score 자체를 만들지 않음(feature 만).
         "raw_source_body_exposed": False,
     }
+
+
+def iter_freeze_eligible_record_pairs(
+    official_records: Optional[list[dict]], news_records: Optional[list[dict]], *,
+    date_window: Optional[tuple[str, str]] = None,
+    date_tolerance_days: int = _DEFAULT_DATE_TOLERANCE_DAYS,
+    min_shared_tokens: int = _DEFAULT_MIN_SHARED_TOKENS,
+) -> list[dict]:
+    """freeze-eligible (official_record, news_record) 쌍의 **실제 record 참조 + 공유 토큰** 반환(freeze worklist 입력·ADR#87).
+
+    `build_official_news_bridge` 와 **동일한 freeze_eligible 술어**(`_evaluate_official_news_pair` 단일 출처: date
+    proximity + entity/action token + 양측 in-window + canonical)를 쓰되, 진단 candidate dict(title-free)이 아니라
+    worklist 구성을 위해 **원본 record(title 포함)** 를 돌려준다 — reviewer 는 official 증거 title vs news 보도 title 을
+    직접 봐야 same-event 를 판정할 수 있으므로 freeze worklist 에는 title 이 필요하다(snapshot/frontier 에는 안 감·§13
+    aggregate-only). 이 함수는 routing 후보 *생성* 일 뿐 same_event 단정 0·merge 0·score 0·body 0(title 은 표시 텍스트)."""
+    officials = [r for r in (official_records or []) if _role(r) in _OFFICIAL_ROLES]
+    news = [r for r in (news_records or []) if _role(r) in _NEWS_ROLES]
+    out: list[dict] = []
+    idx = 0
+    for o in officials:
+        for n in news:
+            idx += 1
+            cand = _evaluate_official_news_pair(
+                o, n, idx=idx, date_window=date_window,
+                date_tolerance_days=date_tolerance_days, min_shared_tokens=min_shared_tokens)
+            if cand["freeze_eligible"]:
+                out.append({
+                    "pair_id": cand["pair_id"],
+                    "official_record": o,
+                    "news_record": n,
+                    "shared_tokens": cand["shared_tokens"],
+                    "date_proximity_days": cand["date_proximity_days"],
+                })
+    return out
 
 
 def _bridge_blocked_reason(
