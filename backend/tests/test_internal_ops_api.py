@@ -779,8 +779,14 @@ def test_r1_date_pinned_response_keys_are_sanitized_subset(client, monkeypatch):
         "overlap_diagnostic_status", "overlap_blocked_dimension", "r1_label_return_status",
         "r1_label_return_next_action", "hot_post_gate_status", "hot_post_public_readiness",
         "community_posting_roadmap_status",
+        # ADR#92 live attempt pack + news breadth trigger + first freeze hardening + R1 first-contact protocol + Hot
+        # Post preview guard(+10): operator-fillable 후보·source 확장 판정·reviewer-safe 검사·8단계·internal-only preview.
+        "live_attempt_pack_status", "live_attempt_pack_next_action", "news_breadth_trigger_status",
+        "recommended_provider_expansion", "freeze_package_hardening_status", "freeze_artifact_safe",
+        "r1_first_contact_protocol_status", "r1_first_contact_next_action", "hot_post_preview_status",
+        "hot_post_preview_public_blocked",
         "ko_source_lane_status", "ko_named_seed_needed",
         "ko_floor_current", "ko_floor_required", "blocked_reason", "acquisition_next_action",
         "current_r1_gap", "production_gold_count", "r2_r7_no_go", "required_copy", "flags",
     }
-    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(78 field·ADR#91 +10).
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(88 field·ADR#92 +10).

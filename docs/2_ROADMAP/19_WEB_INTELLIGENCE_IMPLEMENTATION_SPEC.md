@@ -406,6 +406,8 @@ DIRECTION §3.2/§3.3, ADR#15. 커뮤니티 (b)층(성장). 현재 `backend/app/
 >
 > **ADR#91 cross-ref (contract-only · runtime No-Go):** 위 계약을 게이트/순서로 결속 — `5_REFERENCE/HOT_POST_GATE_ALIGNMENT.md`(public_readiness 를 R1 gold·R2 MERGE_GATE·official/news evidence·source-role·community 11요구에 결속·runtime_enabled=False)·`5_REFERENCE/COMMUNITY_POSTING_ROADMAP_CONTRACT.md`(stage_0 evidence→stage_1 gold/merge→stage_2 draft→stage_3 public readiness→stage_4 reaction→stage_5 moderation→stage_6 comment reply gate→stage_7 followup·comment reply runtime disabled). + operator payload sourcing workflow·official×news overlap diagnostics·R1 label return operational bridge(`intake_command` + gold_promotion_status·synthetic/single/unsure 미승격). frontier parity 68→78·**R1 = FAIL·R2~R7 = No-Go 불변.**
 
+> **ADR#92 cross-ref (contract/guard-only · runtime No-Go):** 실전 데이터 흐름을 다음 시도로 잇는 5 모듈 — `5_REFERENCE/LIVE_ATTEMPT_PACK_CONTRACT.md`(real payload 부재 시 operator-fillable 후보 묶음·후보 live 트리거 불가)·`news_breadth_trigger.py`(news-side 수율 0→source 확장 판정·GDELT 실행 0)·`first_freeze_package_hardening.py`(freeze worklist reviewer-safe 검사)·`5_REFERENCE/R1_FIRST_CONTACT_PROTOCOL.md`(8단계 freeze→contact→label→gold·전송 0)·`5_REFERENCE/HOT_POST_PREVIEW_GUARD.md`(internal-only preview·public 차단·R1/R2 후 게시). frontier parity 78→88·**R1 = FAIL·R2~R7 = No-Go 불변.**
+
 ### §9.1 Comment 모델 확장 (비파괴 additive)
 `author_type` VARCHAR(8)('user'/'agent', 기본 'user' → 기존 비파괴) · `agent_persona` VARCHAR(64) NULL("energy-analyst"/"skeptic"/"geopolitics-desk") · `reply_to` UUID NULL(부모 comment 스레드) · `stance` VARCHAR(12) NULL(claim/counter/evidence/question) · `evidence_refs` JSONB(발화 근거 EvidenceNode[]).
 

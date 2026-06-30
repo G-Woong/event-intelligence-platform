@@ -43,16 +43,22 @@ from backend.app.tools.community_interaction_future_gate import (
 from backend.app.tools.community_posting_roadmap_contract import (
     build_community_posting_roadmap_contract,
 )
+from backend.app.tools.first_freeze_package_hardening import (
+    build_first_freeze_package_hardening,
+)
 from backend.app.tools.hot_intelligence_post_contract import (
     build_hot_intelligence_post_contract,
 )
 from backend.app.tools.hot_post_gate_alignment import build_hot_post_gate_alignment
+from backend.app.tools.hot_post_preview_guard import build_hot_post_preview_guard
 from backend.app.tools.ko_source_readiness import build_ko_source_lane
+from backend.app.tools.live_attempt_pack_builder import build_live_attempt_pack
 from backend.app.tools.live_no_yield_taxonomy import build_live_no_yield_taxonomy
 from backend.app.tools.live_query_target import (
     build_live_query_target,
     execute_date_pinned_bounded_live_run,
 )
+from backend.app.tools.news_breadth_trigger import build_news_breadth_trigger
 from backend.app.tools.official_news_label_intake_readiness import (
     run_official_news_label_intake_readiness,
 )
@@ -65,6 +71,7 @@ from backend.app.tools.operator_payload_authoring_helper import (
 from backend.app.tools.operator_payload_sourcing_workflow import (
     build_operator_payload_sourcing_workflow,
 )
+from backend.app.tools.r1_first_contact_protocol import build_r1_first_contact_protocol
 from backend.app.tools.r1_label_return_operational_bridge import (
     build_r1_label_return_operational_bridge,
 )
@@ -170,6 +177,12 @@ DATE_PINNED_REQUIRED_COPY: tuple[str, ...] = (
     "Hot Post public runtime requires R1/R2 gates",
     "Returned labels are not gold until agreement gates pass",
     "R2~R7 remain No-Go",
+    # ADR#92 — live attempt pack + news breadth trigger + freeze hardening + first-contact + Hot Post preview copy.
+    "Live attempt packs are drafts, not confirmed events",
+    "News breadth expansion is a planning recommendation, not a runtime change",
+    "Freeze is a reviewer worklist only, not gold",
+    "Reviewer first contact is manual; the system never sends labels or messages",
+    "Hot Post preview is internal-only and cannot be published before R1/R2 gates",
 )
 
 
@@ -371,6 +384,18 @@ def build_date_pinned_live_run_frontier(*, out: dict) -> dict:
         "hot_post_gate_status": out["hot_post_gate_status"],
         "hot_post_public_readiness": bool(out["hot_post_public_readiness"]),
         "community_posting_roadmap_status": out["community_posting_roadmap_status"],
+        # ADR#92 live attempt pack + news breadth trigger + first freeze hardening + R1 first-contact + Hot Post preview
+        # (sanitized·runtime-disabled·real payload 미독·GDELT 실행 0·freeze artifact 0·preview public 차단). 행동 가능 next_action.
+        "live_attempt_pack_status": out["live_attempt_pack_status"],
+        "live_attempt_pack_next_action": out["live_attempt_pack_next_action"],
+        "news_breadth_trigger_status": out["news_breadth_trigger_status"],
+        "recommended_provider_expansion": out["recommended_provider_expansion"],
+        "freeze_package_hardening_status": out["freeze_package_hardening_status"],
+        "freeze_artifact_safe": bool(out["freeze_artifact_safe"]),
+        "r1_first_contact_protocol_status": out["r1_first_contact_protocol_status"],
+        "r1_first_contact_next_action": out["r1_first_contact_next_action"],
+        "hot_post_preview_status": out["hot_post_preview_status"],
+        "hot_post_preview_public_blocked": bool(out["hot_post_preview_public_blocked"]),
         "ko_source_lane_status": out["ko_source_lane_status"],
         "ko_named_seed_needed": bool(out["ko_named_seed_needed"]),
         "ko_floor_current": int(out["ko_floor_current"] or 0),
@@ -614,6 +639,38 @@ def _adr91_product_ops_fields(
         "hot_post_gate_status": hp_gate["hot_post_gate_status"],
         "hot_post_public_readiness": bool(hp_gate["public_readiness"]),
         "community_posting_roadmap_status": roadmap["community_posting_roadmap_status"],
+    }
+
+
+def _adr92_product_ops_fields(
+    *, operator_payload_status: str, live_no_yield_taxonomy_status: str, overlap_blocked_dimension: str,
+    batch_id: str,
+) -> dict:
+    """ADR#92 sanitized frontier 필드(live attempt pack + news breadth trigger + first freeze package hardening +
+    R1 first-contact protocol + Hot Post preview guard).
+
+    read API 안전: 전부 **pure/injection**(network 0·real payload path 미독·live runner 미경유). live attempt pack 은
+    operator_payload_status 를 주입받아 disk read 0; news breadth trigger 는 taxonomy status/overlap dimension 을
+    주입받아 source 확장 필요성만 판정(GDELT 실행 0); freeze hardening 은 artifact 미제공(아직 freeze 0)→no_artifact;
+    first-contact protocol 은 build_intake_plan(pure)로 명령/경로만; preview guard 는 빈 draft→preview blocked(public 차단)."""
+    pack = build_live_attempt_pack(operator_payload_status=operator_payload_status)
+    trigger = build_news_breadth_trigger(
+        live_no_yield_taxonomy_status=live_no_yield_taxonomy_status,
+        overlap_blocked_dimension=overlap_blocked_dimension)
+    hardening = build_first_freeze_package_hardening(artifact=None)
+    protocol = build_r1_first_contact_protocol(batch_id=batch_id, freeze_ready=False)
+    preview = build_hot_post_preview_guard()
+    return {
+        "live_attempt_pack_status": pack["live_attempt_pack_status"],
+        "live_attempt_pack_next_action": pack["next_action"],
+        "news_breadth_trigger_status": trigger["news_breadth_trigger_status"],
+        "recommended_provider_expansion": "; ".join(trigger["recommended_provider_expansion"]),
+        "freeze_package_hardening_status": hardening["freeze_package_hardening_status"],
+        "freeze_artifact_safe": bool(hardening["freeze_artifact_safe"]),
+        "r1_first_contact_protocol_status": protocol["r1_first_contact_protocol_status"],
+        "r1_first_contact_next_action": protocol["r1_first_contact_next_action"],
+        "hot_post_preview_status": preview["hot_post_preview_status"],
+        "hot_post_preview_public_blocked": bool(preview["hot_post_preview_public_blocked"]),
     }
 
 
@@ -861,6 +918,14 @@ def run_bounded_live_breadth_run(
         operator_payload_status=_adr89["operator_payload_status"],
         official_news_live_status=_adr87["official_news_live_status"],
         dropbox=_dropbox, batch_id=batch_id)
+    # ADR#92 — live attempt pack + news breadth trigger + first freeze package hardening + R1 first-contact protocol
+    # + Hot Post preview guard. pure/injection(real path 미독·live runner 미경유): pack 은 payload status 주입, trigger 는
+    # taxonomy/overlap dimension 주입(GDELT 실행 0), freeze hardening 은 artifact 0→no_artifact, preview 는 빈 draft→blocked.
+    _adr92 = _adr92_product_ops_fields(
+        operator_payload_status=_adr89["operator_payload_status"],
+        live_no_yield_taxonomy_status=_adr90["live_no_yield_taxonomy_status"],
+        overlap_blocked_dimension=_adr91["overlap_blocked_dimension"],
+        batch_id=batch_id)
 
     out = {
         "operation_name": BOUNDED_OPERATION_NAME,
@@ -990,6 +1055,18 @@ def run_bounded_live_breadth_run(
         "hot_post_gate_status": _adr91["hot_post_gate_status"],
         "hot_post_public_readiness": _adr91["hot_post_public_readiness"],
         "community_posting_roadmap_status": _adr91["community_posting_roadmap_status"],
+        # ADR#92 live attempt pack + news breadth trigger + first freeze package hardening + R1 first-contact protocol
+        # + Hot Post preview guard (sanitized·real payload 미독·GDELT 실행 0·freeze artifact 0·preview public 차단).
+        "live_attempt_pack_status": _adr92["live_attempt_pack_status"],
+        "live_attempt_pack_next_action": _adr92["live_attempt_pack_next_action"],
+        "news_breadth_trigger_status": _adr92["news_breadth_trigger_status"],
+        "recommended_provider_expansion": _adr92["recommended_provider_expansion"],
+        "freeze_package_hardening_status": _adr92["freeze_package_hardening_status"],
+        "freeze_artifact_safe": _adr92["freeze_artifact_safe"],
+        "r1_first_contact_protocol_status": _adr92["r1_first_contact_protocol_status"],
+        "r1_first_contact_next_action": _adr92["r1_first_contact_next_action"],
+        "hot_post_preview_status": _adr92["hot_post_preview_status"],
+        "hot_post_preview_public_blocked": _adr92["hot_post_preview_public_blocked"],
         # KO source lane(§3-E·§8).
         "ko_source_lane_status": ko_lane["ko_source_lane_status"],
         "ko_named_seed_needed": ko_lane["ko_named_seed_needed"],

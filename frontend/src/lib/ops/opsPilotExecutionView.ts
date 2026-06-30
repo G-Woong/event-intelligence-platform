@@ -530,6 +530,12 @@ export const OPS_DATE_PINNED_COPY = {
   hotPostRequiresR1R2: "Hot Post public runtime requires R1/R2 gates",
   returnedLabelsNotGoldUntilAgreement: "Returned labels are not gold until agreement gates pass",
   laddersNoGo: "R2~R7 remain No-Go",
+  // ADR#92 — live attempt pack + news breadth trigger + freeze hardening + first-contact + preview copy.
+  liveAttemptPackDrafts: "Live attempt packs are drafts, not confirmed events",
+  newsBreadthPlanning: "News breadth expansion is a planning recommendation, not a runtime change",
+  freezeWorklistNotGold: "Freeze is a reviewer worklist only, not gold",
+  firstContactManual: "Reviewer first contact is manual; the system never sends labels or messages",
+  hotPostPreviewInternalOnly: "Hot Post preview is internal-only and cannot be published before R1/R2 gates",
 } as const;
 
 // date-pinned live run frontier → read-only 표시 행(operator event provided·occurrence_date(operator 주장)·target
@@ -605,6 +611,16 @@ export function toR1DatePinnedLiveRunFrontierDisplayRows(
     { label: "Hot Post gate alignment status", value: f.hot_post_gate_status },
     { label: "Hot Post public readiness (requires R1/R2)", value: String(f.hot_post_public_readiness) },
     { label: "Community posting roadmap status (runtime disabled)", value: f.community_posting_roadmap_status },
+    { label: "Live attempt pack status", value: f.live_attempt_pack_status },
+    { label: "Live attempt pack next action", value: f.live_attempt_pack_next_action },
+    { label: "News breadth trigger status", value: f.news_breadth_trigger_status },
+    { label: "Recommended provider expansion (planning only)", value: f.recommended_provider_expansion || "(none)" },
+    { label: "First freeze package hardening status", value: f.freeze_package_hardening_status },
+    { label: "Freeze artifact reviewer-safe", value: String(f.freeze_artifact_safe) },
+    { label: "R1 first-contact protocol status", value: f.r1_first_contact_protocol_status },
+    { label: "R1 first-contact next action", value: f.r1_first_contact_next_action },
+    { label: "Hot Post preview status (internal-only)", value: f.hot_post_preview_status },
+    { label: "Hot Post preview public blocked", value: String(f.hot_post_preview_public_blocked) },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -644,6 +660,12 @@ export function r1DatePinnedLiveRunFrontierWarnings(
   ensure(OPS_DATE_PINNED_COPY.liveNoYieldActionable);
   ensure(OPS_DATE_PINNED_COPY.hotPostRequiresR1R2);
   ensure(OPS_DATE_PINNED_COPY.returnedLabelsNotGoldUntilAgreement);
+  // ADR#92 — live attempt pack + news breadth + freeze hardening + first-contact + preview copy.
+  ensure(OPS_DATE_PINNED_COPY.liveAttemptPackDrafts);
+  ensure(OPS_DATE_PINNED_COPY.newsBreadthPlanning);
+  ensure(OPS_DATE_PINNED_COPY.freezeWorklistNotGold);
+  ensure(OPS_DATE_PINNED_COPY.firstContactManual);
+  ensure(OPS_DATE_PINNED_COPY.hotPostPreviewInternalOnly);
   if (f.r2_r7_no_go) ensure(OPS_DATE_PINNED_COPY.laddersNoGo);
   return out;
 }

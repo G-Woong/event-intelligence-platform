@@ -491,6 +491,19 @@ class InternalOpsDatePinnedLiveRunFrontier(BaseModel):
     hot_post_gate_status: str
     hot_post_public_readiness: bool
     community_posting_roadmap_status: str
+    # ADR#92 live attempt pack(operator-fillable 후보 묶음) + news breadth trigger(source 확장 판정·GDELT 실행 0) +
+    # first freeze package hardening(reviewer-facing 안전 검사) + R1 first-contact protocol(8단계·전송 0) +
+    # Hot Post preview guard(internal-only·public 차단). 전부 sanitized 문자열/bool — public post·comment runtime No-Go.
+    live_attempt_pack_status: str
+    live_attempt_pack_next_action: str
+    news_breadth_trigger_status: str
+    recommended_provider_expansion: str
+    freeze_package_hardening_status: str
+    freeze_artifact_safe: bool
+    r1_first_contact_protocol_status: str
+    r1_first_contact_next_action: str
+    hot_post_preview_status: str
+    hot_post_preview_public_blocked: bool
     ko_source_lane_status: str
     ko_named_seed_needed: bool
     ko_floor_current: int
