@@ -514,6 +514,8 @@ export const OPS_DATE_PINNED_COPY = {
   occurrenceIsAssertion: "occurrence_date is an operator assertion, not a code-verified fact",
   datePinNotOccurrence: "A date pin does not prove the event occurred or that both sources cover it",
   queryTargetsOperatorEvent: "The live query targets the operator event, never a curated seed fallback",
+  operatorConfirmationRequired: "Operator confirmation is required before live regulatory acquisition",
+  contactReadinessNotSending: "Reviewer contact readiness is not actual sending",
   freezeNotTruth: "Production candidate freeze is a reviewer worklist, not same-event truth",
   productionGoldZero: "Production gold remains 0 until human labels are returned",
   laddersNoGo: "R2~R7 remain No-Go",
@@ -565,6 +567,12 @@ export function toR1DatePinnedLiveRunFrontierDisplayRows(
     { label: "Official×news live status", value: f.official_news_live_status },
     { label: "Official×news production candidate (worklist, not truth)", value: f.official_news_production_candidate_status },
     { label: "Official×news reviewer handoff ready (no sending)", value: String(f.official_news_reviewer_handoff_ready) },
+    { label: "Operator event status (gate, not truth)", value: f.operator_event_status },
+    { label: "Operator confirmed (live-run approval, not same-event)", value: String(f.operator_confirmed) },
+    { label: "Operator confirmation valid", value: String(f.confirmation_valid) },
+    { label: "Confirmation blocked reason", value: f.confirmation_blocked_reason || "(none)" },
+    { label: "Reviewer contact ready (readiness ≠ actual sending)", value: String(f.reviewer_contact_ready) },
+    { label: "Official×news label intake readiness (synthetic dry-run)", value: f.label_intake_readiness_status },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -589,6 +597,8 @@ export function r1DatePinnedLiveRunFrontierWarnings(
   ensure(OPS_DATE_PINNED_COPY.occurrenceIsAssertion);
   ensure(OPS_DATE_PINNED_COPY.datePinNotOccurrence);
   ensure(OPS_DATE_PINNED_COPY.queryTargetsOperatorEvent);
+  ensure(OPS_DATE_PINNED_COPY.operatorConfirmationRequired);
+  ensure(OPS_DATE_PINNED_COPY.contactReadinessNotSending);
   ensure(OPS_DATE_PINNED_COPY.freezeNotTruth);
   ensure(OPS_DATE_PINNED_COPY.productionGoldZero);
   if (f.r2_r7_no_go) ensure(OPS_DATE_PINNED_COPY.laddersNoGo);

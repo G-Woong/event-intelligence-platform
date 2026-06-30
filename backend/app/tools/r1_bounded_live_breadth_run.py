@@ -32,11 +32,15 @@ from backend.app.tools.live_query_target import (
     build_live_query_target,
     execute_date_pinned_bounded_live_run,
 )
+from backend.app.tools.official_news_label_intake_readiness import (
+    run_official_news_label_intake_readiness,
+)
 from backend.app.tools.r1_production_candidate_acquisition import PROD_BATCH_ID
 from backend.app.tools.r1_provider_breadth_acquisition import (
     run_provider_breadth_named_seed_ko_path,
 )
 from backend.app.tools.regulatory_event_seed_bank import build_regulatory_event_seed_bank
+from backend.app.tools.reviewer_contact_readiness import build_reviewer_contact_readiness
 from backend.app.tools.reviewer_handoff_bridge import build_reviewer_handoff_bridge
 from backend.app.tools.reviewer_pilot_handoff import _assert_pii_safe
 from backend.app.tools.sanitized_live_snapshot import (
@@ -111,6 +115,8 @@ DATE_PINNED_REQUIRED_COPY: tuple[str, ...] = (
     "Official-news bridge is reviewer-routing only, not same-event truth",
     "Official record alone is not a production cross-source candidate",
     "A regulatory-class seed needs an agency/entity, an action, and a confirmed date window",
+    "Operator confirmation is required before live regulatory acquisition",
+    "Reviewer contact readiness is not actual sending",
     "Production candidate freeze is a reviewer worklist, not same-event truth",
     "Production gold remains 0 until human labels are returned",
     "R2~R7 remain No-Go",
@@ -280,6 +286,13 @@ def build_date_pinned_live_run_frontier(*, out: dict) -> dict:
         "official_news_live_status": out["official_news_live_status"],
         "official_news_production_candidate_status": out["official_news_production_candidate_status"],
         "official_news_reviewer_handoff_ready": bool(out["official_news_reviewer_handoff_ready"]),
+        # ADR#88 operator-confirmed event intake + reviewer contact readiness + label intake readiness(sanitized).
+        "operator_event_status": out["operator_event_status"],
+        "operator_confirmed": bool(out["operator_confirmed"]),
+        "confirmation_valid": bool(out["confirmation_valid"]),
+        "confirmation_blocked_reason": out["confirmation_blocked_reason"],
+        "reviewer_contact_ready": bool(out["reviewer_contact_ready"]),
+        "label_intake_readiness_status": out["label_intake_readiness_status"],
         "ko_source_lane_status": out["ko_source_lane_status"],
         "ko_named_seed_needed": bool(out["ko_named_seed_needed"]),
         "ko_floor_current": int(out["ko_floor_current"] or 0),
@@ -422,6 +435,28 @@ def _adr87_official_news_acquisition_fields(*, acq: Optional[dict], bank: dict) 
     }
 
 
+def _adr88_operator_intake_fields(
+    *, operator_intake: Optional[dict], contact_readiness: dict, label_intake_readiness: dict,
+) -> dict:
+    """ADR#88 sanitized frontier 필드(operator-confirmed event intake + reviewer contact readiness + official×news
+    label intake readiness·aggregate-only·secret 0·score 0).
+
+    operator_intake(`run_operator_regulatory_event_intake`) 주입 시 confirmation status 노출, 없으면 not_provided
+    (이번 턴 operator 가 confirmed event 미제공). contact_readiness 는 handoff 파생(freeze 없으면 ready=False).
+    label_intake_readiness 는 network 0·항상 산출(synthetic dry-run·production gold 0)."""
+    oi = operator_intake or {}
+    cr = contact_readiness or {}
+    li = label_intake_readiness or {}
+    return {
+        "operator_event_status": oi.get("operator_event_status") or "not_provided",
+        "operator_confirmed": bool(oi.get("operator_confirmed")),
+        "confirmation_valid": bool(oi.get("confirmation_valid")),
+        "confirmation_blocked_reason": oi.get("confirmation_blocked_reason") or "",
+        "reviewer_contact_ready": bool(cr.get("reviewer_contact_ready")),
+        "label_intake_readiness_status": li.get("label_intake_readiness_status") or "not_run",
+    }
+
+
 def run_bounded_live_breadth_run(
     *, directory: Optional[Any] = None, batch_id: str = PROD_BATCH_ID, as_of: Optional[str] = None,
     live_query: bool = False, operator_event: Optional[dict] = None, pinned_event: Optional[dict] = None,
@@ -439,6 +474,9 @@ def run_bounded_live_breadth_run(
     federal_register_live_result: Optional[dict] = None,
     official_news_bridge_result: Optional[dict] = None,
     official_news_acquisition_result: Optional[dict] = None,
+    operator_event_intake_result: Optional[dict] = None,
+    reviewer_contact_readiness_result: Optional[dict] = None,
+    official_news_label_intake_readiness_result: Optional[dict] = None,
 ) -> dict:
     """ADR#82/#83/#84 단일 진입 — base(breadth/seed/KO/actual-input) + date-pin gate + date-pinned live executor +
     freeze + reviewer handoff bridge + sanitized snapshot.
@@ -630,6 +668,14 @@ def run_bounded_live_breadth_run(
     # ── ADR#87: regulatory seed bank(network 0·항상) + official×news live acquisition status(주입 시·없으면 not_run) ──
     _reg_bank = build_regulatory_event_seed_bank()
     _adr87 = _adr87_official_news_acquisition_fields(acq=official_news_acquisition_result, bank=_reg_bank)
+    # ── ADR#88: operator-confirmed event intake(주입 시·없으면 not_provided) + reviewer contact readiness(handoff
+    # 파생·freeze 없으면 ready=False) + official×news label intake readiness(network 0·항상·synthetic dry-run·gold 0) ──
+    _contact_readiness = reviewer_contact_readiness_result or build_reviewer_contact_readiness(handoff)
+    _label_intake_readiness = (
+        official_news_label_intake_readiness_result or run_official_news_label_intake_readiness())
+    _adr88 = _adr88_operator_intake_fields(
+        operator_intake=operator_event_intake_result,
+        contact_readiness=_contact_readiness, label_intake_readiness=_label_intake_readiness)
 
     out = {
         "operation_name": BOUNDED_OPERATION_NAME,
@@ -724,6 +770,13 @@ def run_bounded_live_breadth_run(
         "official_news_live_status": _adr87["official_news_live_status"],
         "official_news_production_candidate_status": _adr87["official_news_production_candidate_status"],
         "official_news_reviewer_handoff_ready": _adr87["official_news_reviewer_handoff_ready"],
+        # ADR#88 operator-confirmed event intake + reviewer contact readiness + label intake readiness(sanitized).
+        "operator_event_status": _adr88["operator_event_status"],
+        "operator_confirmed": _adr88["operator_confirmed"],
+        "confirmation_valid": _adr88["confirmation_valid"],
+        "confirmation_blocked_reason": _adr88["confirmation_blocked_reason"],
+        "reviewer_contact_ready": _adr88["reviewer_contact_ready"],
+        "label_intake_readiness_status": _adr88["label_intake_readiness_status"],
         # KO source lane(§3-E·§8).
         "ko_source_lane_status": ko_lane["ko_source_lane_status"],
         "ko_named_seed_needed": ko_lane["ko_named_seed_needed"],

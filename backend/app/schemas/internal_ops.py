@@ -452,6 +452,15 @@ class InternalOpsDatePinnedLiveRunFrontier(BaseModel):
     official_news_live_status: str
     official_news_production_candidate_status: str
     official_news_reviewer_handoff_ready: bool
+    # ADR#88 operator-confirmed event intake + reviewer contact readiness + official×news label intake readiness.
+    # operator confirmation 은 live regulatory acquisition 전 게이트(truth 아님)·contact readiness ≠ actual sending·
+    # label intake readiness 는 synthetic dry-run(production gold 0). same_event truth·score·PII·secret 필드 부재.
+    operator_event_status: str
+    operator_confirmed: bool
+    confirmation_valid: bool
+    confirmation_blocked_reason: str
+    reviewer_contact_ready: bool
+    label_intake_readiness_status: str
     ko_source_lane_status: str
     ko_named_seed_needed: bool
     ko_floor_current: int

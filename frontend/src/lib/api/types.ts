@@ -484,6 +484,15 @@ export interface InternalOpsDatePinnedLiveRunFrontier {
   official_news_live_status: string;
   official_news_production_candidate_status: string;
   official_news_reviewer_handoff_ready: boolean;
+  // ADR#88: operator-confirmed event intake + reviewer contact readiness + official×news label intake readiness.
+  // operator confirmation=live regulatory acquisition 전 게이트(truth 아님)·contact readiness ≠ actual sending·
+  // label intake readiness=synthetic dry-run(production gold 0).
+  operator_event_status: string;
+  operator_confirmed: boolean;
+  confirmation_valid: boolean;
+  confirmation_blocked_reason: string;
+  reviewer_contact_ready: boolean;
+  label_intake_readiness_status: string;
   // KO source lane(§8).
   ko_source_lane_status: string;
   ko_named_seed_needed: boolean;

@@ -275,7 +275,7 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     f = out["internal_ops_date_pinned_live_run_frontier"]
     model = InternalOpsDatePinnedLiveRunFrontier(**f)   # raises on missing/type mismatch.
     assert set(f.keys()) == set(InternalOpsDatePinnedLiveRunFrontier.model_fields.keys())
-    assert len(f) == 51
+    assert len(f) == 57
     assert model.r2_r7_no_go is True
     assert model.latest_date_pinned_live_run_status == BLOCKED_MISSING_OPERATOR_EVENT
     # ADR#84: no live run(synthetic base) → date window 미강제·handoff 미준비(freeze 없음).
@@ -301,6 +301,13 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     assert f["official_news_live_status"] == "not_run"
     assert f["official_news_production_candidate_status"] == "blocked"
     assert f["official_news_reviewer_handoff_ready"] is False
+    # ADR#88: operator event 미주입 → not_provided·미확인. contact readiness 는 freeze 없음 → False. label intake
+    # readiness 는 network 0·항상 dry-run ready(production gold 0).
+    assert f["operator_event_status"] == "not_provided"
+    assert f["operator_confirmed"] is False
+    assert f["confirmation_valid"] is False
+    assert f["reviewer_contact_ready"] is False
+    assert f["label_intake_readiness_status"] == "official_news_label_intake_dry_run_ready"
     assert len(f["flags"]) == 7
 
 
@@ -365,6 +372,33 @@ def test_adr87_official_news_acquisition_surfaces_in_frontier():
     # acq sub-result 가 ADR#86 필드 소스로 파생됨.
     assert f["federal_register_live_status"] == "fr_live_ok_in_window"
     assert f["bridge_candidate_count"] == 1 and f["official_news_freeze_eligible_count"] == 1
+
+
+def test_adr88_operator_intake_and_contact_readiness_surface_in_frontier():
+    # ADR#88: operator-confirmed event intake + reviewer contact readiness 주입 시 frontier 가 sanitized 로 노출.
+    # operator confirmation 은 게이트(truth 아님)·contact readiness ≠ actual sending·label intake readiness 는 항상 산출.
+    operator_intake = {
+        "operator_event_status": "confirmed_live_executed",
+        "operator_confirmed": True,
+        "confirmation_valid": True,
+        "confirmation_blocked_reason": "",
+    }
+    contact_readiness = {"reviewer_contact_ready": True}
+    out = run_bounded_live_breadth_run(
+        base_result=_synthetic_base(), operator_event_intake_result=operator_intake,
+        reviewer_contact_readiness_result=contact_readiness)
+    f = out["internal_ops_date_pinned_live_run_frontier"]
+    assert f["operator_event_status"] == "confirmed_live_executed"
+    assert f["operator_confirmed"] is True
+    assert f["confirmation_valid"] is True
+    assert f["reviewer_contact_ready"] is True
+    assert f["label_intake_readiness_status"] == "official_news_label_intake_dry_run_ready"
+    # required copy 에 operator confirmation + contact readiness ≠ sending 명시.
+    assert any("Operator confirmation is required" in c for c in f["required_copy"])
+    assert any("Reviewer contact readiness is not actual sending" in c for c in f["required_copy"])
+    # sanitized — same_event truth/score/PII 미노출(주입돼도).
+    for forbidden in ("score", "rationale", "predicted_status", "same_event", "secret"):
+        assert forbidden not in f
     assert f["production_gold_count"] == 0   # freeze 는 worklist·gold 아님(불변).
     for forbidden in ("score", "rationale", "predicted_status", "same_event", "shared_tokens"):
         assert forbidden not in f

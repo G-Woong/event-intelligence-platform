@@ -1265,6 +1265,8 @@ const OPS_DATE_PINNED_COPY = {
   occurrenceIsAssertion: "occurrence_date is an operator assertion, not a code-verified fact",
   datePinNotOccurrence: "A date pin does not prove the event occurred or that both sources cover it",
   queryTargetsOperatorEvent: "The live query targets the operator event, never a curated seed fallback",
+  operatorConfirmationRequired: "Operator confirmation is required before live regulatory acquisition",
+  contactReadinessNotSending: "Reviewer contact readiness is not actual sending",
   freezeNotTruth: "Production candidate freeze is a reviewer worklist, not same-event truth",
   productionGoldZero: "Production gold remains 0 until human labels are returned",
   laddersNoGo: "R2~R7 remain No-Go",
@@ -1311,6 +1313,12 @@ function toR1DatePinnedLiveRunFrontierDisplayRows(f) {
     { label: "Official×news live status", value: f.official_news_live_status },
     { label: "Official×news production candidate (worklist, not truth)", value: f.official_news_production_candidate_status },
     { label: "Official×news reviewer handoff ready (no sending)", value: String(f.official_news_reviewer_handoff_ready) },
+    { label: "Operator event status (gate, not truth)", value: f.operator_event_status },
+    { label: "Operator confirmed (live-run approval, not same-event)", value: String(f.operator_confirmed) },
+    { label: "Operator confirmation valid", value: String(f.confirmation_valid) },
+    { label: "Confirmation blocked reason", value: f.confirmation_blocked_reason || "(none)" },
+    { label: "Reviewer contact ready (readiness ≠ actual sending)", value: String(f.reviewer_contact_ready) },
+    { label: "Official×news label intake readiness (synthetic dry-run)", value: f.label_intake_readiness_status },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -1331,6 +1339,8 @@ function r1DatePinnedLiveRunFrontierWarnings(f) {
   ensure(OPS_DATE_PINNED_COPY.occurrenceIsAssertion);
   ensure(OPS_DATE_PINNED_COPY.datePinNotOccurrence);
   ensure(OPS_DATE_PINNED_COPY.queryTargetsOperatorEvent);
+  ensure(OPS_DATE_PINNED_COPY.operatorConfirmationRequired);
+  ensure(OPS_DATE_PINNED_COPY.contactReadinessNotSending);
   ensure(OPS_DATE_PINNED_COPY.freezeNotTruth);
   ensure(OPS_DATE_PINNED_COPY.productionGoldZero);
   if (f.r2_r7_no_go) ensure(OPS_DATE_PINNED_COPY.laddersNoGo);
@@ -1378,6 +1388,12 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
   official_news_live_status: "not_run",
   official_news_production_candidate_status: "blocked",
   official_news_reviewer_handoff_ready: false,
+  operator_event_status: "not_provided",
+  operator_confirmed: false,
+  confirmation_valid: false,
+  confirmation_blocked_reason: "operator_event_not_provided",
+  reviewer_contact_ready: false,
+  label_intake_readiness_status: "official_news_label_intake_dry_run_ready",
   ko_source_lane_status: "ready_5_keyfree_live_ko_news_anchors",
   ko_named_seed_needed: true,
   ko_floor_current: 0,
@@ -1399,6 +1415,8 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
     "Official-news bridge is reviewer-routing only, not same-event truth",
     "Official record alone is not a production cross-source candidate",
     "A regulatory-class seed needs an agency/entity, an action, and a confirmed date window",
+    "Operator confirmation is required before live regulatory acquisition",
+    "Reviewer contact readiness is not actual sending",
     "Production candidate freeze is a reviewer worklist, not same-event truth",
     "Production gold remains 0 until human labels are returned",
     "R2~R7 remain No-Go",
@@ -1563,5 +1581,46 @@ describe("ADR#83 date-pinned live query plumbing + bounded live run + freeze fro
       () => assertOpsContractSafe({ ...SAMPLE_DATE_PINNED_FRONTIER, extra: [{ same_event: true }] }),
       /forbidden field: same_event/,
     );
+  });
+
+  it("(ADR#88) shows operator event not provided + contact not ready + label intake dry-run ready", () => {
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    // operator confirmation 은 게이트(truth 아님)·미제공이면 not_provided. contact readiness 는 freeze 없음 → false.
+    assert.equal(byLabel["Operator event status (gate, not truth)"], "not_provided");
+    assert.equal(byLabel["Operator confirmed (live-run approval, not same-event)"], "false");
+    assert.equal(byLabel["Operator confirmation valid"], "false");
+    assert.equal(byLabel["Reviewer contact ready (readiness ≠ actual sending)"], "false");
+    // label intake readiness 는 network 0·항상 synthetic dry-run ready(production gold 0).
+    assert.equal(
+      byLabel["Official×news label intake readiness (synthetic dry-run)"],
+      "official_news_label_intake_dry_run_ready",
+    );
+  });
+
+  it("(ADR#88) reflects a confirmed operator event with contact readiness (still no sending)", () => {
+    const confirmed = {
+      ...SAMPLE_DATE_PINNED_FRONTIER,
+      operator_event_status: "confirmed_live_executed",
+      operator_confirmed: true,
+      confirmation_valid: true,
+      confirmation_blocked_reason: "",
+      reviewer_contact_ready: true,
+    };
+    assert.doesNotThrow(() => assertOpsContractSafe(confirmed));
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(confirmed).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Operator event status (gate, not truth)"], "confirmed_live_executed");
+    assert.equal(byLabel["Operator confirmed (live-run approval, not same-event)"], "true");
+    assert.equal(byLabel["Reviewer contact ready (readiness ≠ actual sending)"], "true");
+    assert.equal(byLabel["Confirmation blocked reason"], "(none)");
+  });
+
+  it("(ADR#88) warns: operator confirmation required + reviewer contact readiness is not actual sending", () => {
+    const w = r1DatePinnedLiveRunFrontierWarnings(SAMPLE_DATE_PINNED_FRONTIER);
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.operatorConfirmationRequired));
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.contactReadinessNotSending));
   });
 });

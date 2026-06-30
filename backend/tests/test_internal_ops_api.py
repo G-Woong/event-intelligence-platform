@@ -765,8 +765,10 @@ def test_r1_date_pinned_response_keys_are_sanitized_subset(client, monkeypatch):
         "official_news_freeze_eligible_count",
         "regulatory_seed_bank_status", "selected_regulatory_seed_id", "official_news_live_status",
         "official_news_production_candidate_status", "official_news_reviewer_handoff_ready",
+        "operator_event_status", "operator_confirmed", "confirmation_valid", "confirmation_blocked_reason",
+        "reviewer_contact_ready", "label_intake_readiness_status",
         "ko_source_lane_status", "ko_named_seed_needed",
         "ko_floor_current", "ko_floor_required", "blocked_reason", "acquisition_next_action",
         "current_r1_gap", "production_gold_count", "r2_r7_no_go", "required_copy", "flags",
     }
-    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(51 field·ADR#87 +5).
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(57 field·ADR#88 +6).
