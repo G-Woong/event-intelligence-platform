@@ -533,6 +533,16 @@ class InternalOpsDatePinnedLiveRunFrontier(BaseModel):
     ai_replies_guard_audit_status: str
     public_runtime_kill_switch_status: str
     source_graph_timeseries_contract_status: str
+    # ADR#95 evidence-assisted payload production kit + operator verification worksheet + payload template hardening +
+    # first payload candidate evidence binder + reviewer packet dry-run + ai_replies gate design + source graph Hot Post
+    # integration map(+7·sanitized·runtime 0·real path 미독·실 파일 쓰기 0).
+    evidence_payload_kit_status: str
+    operator_verification_worksheet_status: str
+    payload_template_hardening_status: str
+    first_payload_evidence_binder_status: str
+    reviewer_packet_dry_run_status: str
+    ai_replies_gate_design_status: str
+    source_graph_hot_post_integration_status: str
     ko_source_lane_status: str
     ko_named_seed_needed: bool
     ko_floor_current: int

@@ -1,0 +1,41 @@
+{
+  "schema_version": 2,
+  "scanned_dirs": [
+    "ingestion",
+    "backend",
+    "agents",
+    "workers",
+    "scripts"
+  ],
+  "total_modules_scanned": 0,
+  "tools_available": {
+    "ruff": true,
+    "vulture": true,
+    "ruff_rules": [
+      "F401",
+      "F811",
+      "F841"
+    ],
+    "vulture_kind_min_confidence": {
+      "function": 60,
+      "method": 60,
+      "class": 60,
+      "property": 60,
+      "attribute": 80,
+      "variable": 90,
+      "import": 90
+    },
+    "ruff_error": null,
+    "vulture_error": null
+  },
+  "candidate_count": 0,
+  "candidates_by_kind": {
+    "symbol": 0,
+    "vulture": 0,
+    "module": 0
+  },
+  "candidates_by_category": {},
+  "candidates_high_confidence": 0,
+  "candidates": [],
+  "note": "IDENTIFY ONLY — deletion_allowed is always false. symbol=HIGH confidence (ruff F-codes); module=LOW confidence heuristic with recall limit (candidate==0 is NOT 'clean'). removal only after dry-run -> team audit -> small commit. Install vulture for AST-level unused function/class detection."
+}

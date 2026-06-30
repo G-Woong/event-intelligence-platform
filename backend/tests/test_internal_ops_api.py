@@ -798,8 +798,14 @@ def test_r1_date_pinned_response_keys_are_sanitized_subset(client, monkeypatch):
         "first_real_payload_sprint_status", "operator_confirmed_ready_package_status", "unified_live_closure_status",
         "freeze_r1_dry_run_status", "ai_replies_guard_audit_status", "public_runtime_kill_switch_status",
         "source_graph_timeseries_contract_status",
+        # ADR#95 evidence-assisted payload production kit + operator verification worksheet + payload template hardening
+        # + first payload candidate evidence binder + reviewer packet dry-run + ai_replies gate design + source graph
+        # Hot Post integration map(+7·sanitized·runtime 0).
+        "evidence_payload_kit_status", "operator_verification_worksheet_status", "payload_template_hardening_status",
+        "first_payload_evidence_binder_status", "reviewer_packet_dry_run_status", "ai_replies_gate_design_status",
+        "source_graph_hot_post_integration_status",
         "ko_source_lane_status", "ko_named_seed_needed",
         "ko_floor_current", "ko_floor_required", "blocked_reason", "acquisition_next_action",
         "current_r1_gap", "production_gold_count", "r2_r7_no_go", "required_copy", "flags",
     }
-    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(111 field·ADR#93 +16·ADR#94 +7).
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(118 field·ADR#93 +16·ADR#94 +7·ADR#95 +7).

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "docs_count": 0,
+  "totals_by_role": {},
+  "protected_count": 0,
+  "move_allowed_count": 0,
+  "docs": [],
+  "sweep_dry_run": {
+    "archive_candidates": [],
+    "trash_candidates": [],
+    "protected_count": 0,
+    "moves_applied": 0,
+    "manifests_created": 0,
+    "conflicts": []
+  }
+}

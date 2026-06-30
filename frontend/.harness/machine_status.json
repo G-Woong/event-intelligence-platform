@@ -1,0 +1,103 @@
+{
+  "session_id": "4e6136a8-e115-40fe-b279-1b030dee341f",
+  "turn": 13,
+  "turns": {
+    "4e6136a8-e115-40fe-b279-1b030dee341f": 13
+  },
+  "head": "cd0d3ee3d5484925e5a844e4923d703c83051701",
+  "delta_incomplete": false,
+  "changed_total": 38,
+  "buckets_count": {
+    "code": 18,
+    "docs": 13,
+    "config": 0,
+    "outputs": 0,
+    "other": 7
+  },
+  "code_files": [
+    "backend/app/schemas/internal_ops.py",
+    "backend/app/tools/ai_replies_gate_design.py",
+    "backend/app/tools/evidence_assisted_payload_production_kit.py",
+    "backend/app/tools/first_payload_candidate_evidence_binder.py",
+    "backend/app/tools/operator_verification_worksheet.py",
+    "backend/app/tools/r1_bounded_live_breadth_run.py",
+    "backend/app/tools/real_payload_file_template_hardening.py",
+    "backend/app/tools/reviewer_packet_dry_run.py",
+    "backend/app/tools/source_graph_hot_post_integration_map.py",
+    "backend/tests/test_ai_replies_gate_design.py",
+    "backend/tests/test_evidence_assisted_payload_production_kit.py",
+    "backend/tests/test_first_payload_candidate_evidence_binder.py",
+    "backend/tests/test_internal_ops_api.py",
+    "backend/tests/test_operator_verification_worksheet.py",
+    "backend/tests/test_r1_bounded_live_breadth_run.py",
+    "backend/tests/test_real_payload_file_template_hardening.py",
+    "backend/tests/test_reviewer_packet_dry_run.py",
+    "backend/tests/test_source_graph_hot_post_integration_map.py"
+  ],
+  "code_py_loc": 99,
+  "audit_required": true,
+  "audit_types": [
+    "architecture_review",
+    "code_review",
+    "evidence_review",
+    "risk_closure_review",
+    "test_review"
+  ],
+  "tests": null,
+  "test_stale": false,
+  "risk": {
+    "total": 0,
+    "HIGH": 0,
+    "MEDIUM": 0,
+    "LOW": 0
+  },
+  "sig": [
+    "--help/",
+    "--paths/",
+    ".harness/_TRASH/",
+    "backend/app/schemas/internal_ops.py",
+    "backend/app/tools/ai_replies_gate_design.py",
+    "backend/app/tools/evidence_assisted_payload_production_kit.py",
+    "backend/app/tools/first_payload_candidate_evidence_binder.py",
+    "backend/app/tools/operator_verification_worksheet.py",
+    "backend/app/tools/r1_bounded_live_breadth_run.py",
+    "backend/app/tools/real_payload_file_template_hardening.py",
+    "backend/app/tools/reviewer_packet_dry_run.py",
+    "backend/app/tools/source_graph_hot_post_integration_map.py",
+    "backend/tests/test_ai_replies_gate_design.py",
+    "backend/tests/test_evidence_assisted_payload_production_kit.py",
+    "backend/tests/test_first_payload_candidate_evidence_binder.py",
+    "backend/tests/test_internal_ops_api.py",
+    "backend/tests/test_operator_verification_worksheet.py",
+    "backend/tests/test_r1_bounded_live_breadth_run.py",
+    "backend/tests/test_real_payload_file_template_hardening.py",
+    "backend/tests/test_reviewer_packet_dry_run.py",
+    "backend/tests/test_source_graph_hot_post_integration_map.py",
+    "docs/2_ROADMAP/15_IMPLEMENTATION_ROADMAP.md",
+    "docs/2_ROADMAP/19_WEB_INTELLIGENCE_IMPLEMENTATION_SPEC.md",
+    "docs/5_REFERENCE/AI_REPLIES_GATE_DESIGN.md",
+    "docs/5_REFERENCE/EVIDENCE_ASSISTED_PAYLOAD_PRODUCTION_KIT.md",
+    "docs/5_REFERENCE/FIRST_PAYLOAD_CANDIDATE_EVIDENCE_BINDER.md",
+    "docs/5_REFERENCE/OPERATOR_VERIFICATION_WORKSHEET.md",
+    "docs/5_REFERENCE/RAG_KG_AGENT_READINESS.md",
+    "docs/5_REFERENCE/REAL_PAYLOAD_FILE_TEMPLATE_HARDENING.md",
+    "docs/5_REFERENCE/REVIEWER_PACKET_DRY_RUN.md",
+    "docs/5_REFERENCE/SOURCE_GRAPH_HOT_POST_INTEGRATION_MAP.md",
+    "docs/_CANONICAL/02_CURRENT_ARCHITECTURE.md",
+    "frontend/.harness/",
+    "frontend/src/lib/api/types.ts",
+    "frontend/src/lib/ops/__tests__/opsPilotExecutionView.test.mjs",
+    "frontend/src/lib/ops/opsPilotExecutionView.ts"
+  ],
+  "audit_covered": false,
+  "audit_attested": false,
+  "settings_health": {
+    "ok": false,
+    "missing": [
+      "settings.json"
+    ]
+  },
+  "closeout_current": false,
+  "narrative_fresh": false,
+  "enforce": "soft"
+}

@@ -1,0 +1,135 @@
+........................................................................ [  5%]
+.................s...................................................... [ 11%]
+.....................sssssssssssssssssssssssssssssssssssssssssssssssssss [ 16%]
+sssssssssssssssssssssssssssssssssssssssssss............................. [ 22%]
+........................................................................ [ 27%]
+........................................................................ [ 33%]
+........................................................................ [ 39%]
+.............sss........................................................ [ 44%]
+........................................................................ [ 50%]
+........................................................................ [ 55%]
+........................................................................ [ 61%]
+........................................................................ [ 66%]
+........................................................................ [ 72%]
+........................................................................ [ 78%]
+........................................................................ [ 83%]
+.................sss.................................................... [ 89%]
+........................................................................ [ 94%]
+...................................................................      [100%]
+============================== warnings summary ===============================
+backend/tests/test_admin_api_token_required_in_production.py::test_production_missing_token_rejects
+  C:\Users\computer\Desktop\business\claude\.venv\Lib\site-packages\pymilvus\client\__init__.py:6: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+    from pkg_resources import DistributionNotFound, get_distribution
+
+backend/tests/test_admin_api_token_required_in_production.py::test_production_missing_token_rejects
+  C:\Users\computer\Desktop\business\claude\.venv\Lib\site-packages\environs\__init__.py:58: DeprecationWarning: The '__version_info__' attribute is deprecated and will be removed in in a future version. Use feature detection or 'packaging.Version(importlib.metadata.version("marshmallow")).release' instead.
+    _SUPPORTS_LOAD_DEFAULT = ma.__version_info__ >= (3, 13)
+
+backend/tests/test_admin_api_token_required_in_production.py::test_production_missing_token_rejects
+  C:\Users\computer\Desktop\business\claude\.venv\Lib\site-packages\requests\__init__.py:113: RequestsDependencyWarning: urllib3 (2.5.0) or chardet (7.4.3)/charset_normalizer (3.4.2) doesn't match a supported version!
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] backend\tests\test_embedding_client.py:88: RUN_OPENAI_EMBED_SMOKE not set
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:125: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:135: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:144: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:154: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:163: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:186: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:196: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:206: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:223: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:233: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:241: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:251: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:272: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:294: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:311: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:334: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:366: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:383: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:400: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:422: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:441: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:463: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:478: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:527: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:539: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:552: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:589: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:605: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:617: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:633: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:668: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:679: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:701: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:722: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:740: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:750: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:778: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:791: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:803: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:812: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:819: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:845: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:863: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:873: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:879: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:910: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:923: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:944: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:977: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:990: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1001: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1013: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1031: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1046: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1061: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1085: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1108: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1126: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1139: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1153: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1175: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1195: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1224: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1237: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1247: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1262: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1281: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1308: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1319: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1331: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1348: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1359: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1366: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1380: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1404: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1414: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1427: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1447: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1460: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1476: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1491: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1500: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1510: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1521: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1530: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1539: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1561: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1573: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1609: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1654: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1667: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1699: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1722: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_event_resolution_live_pg.py:1734: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. live-PG 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_milvus_wrapper.py:10: RUN_MILVUS_INTEGRATION not set
+SKIPPED [1] backend\tests\test_milvus_wrapper.py:26: RUN_MILVUS_INTEGRATION not set
+SKIPPED [1] backend\tests\test_milvus_wrapper.py:56: RUN_MILVUS_INTEGRATION not set
+SKIPPED [1] backend\tests\test_seed_event_timeline.py:146: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. seed live 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_seed_event_timeline.py:163: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. seed live 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_seed_event_timeline.py:181: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. seed live 검증 미완으로 남김.
+1190 passed, 101 skipped, 3 warnings in 958.57s (0:15:58)

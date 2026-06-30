@@ -1,0 +1,25 @@
+...................................s.................................... [ 27%]
+........................................................................ [ 54%]
+............................sss......................................... [ 81%]
+.................................................                        [100%]
+============================== warnings summary ===============================
+backend/tests/test_admin_api_token_required_in_production.py::test_production_missing_token_rejects
+  C:\Users\computer\Desktop\business\claude\.venv\Lib\site-packages\pymilvus\client\__init__.py:6: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+    from pkg_resources import DistributionNotFound, get_distribution
+
+backend/tests/test_admin_api_token_required_in_production.py::test_production_missing_token_rejects
+  C:\Users\computer\Desktop\business\claude\.venv\Lib\site-packages\environs\__init__.py:58: DeprecationWarning: The '__version_info__' attribute is deprecated and will be removed in in a future version. Use feature detection or 'packaging.Version(importlib.metadata.version("marshmallow")).release' instead.
+    _SUPPORTS_LOAD_DEFAULT = ma.__version_info__ >= (3, 13)
+
+backend/tests/test_admin_api_token_required_in_production.py::test_production_missing_token_rejects
+  C:\Users\computer\Desktop\business\claude\.venv\Lib\site-packages\requests\__init__.py:113: RequestsDependencyWarning: urllib3 (2.5.0) or chardet (7.4.3)/charset_normalizer (3.4.2) doesn't match a supported version!
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+SKIPPED [1] backend\tests\test_embedding_client.py:88: RUN_OPENAI_EMBED_SMOKE not set
+SKIPPED [1] backend\tests\test_milvus_wrapper.py:10: RUN_MILVUS_INTEGRATION not set
+SKIPPED [1] backend\tests\test_milvus_wrapper.py:26: RUN_MILVUS_INTEGRATION not set
+SKIPPED [1] backend\tests\test_milvus_wrapper.py:56: RUN_MILVUS_INTEGRATION not set
+261 passed, 4 skipped, 3 warnings in 375.37s (0:06:15)
+FULL_EXIT=0

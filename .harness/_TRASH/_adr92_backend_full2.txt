@@ -1,0 +1,4 @@
+﻿SKIPPED [1] backend\tests\test_seed_event_timeline.py:146: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. seed live 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_seed_event_timeline.py:163: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. seed live 검증 미완으로 남김.
+SKIPPED [1] backend\tests\test_seed_event_timeline.py:181: live-PG(event_intel_test) 미연결 — docker compose up -d postgres + alembic upgrade 필요. seed live 검증 미완으로 남김.
+2058 passed, 101 skipped, 3 warnings in 987.19s (0:16:27)

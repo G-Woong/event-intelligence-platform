@@ -37,6 +37,7 @@ from typing import Any, Callable, Optional
 from backend.app.tools.agent_hotness_reasoning_contract import (
     build_agent_hotness_reasoning_contract,
 )
+from backend.app.tools.ai_replies_gate_design import build_ai_replies_gate_design
 from backend.app.tools.ai_replies_guard_audit import build_ai_replies_guard_audit
 from backend.app.tools.community_feedback_loop_contract import (
     build_community_feedback_loop_contract,
@@ -47,11 +48,17 @@ from backend.app.tools.community_interaction_future_gate import (
 from backend.app.tools.community_posting_roadmap_contract import (
     build_community_posting_roadmap_contract,
 )
+from backend.app.tools.evidence_assisted_payload_production_kit import (
+    build_evidence_assisted_payload_production_kit,
+)
 from backend.app.tools.first_freeze_package_hardening import (
     build_first_freeze_package_hardening,
 )
 from backend.app.tools.first_live_freeze_r1_dry_run_harness import (
     build_first_live_freeze_r1_dry_run_harness,
+)
+from backend.app.tools.first_payload_candidate_evidence_binder import (
+    build_first_payload_candidate_evidence_binder,
 )
 from backend.app.tools.first_real_payload_execution_sprint import (
     build_first_real_payload_execution_sprint,
@@ -99,6 +106,9 @@ from backend.app.tools.operator_regulatory_event_payload import (
     PAYLOAD_NOT_PROVIDED,
     PAYLOAD_PRESENT_VALID,
 )
+from backend.app.tools.operator_verification_worksheet import (
+    build_operator_verification_worksheet,
+)
 from backend.app.tools.public_runtime_kill_switch_map import (
     build_public_runtime_kill_switch_map,
 )
@@ -109,6 +119,9 @@ from backend.app.tools.r1_label_return_operational_bridge import (
 from backend.app.tools.r1_production_candidate_acquisition import PROD_BATCH_ID
 from backend.app.tools.r1_provider_breadth_acquisition import (
     run_provider_breadth_named_seed_ko_path,
+)
+from backend.app.tools.real_payload_file_template_hardening import (
+    build_real_payload_file_template_hardening,
 )
 from backend.app.tools.real_payload_promotion_workflow import (
     build_real_payload_promotion_workflow,
@@ -122,10 +135,14 @@ from backend.app.tools.reviewer_contact_launch_checklist import (
 )
 from backend.app.tools.reviewer_contact_readiness import build_reviewer_contact_readiness
 from backend.app.tools.reviewer_handoff_bridge import build_reviewer_handoff_bridge
+from backend.app.tools.reviewer_packet_dry_run import build_reviewer_packet_dry_run
 from backend.app.tools.reviewer_pilot_handoff import _assert_pii_safe
 from backend.app.tools.sanitized_live_snapshot import (
     build_sanitized_live_snapshot,
     write_sanitized_live_snapshot,
+)
+from backend.app.tools.source_graph_hot_post_integration_map import (
+    build_source_graph_hot_post_integration_map,
 )
 from backend.app.tools.source_graph_timeseries_insight_contract import (
     build_source_graph_timeseries_insight_contract,
@@ -468,6 +485,14 @@ def build_date_pinned_live_run_frontier(*, out: dict) -> dict:
         "ai_replies_guard_audit_status": out["ai_replies_guard_audit_status"],
         "public_runtime_kill_switch_status": out["public_runtime_kill_switch_status"],
         "source_graph_timeseries_contract_status": out["source_graph_timeseries_contract_status"],
+        # ADR#95 (sanitized·runtime 0·real path 미독·실 파일 쓰기 0).
+        "evidence_payload_kit_status": out["evidence_payload_kit_status"],
+        "operator_verification_worksheet_status": out["operator_verification_worksheet_status"],
+        "payload_template_hardening_status": out["payload_template_hardening_status"],
+        "first_payload_evidence_binder_status": out["first_payload_evidence_binder_status"],
+        "reviewer_packet_dry_run_status": out["reviewer_packet_dry_run_status"],
+        "ai_replies_gate_design_status": out["ai_replies_gate_design_status"],
+        "source_graph_hot_post_integration_status": out["source_graph_hot_post_integration_status"],
         "ko_source_lane_status": out["ko_source_lane_status"],
         "ko_named_seed_needed": bool(out["ko_named_seed_needed"]),
         "ko_floor_current": int(out["ko_floor_current"] or 0),
@@ -815,6 +840,34 @@ def _adr94_product_ops_fields(*, operator_payload_status: str) -> dict:
     }
 
 
+def _adr95_product_ops_fields(*, operator_payload_status: str) -> dict:
+    """ADR#95 sanitized frontier 필드(evidence-assisted payload production kit + operator verification worksheet +
+    real payload file template hardening + first payload candidate evidence binder + reviewer packet dry-run +
+    ai_replies gate design + source graph Hot Post integration map).
+
+    read API 안전: 전부 **pure compose**(live runner 미경유·real payload path 미독·실 파일 쓰기 0·network/LLM/embedding 0·
+    전송 0). kit/worksheet/template/binder 는 operator_payload_status 주입 + acquisition_fn 미주입(missing-payload 안내·
+    network 0·file write 0); reviewer packet 은 synthetic dry-run(production freeze 없음→합성 후보·gold 0·actual_sending 0);
+    ai_replies gate design 은 guard audit 합성(endpoint 미수정·LLM 0·reply 0); source-graph map 은 component→Hot Post field
+    contract 매핑(runtime 0·public post body 0·insight publish 불가)."""
+    kit = build_evidence_assisted_payload_production_kit(operator_payload_status=operator_payload_status)
+    worksheet = build_operator_verification_worksheet()
+    template = build_real_payload_file_template_hardening()
+    binder = build_first_payload_candidate_evidence_binder()
+    packet = build_reviewer_packet_dry_run()
+    gate = build_ai_replies_gate_design()
+    integration = build_source_graph_hot_post_integration_map()
+    return {
+        "evidence_payload_kit_status": kit["evidence_payload_kit_status"],
+        "operator_verification_worksheet_status": worksheet["worksheet_status"],
+        "payload_template_hardening_status": template["payload_template_hardening_status"],
+        "first_payload_evidence_binder_status": binder["first_payload_evidence_binder_status"],
+        "reviewer_packet_dry_run_status": packet["reviewer_packet_dry_run_status"],
+        "ai_replies_gate_design_status": gate["ai_replies_gate_design_status"],
+        "source_graph_hot_post_integration_status": integration["source_graph_hot_post_integration_status"],
+    }
+
+
 def run_bounded_live_breadth_run(
     *, directory: Optional[Any] = None, batch_id: str = PROD_BATCH_ID, as_of: Optional[str] = None,
     live_query: bool = False, operator_event: Optional[dict] = None, pinned_event: Optional[dict] = None,
@@ -1080,6 +1133,12 @@ def run_bounded_live_breadth_run(
     # sprint 는 payload status 주입+acquisition_fn 미주입(missing→network 0·file read 0), ready/closure/harness/kill-switch/
     # source-graph 는 pure compose, ai_replies audit 만 committed source 정적 text read(module import 0·endpoint 미수정).
     _adr94 = _adr94_product_ops_fields(operator_payload_status=_adr89["operator_payload_status"])
+    # ADR#95 — evidence-assisted payload production kit + operator verification worksheet + real payload file template
+    # hardening + first payload candidate evidence binder + reviewer packet dry-run + ai_replies gate design + source
+    # graph Hot Post integration map. pure compose(live runner 미경유·real path 미독·실 파일 쓰기 0·LLM/embedding/전송 0):
+    # kit/worksheet/template/binder 는 payload status 주입(missing 안내), reviewer packet 은 synthetic dry-run(gold 0),
+    # ai_replies gate design 은 guard audit 합성(endpoint 미수정·LLM 0), source-graph map 은 contract 매핑(runtime 0·public body 0).
+    _adr95 = _adr95_product_ops_fields(operator_payload_status=_adr89["operator_payload_status"])
 
     out = {
         "operation_name": BOUNDED_OPERATION_NAME,
@@ -1249,6 +1308,16 @@ def run_bounded_live_breadth_run(
         "ai_replies_guard_audit_status": _adr94["ai_replies_guard_audit_status"],
         "public_runtime_kill_switch_status": _adr94["public_runtime_kill_switch_status"],
         "source_graph_timeseries_contract_status": _adr94["source_graph_timeseries_contract_status"],
+        # ADR#95 evidence-assisted payload production kit + operator verification worksheet + payload template hardening
+        # + first payload candidate evidence binder + reviewer packet dry-run + ai_replies gate design + source graph
+        # Hot Post integration map (sanitized·runtime 0·real path 미독·실 파일 쓰기 0).
+        "evidence_payload_kit_status": _adr95["evidence_payload_kit_status"],
+        "operator_verification_worksheet_status": _adr95["operator_verification_worksheet_status"],
+        "payload_template_hardening_status": _adr95["payload_template_hardening_status"],
+        "first_payload_evidence_binder_status": _adr95["first_payload_evidence_binder_status"],
+        "reviewer_packet_dry_run_status": _adr95["reviewer_packet_dry_run_status"],
+        "ai_replies_gate_design_status": _adr95["ai_replies_gate_design_status"],
+        "source_graph_hot_post_integration_status": _adr95["source_graph_hot_post_integration_status"],
         # KO source lane(§3-E·§8).
         "ko_source_lane_status": ko_lane["ko_source_lane_status"],
         "ko_named_seed_needed": ko_lane["ko_named_seed_needed"],

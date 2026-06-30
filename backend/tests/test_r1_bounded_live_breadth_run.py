@@ -275,7 +275,7 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     f = out["internal_ops_date_pinned_live_run_frontier"]
     model = InternalOpsDatePinnedLiveRunFrontier(**f)   # raises on missing/type mismatch.
     assert set(f.keys()) == set(InternalOpsDatePinnedLiveRunFrontier.model_fields.keys())
-    assert len(f) == 111   # ADR#93 +16·ADR#94 +7(first real payload sprint + operator-confirmed-ready package + unified live closure + freeze/R1 dry-run harness + ai_replies guard audit + public runtime kill-switch + source graph/time-series contract).
+    assert len(f) == 118   # ADR#93 +16·ADR#94 +7·ADR#95 +7(evidence-assisted payload production kit + operator verification worksheet + payload template hardening + first payload candidate evidence binder + reviewer packet dry-run + ai_replies gate design + source graph Hot Post integration map).
     assert model.r2_r7_no_go is True
     assert model.latest_date_pinned_live_run_status == BLOCKED_MISSING_OPERATOR_EVENT
     # ADR#84: no live run(synthetic base) → date window 미강제·handoff 미준비(freeze 없음).
@@ -349,6 +349,16 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     assert f["ai_replies_guard_audit_status"] == "ungated_mock_endpoint_detected"
     assert f["public_runtime_kill_switch_status"] == "public_runtime_kill_switch_all_disabled"
     assert f["source_graph_timeseries_contract_status"] == "candidate_only_runtime_disabled"
+    # ADR#95: real payload 미제공(read 경로) → evidence kit ready·worksheet incomplete(operator 미검증)·payload template
+    # hardened·evidence binder ready·reviewer packet 은 synthetic dry-run·ai_replies gate design 은 blocking gate 미충족
+    # 으로 blocked·source graph Hot Post map candidate-only. 전부 sanitized 문자열(same_event/score/raw body 노출 0).
+    assert f["evidence_payload_kit_status"] == "evidence_payload_kit_ready"
+    assert f["operator_verification_worksheet_status"] == "worksheet_incomplete_operator_must_verify"
+    assert f["payload_template_hardening_status"] == "payload_template_hardened"
+    assert f["first_payload_evidence_binder_status"] == "evidence_binder_ready"
+    assert f["reviewer_packet_dry_run_status"] == "synthetic_reviewer_packet_dry_run_ready"
+    assert f["ai_replies_gate_design_status"] == "gate_design_blocked_required_gate_missing"
+    assert f["source_graph_hot_post_integration_status"] == "integration_map_candidate_only_runtime_disabled"
 
 
 def test_date_pinned_frontier_no_forbidden_or_raw_entity_fields():

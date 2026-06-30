@@ -1,0 +1,12 @@
+============================= test session starts =============================
+platform win32 -- Python 3.11.9, pytest-8.4.2, pluggy-1.6.0 -- C:\Users\computer\Desktop\business\claude\.venv\Scripts\python.exe
+rootdir: C:\Users\computer\Desktop\business\claude
+configfile: pyproject.toml
+plugins: anyio-4.9.0, asyncio-0.26.0, cov-6.3.0
+asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 265 items
+
+backend/tests/test_admin_api_token_required_in_production.py::test_production_missing_token_rejects PASSED [  0%]
+backend/tests/test_admin_api_token_required_in_production.py::test_staging_missing_token_rejects PASSED [  0%]
+backend/tests/test_admin_api_token_required_in_production.py::test_dev_missing_token_allows PASSED [  1%]
+backend/tests/test_admin_api_token_required_in_production.py::test_test_env_missing_token_allows DIAG_EXIT=127

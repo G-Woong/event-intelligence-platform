@@ -1392,6 +1392,13 @@ function toR1DatePinnedLiveRunFrontierDisplayRows(f) {
     { label: "ai_replies guard audit status", value: f.ai_replies_guard_audit_status },
     { label: "Public runtime kill-switch status (all disabled)", value: f.public_runtime_kill_switch_status },
     { label: "Source graph/time-series contract status (candidate)", value: f.source_graph_timeseries_contract_status },
+    { label: "Evidence-assisted payload production kit status", value: f.evidence_payload_kit_status },
+    { label: "Operator verification worksheet status", value: f.operator_verification_worksheet_status },
+    { label: "Real payload file template hardening status", value: f.payload_template_hardening_status },
+    { label: "First payload candidate evidence binder status", value: f.first_payload_evidence_binder_status },
+    { label: "Reviewer packet dry-run status (synthetic)", value: f.reviewer_packet_dry_run_status },
+    { label: "ai_replies gate design status (runtime disabled)", value: f.ai_replies_gate_design_status },
+    { label: "Source graph Hot Post integration map status (candidate)", value: f.source_graph_hot_post_integration_status },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -1548,6 +1555,13 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
   ai_replies_guard_audit_status: "ungated_mock_endpoint_detected",
   public_runtime_kill_switch_status: "public_runtime_kill_switch_all_disabled",
   source_graph_timeseries_contract_status: "candidate_only_runtime_disabled",
+  evidence_payload_kit_status: "evidence_payload_kit_ready",
+  operator_verification_worksheet_status: "worksheet_incomplete_operator_must_verify",
+  payload_template_hardening_status: "payload_template_hardened",
+  first_payload_evidence_binder_status: "evidence_binder_ready",
+  reviewer_packet_dry_run_status: "synthetic_reviewer_packet_dry_run_ready",
+  ai_replies_gate_design_status: "gate_design_blocked_required_gate_missing",
+  source_graph_hot_post_integration_status: "integration_map_candidate_only_runtime_disabled",
   ko_source_lane_status: "ready_5_keyfree_live_ko_news_anchors",
   ko_named_seed_needed: true,
   ko_floor_current: 0,
@@ -1993,6 +2007,17 @@ describe("ADR#83 date-pinned live query plumbing + bounded live run + freeze fro
       "first_real_payload_sprint_status", "operator_confirmed_ready_package_status", "unified_live_closure_status",
       "freeze_r1_dry_run_status", "ai_replies_guard_audit_status", "public_runtime_kill_switch_status",
       "source_graph_timeseries_contract_status",
+    ]) {
+      assert.ok(k in SAMPLE_DATE_PINNED_FRONTIER, `missing ${k}`);
+    }
+  });
+
+  it("(ADR#95) keeps the date-pinned frontier sanitized with the 7 ADR#95 fields (no forbidden keys)", () => {
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_DATE_PINNED_FRONTIER));
+    for (const k of [
+      "evidence_payload_kit_status", "operator_verification_worksheet_status", "payload_template_hardening_status",
+      "first_payload_evidence_binder_status", "reviewer_packet_dry_run_status", "ai_replies_gate_design_status",
+      "source_graph_hot_post_integration_status",
     ]) {
       assert.ok(k in SAMPLE_DATE_PINNED_FRONTIER, `missing ${k}`);
     }

@@ -564,6 +564,16 @@ export interface InternalOpsDatePinnedLiveRunFrontier {
   ai_replies_guard_audit_status: string;
   public_runtime_kill_switch_status: string;
   source_graph_timeseries_contract_status: string;
+  // ADR#95: evidence-assisted payload production kit + operator verification worksheet + payload template hardening +
+  // first payload candidate evidence binder + reviewer packet dry-run + ai_replies gate design + source graph Hot Post
+  // integration map(+7·sanitized·runtime No-Go).
+  evidence_payload_kit_status: string;
+  operator_verification_worksheet_status: string;
+  payload_template_hardening_status: string;
+  first_payload_evidence_binder_status: string;
+  reviewer_packet_dry_run_status: string;
+  ai_replies_gate_design_status: string;
+  source_graph_hot_post_integration_status: string;
   // KO source lane(§8).
   ko_source_lane_status: string;
   ko_named_seed_needed: boolean;

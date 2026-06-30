@@ -1,0 +1,10 @@
+{
+  "session_id": "4e6136a8-e115-40fe-b279-1b030dee341f",
+  "flags": [
+    "architecture_review",
+    "code_review",
+    "evidence_review",
+    "risk_closure_review",
+    "test_review"
+  ]
+}
