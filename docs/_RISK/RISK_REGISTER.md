@@ -428,6 +428,7 @@
 - 경계(중첩 RISK 와 구분): **R-BatchFreezeAsTruth**(frozen batch artifact 자체의 truth 오인)·**R-IdentityHumanLabeling**(model/self/LLM→human 둔갑)와 달리, 본 RISK 는 *provenance 태그(synthetic vs live_derived)의 기계적 강제* 가 흐려질 위험을 본다.
 - Current mitigation: `candidate_provenance` allowed={live_derived,synthetic_fixture,none}·production candidate=live_derived **강제**·`build_label_template(dataset_source=SOURCE_LIVE)` 분리(synthetic 라벨은 dataset_source=synthetic→intake chain[production=production AND live_derived]이 production gold 미승격)·dual-track UI 분리·production batch 는 publishable live 만. 잠금: test_r1_production_candidate_acquisition(synthetic≠production·live-derived 강제)·test_cross_source_live_overlap_smoke(provenance live_derived only for real records).
 - Closure: 실 운영에서 synthetic/live-derived 분리가 production gold 누적 전 구간에서 유지됨이 입증(provenance audit)·**기계 강제 선언만으로 종결 금지**(실 production gold path 미가동).
+- 2026-06-30 ADR#93 부분진전: **freeze→R1 executable checklist**(`freeze_to_r1_executable_checklist.py`·freeze artifact→contact→dropbox→intake 명령을 단일 `build_r1_label_return_operational_bridge` 합성으로 묶음·`first_freeze_package_hardening` 실 artifact 호출 경로 연결[기존 production 호출은 `artifact=None`]·batch_id mismatch 가드·gold gated·production_gold_count bridge passthrough)로 freeze 성공 시 reviewer→label→gold 경로를 *실행 가능* 하게 만들었다. **종결 금지**(실 live records 부재→실 freeze artifact 0·실 candidate 0·production_gold_count 0).
 
 ### R-CrossSourceNearMatchGap · 100 publishable cross-source 비교쌍에서 deterministic near-match 0(원인 미확정)  — Severity: MEDIUM (신규 2026-06-28 · ADR#77 — live query 실행이 실측한 present blocker)
 - Area: cross-source near-match / identity detection / R1 production candidate frontier
@@ -596,6 +597,7 @@
 - 2026-06-30 ADR#89 부분진전: operator payload entrypoint 구현(`operator_regulatory_event_payload.py`·real↔example 분리·real path `inputs/operator_events/` gitignored·load 단계 forbidden 키 fail-closed scan)·committed `examples/operator_regulatory_event_payload.example.json`(operator_confirmed=false·real 아님)·missing/invalid payload → precise status(not_provided/present_invalid_json/present_rejected_pii_or_secret) + actionable next_action. **종결 금지**(실 operator-confirmed live 미실행·`inputs/operator_events/` ABSENT).
 - 2026-06-30 ADR#90 부분진전: payload **authoring helper** 구현(`operator_payload_authoring_helper.py`·curated seed→operator-fillable 템플릿·operator_confirmed/live_approved 강제 False·missing_fields/actionable next_action·draft 경로 ≠ real path·코드가 event fabricate 0) + operator-confirmed **live runner**(`operator_confirmed_live_runner.py`·load→§8 gate→live→no-yield 분류 실행-준비·fake acquisition_fn 결정론). operator 가 빈손으로 막히지 않도록 채울 템플릿을 제공하나 코드가 confirmed event 를 만들지 않는다. **종결 금지**(실 operator payload 미제공·`inputs/operator_events/` 여전히 ABSENT·실 live-derived freeze 0).
 - 2026-06-30 ADR#92 부분진전: **live attempt pack builder**(`live_attempt_pack_builder.py`·curated seed→operator-fillable 후보 4개 묶음·전부 operator_confirmed/live_approved 강제 False·후보 live 트리거 불가·real path 미작성·network 0)로 operator 가 *어떤 후보 중에서* 골라 채울지 한눈에 보이게 하고 `live_attempt_pack_next_action`(frontier)으로 다음 행동을 구체화. **종결 금지**(코드가 발생을 단정하지 않으므로 pack 후보 ≠ 실 confirmed payload·`inputs/operator_events/` 여전히 ABSENT·실 live-derived freeze 0).
+- 2026-06-30 ADR#93 부분진전: **real payload promotion workflow**(`real_payload_promotion_workflow.py`·pack 후보→draft 승격 절차·발생 확인 FIRST checklist·`validate_operator_confirmed_event` 로 draft 가 live-ineligible 임을 증명·operator_confirmed/live_approved 강제 False·real path 미작성) + **operator live command pack**(`operator_live_command_pack.py`·validate→live 명령을 operator 에게 명시·expected_provider_calls=3·fidelity probe 미경유)로 후보 선택→승격→실행 경로를 *실행 가능* 하게 만들었다. **종결 금지**(실 operator payload 여전히 미제공·`inputs/operator_events/` ABSENT·promotion ≠ 실 confirmed payload·실 live-derived freeze 0).
 
 ### R-ReviewerContactPrematureLaunch · reviewer contact readiness 를 actual contact/sending 완료로 둔갑  — Severity: LOW (신규 2026-06-30 · ADR#88 — reviewer contact readiness gate 도입에 따른 경계 RISK)
 - Area: reviewer contact readiness / 수동 배포 경계
@@ -732,6 +734,54 @@
 - Description: ADR#92 `hot_post_preview_guard.py` 가 내부 preview 를 public post 와 분리한다. 위험은 internal-only preview 가 실수로 게시되거나 body/댓글이 생성되는 것이다.
 - Current mitigation: `public_post_body_generated=False`·`comment_reply_generated=False`·`preview_publishable=False`·`hot_post_preview_public_blocked=True`(항상)·structural(official evidence/uncertainty/community reaction-only/source role) 통과해야 internal-only·hotness/community 단독 reject·public 은 R1 gold+MERGE_GATE+public_readiness 필요. 잠금: test_hot_post_preview_guard(body/reply 0·no R1/merge → public 차단·hotness/community-only reject·uncertainty 필수·internal-only 게시 불가). 알려진 별개 경로: `ai_replies.py` mock 엔드포인트(ungated·범위 밖·HOT_POST_PREVIEW_GUARD.md flag·미수정).
 - Closure: public Hot Post runtime ADR + auth/safety gate 후에만·그 전까지 LOW 유지·**preview 를 public post 로·placeholder 를 게시 가능으로 둔갑 금지**.
+
+### R-RealPayloadPromotionUXGap · live attempt pack 후보 승격 절차가 real payload/confirmed 로 둔갑 또는 UX 과난해  — Severity: LOW (신규 2026-06-30 · ADR#93 — real payload promotion workflow 도입에 따른 경계 RISK)
+- Area: real payload promotion workflow / draft ≠ real confirmed payload 경계
+- Description: ADR#93 `real_payload_promotion_workflow.py` 가 pack 후보를 draft 로 승격하는 절차를 명시한다. 위험은 ① draft 가 *실 confirmed payload* 로 오인돼 live 트리거, ② 코드가 operator_confirmed/live_approved 를 자동 true 로 기록, ③ 비자동 단계가 너무 많아 operator 가 포기.
+- Current mitigation: `code_sets_operator_confirmed_true=False`·`code_sets_live_approved_true=False`·`code_claims_event_occurred=False`·`code_writes_real_payload=False`·draft 의 operator_confirmed/live_approved 강제 False(authoring helper 상속)·`validate_operator_confirmed_event` 로 draft 가 live-ineligible 임을 증명·promotion_checklist 가 발생 확인 FIRST·real_payload_path_gitignored. 잠금: test_real_payload_promotion_workflow(draft confirmed/approved False·occurrence FIRST·network 0·real path 미작성).
+- Closure: 실 operator 가 후보를 골라 발생 확인 + payload drop 실증 시 LOW 유지·**draft 를 real confirmed payload 로·승격 절차를 발생 단정으로 둔갑 금지**.
+
+### R-OperatorLiveCommandMisuse · operator 가 validate 대신 live 명령을 잘못 실행  — Severity: LOW (신규 2026-06-30 · ADR#93 — operator live command pack 도입에 따른 경계 RISK)
+- Area: operator live command pack / live 명령 오용 경계
+- Description: ADR#93 `operator_live_command_pack.py` 가 validate-only/dry-run/live-run 명령을 emit 한다. 위험은 ① operator 가 미승인 payload 로 live 명령 실행, ② live 명령이 payload-gate 없는 fidelity probe 로 라우팅돼 무승인 실호출.
+- Current mitigation: `validate_only_calls_network=False`·`dry_run_calls_live_network=False`·`live_run_requires_approved_payload=True`·`routes_through_ungated_fidelity_probe=False`(live 명령은 approval-gated `operator_confirmed_live_runner` 만)·validate/dry-run 명령에 live flag 부재·`secret_in_command_pack=False`·`raw_payload_text_in_pack=False`. 잠금: test_operator_live_command_pack(validate/dry no live·live 승인 필요·secret/PII 0·probe 미경유).
+- Closure: 실 live 실행이 valid∧approved 에서만 일어남을 실증 시 LOW 유지·**command pack 을 live 실행으로·dry-run 을 live network 로 둔갑 금지**.
+
+### R-ValidateDryLiveConfusion · validate-only/dry-run/live-run 혼동으로 무의도 live  — Severity: LOW (신규 2026-06-30 · ADR#93 — operator live command pack 도입에 따른 경계 RISK)
+- Area: operator live command pack / 3-mode 명확성 경계
+- Description: validate-only(network 0)·dry-run(live network 0)·live-run(valid∧approved 필요)을 operator 가 혼동하면 무의도 live 호출/rate 위반 위험.
+- Current mitigation: 세 명령을 별 필드로 분리·expected_provider_calls(int)+provider_list+news_enforce_window_noted=True 를 live 전 표면화·rate_limit_notes(adapter_descriptor 기반·guardian≥6·nyt≥13)·output_paths gitignored·rollback_notes. 잠금: test_operator_live_command_pack(명령 분리·provider 수 가시·enforce_window noted).
+- Closure: 실 operator 가 3-mode 를 정확히 사용 실증 시 LOW 유지·**dry-run 을 live 로 둔갑 금지**.
+
+### R-FreezeToR1ChecklistDrift · freeze→R1 checklist 가 실 contact/gold 로 둔갑 또는 batch_id mismatch  — Severity: LOW (신규 2026-06-30 · ADR#93 — freeze→R1 executable checklist 도입에 따른 경계 RISK)
+- Area: freeze→R1 executable checklist / checklist ≠ 실 contact/gold 경계
+- Description: ADR#93 `freeze_to_r1_executable_checklist.py` 가 freeze→contact→dropbox→intake 명령을 묶는다. 위험은 ① checklist 가 *실 contact 완료/gold* 로 오인, ② freeze batch(`reviewer_prod_cand_001`)와 contact lane(`operator_regulatory_live`)이 은밀 혼합.
+- Current mitigation: `actual_sending_performed=False`·`reviewer_roster_committed=False`·`single_reviewer_label_is_gold=False`·`unsure_label_is_gold=False`·`agreement_required_for_gold=True`·`gold_promotion_gated=True`·production_gold_count bridge exact passthrough(라벨 없으면 0)·batch_id mismatch→`FR1_BLOCKED_BATCH_MISMATCH` 표면화·label 명령 ready 는 FR1_READY 게이트. 잠금: test_freeze_to_r1_executable_checklist(no freeze→blocked·batch 정합·sending 0·gold 불변).
+- Closure: 실 freeze + 첫 returned labels 실증 시 LOW 유지·**checklist 를 실 contact/gold 로·command ready 를 실행됨으로 둔갑 금지**.
+
+### R-HotPostActivationOverclaim · Hot Post activation map 이 실 public runtime 활성화로 둔갑  — Severity: LOW (신규 2026-06-30 · ADR#93 — Hot Post activation map 도입에 따른 경계 RISK)
+- Area: Hot Post activation map / contract ≠ runtime 경계
+- Description: ADR#93 `hot_post_activation_map.py` 가 public runtime 활성화 9 stage 를 정의한다. 위험은 activation map(contract)이 *실 runtime 개방* 으로 오인되거나 R1/R2 전 public publish 가 허용되는 것이다.
+- Current mitigation: `runtime_enabled=False`·`public_post_body_generated=False`·`comment_reply_generated=False`·`publish_requires_r1_r2=True`·stage_5/6 public publish 는 R1 AND R2 후·operator 승인 필요·stage_7 community-as-anchor 금지·stage_8 comment reply 는 community gate 후. 잠금: test_hot_post_activation_map(R1/R2 전 차단·operator 승인·runtime disabled·stage 순서 고정).
+- Closure: R1/R2 + public-IU gate 후 실 runtime ADR 에서만·그 전까지 LOW 유지·**activation map 을 실 runtime 으로 둔갑 금지**.
+
+### R-CommunityFeedbackLoopOverclaim · community feedback loop 계약이 실 comment runtime 으로 둔갑  — Severity: LOW (신규 2026-06-30 · ADR#93 — community feedback loop contract 도입에 따른 경계 RISK)
+- Area: community feedback loop contract / contract ≠ comment runtime 경계
+- Description: ADR#93 `community_feedback_loop_contract.py` 가 미래 user-comment↔agent-followup loop 를 정의한다. 위험은 loop 계약이 *실 댓글 자동응답 runtime* 으로 오인되거나 agent follow-up 이 사실을 날조하는 것이다.
+- Current mitigation: `runtime_enabled=False`·`comment_auto_reply_enabled=False`·`reply_generated=False`(gate passthrough)·`agent_followup_can_fabricate_facts=False`·moderation/privacy/audit/citation/uncertainty 필수·community_interaction_future_gate COMPOSE(11 요구 재선언 0). 잠금: test_community_feedback_loop_contract(runtime 0·reply 0·moderation/privacy/audit/citation 필수·날조 불가).
+- Closure: community interaction runtime ADR(11요구 gate) 후에만·그 전까지 LOW 유지·**feedback loop 를 실 comment runtime 으로·follow-up 을 사실 생성으로 둔갑 금지**.
+
+### R-NextProviderExpansionScopeCreep · next provider expansion 이 무한 확장/anchor 오염  — Severity: LOW (신규 2026-06-30 · ADR#93 — next provider expansion pack 도입에 따른 경계 RISK)
+- Area: next provider expansion pack / 확장 범위·source role 경계
+- Description: ADR#93 `next_provider_expansion_pack.py` 가 no-yield 사유별 provider 를 권고한다. 위험은 ① 권고가 무한 provider 추가로 번지거나, ② aggregator/community/search 가 anchor 로 승격되거나, ③ KO lane 이 EN 과 혼합되는 것이다.
+- Current mitigation: `runtime_enabled=False`·`recommendation_is_planning_not_runtime=True`·`runtime_expansion_requires_separate_adr=True`·`aggregator_truth=False`·`source_role_guard_preserved=True`·`ko_lane_separate=True`·provider risk facts 는 window_honoring_source_readiness/provider_breadth_inventory 인용(재선언 0). 잠금: test_next_provider_expansion_pack(source role 보존·KO 분리·runtime 0).
+- Closure: 실 provider 확장은 별도 ADR+approval 에서만·그 전까지 LOW 유지·**planning 을 runtime 확장으로·aggregator 를 truth 로 둔갑 금지**.
+
+### R-ProviderExpansionPlanningAsRuntimeLeakage · provider expansion planning 이 runtime 확장/GDELT 실행으로 둔갑  — Severity: LOW (신규 2026-06-30 · ADR#93 — next provider expansion pack 도입에 따른 경계 RISK)
+- Area: next provider expansion pack / planning ≠ runtime/GDELT 실행 경계
+- Description: provider expansion pack 의 GDELT/AP-Reuters-like 권고가 *지금 배선/실행됨* 으로 오인될 위험.
+- Current mitigation: `gdelt_executed=False`·`network_invoked=False`·`recommendation_is_planning_not_runtime=True`·GDELT 는 항상 planning string(rate/attribution high·adapter not_wired)·friendly→TX 매핑(`freeze_unsafe`→TX_FREEZE_UNSAFE). 잠금: test_next_provider_expansion_pack(GDELT 실행 0·network 0·runtime_enabled False).
+- Closure: 실 GDELT/provider adapter 배선은 별도 ADR 후에만·그 전까지 LOW 유지·**planning 권고를 runtime 실행으로 둔갑 금지**.
 
 ### R-DiscoveryCostStarvation · 발견 triage가 확장 LLM 예산 잠식  — Severity: MEDIUM (미래, 2026-06-20 신규 — adversarial)
 - Area: Authority Discovery / budget / 발견 폭주

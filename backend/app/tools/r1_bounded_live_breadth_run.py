@@ -37,6 +37,9 @@ from typing import Any, Callable, Optional
 from backend.app.tools.agent_hotness_reasoning_contract import (
     build_agent_hotness_reasoning_contract,
 )
+from backend.app.tools.community_feedback_loop_contract import (
+    build_community_feedback_loop_contract,
+)
 from backend.app.tools.community_interaction_future_gate import (
     build_community_interaction_future_gate,
 )
@@ -46,9 +49,14 @@ from backend.app.tools.community_posting_roadmap_contract import (
 from backend.app.tools.first_freeze_package_hardening import (
     build_first_freeze_package_hardening,
 )
+from backend.app.tools.freeze_to_r1_executable_checklist import (
+    FR1_READY,
+    build_freeze_to_r1_executable_checklist,
+)
 from backend.app.tools.hot_intelligence_post_contract import (
     build_hot_intelligence_post_contract,
 )
+from backend.app.tools.hot_post_activation_map import build_hot_post_activation_map
 from backend.app.tools.hot_post_gate_alignment import build_hot_post_gate_alignment
 from backend.app.tools.hot_post_preview_guard import build_hot_post_preview_guard
 from backend.app.tools.ko_source_readiness import build_ko_source_lane
@@ -59,17 +67,27 @@ from backend.app.tools.live_query_target import (
     execute_date_pinned_bounded_live_run,
 )
 from backend.app.tools.news_breadth_trigger import build_news_breadth_trigger
+from backend.app.tools.next_provider_expansion_pack import (
+    build_next_provider_expansion_pack,
+)
 from backend.app.tools.official_news_label_intake_readiness import (
     run_official_news_label_intake_readiness,
 )
 from backend.app.tools.official_news_overlap_diagnostics import (
     build_official_news_overlap_diagnostics,
 )
+from backend.app.tools.operator_live_command_pack import (
+    build_operator_live_command_pack,
+)
 from backend.app.tools.operator_payload_authoring_helper import (
     build_operator_payload_authoring,
 )
 from backend.app.tools.operator_payload_sourcing_workflow import (
     build_operator_payload_sourcing_workflow,
+)
+from backend.app.tools.operator_regulatory_event_payload import (
+    PAYLOAD_NOT_PROVIDED,
+    PAYLOAD_PRESENT_VALID,
 )
 from backend.app.tools.r1_first_contact_protocol import build_r1_first_contact_protocol
 from backend.app.tools.r1_label_return_operational_bridge import (
@@ -78,6 +96,9 @@ from backend.app.tools.r1_label_return_operational_bridge import (
 from backend.app.tools.r1_production_candidate_acquisition import PROD_BATCH_ID
 from backend.app.tools.r1_provider_breadth_acquisition import (
     run_provider_breadth_named_seed_ko_path,
+)
+from backend.app.tools.real_payload_promotion_workflow import (
+    build_real_payload_promotion_workflow,
 )
 from backend.app.tools.regulatory_event_seed_bank import build_regulatory_event_seed_bank
 from backend.app.tools.returned_label_dropbox_readiness import (
@@ -183,6 +204,12 @@ DATE_PINNED_REQUIRED_COPY: tuple[str, ...] = (
     "Freeze is a reviewer worklist only, not gold",
     "Reviewer first contact is manual; the system never sends labels or messages",
     "Hot Post preview is internal-only and cannot be published before R1/R2 gates",
+    # ADR#93 — real payload promotion + operator live command pack + freeze→R1 + activation map + feedback loop copy.
+    "Live attempt packs must be manually verified before becoming real payloads",
+    "Validate-only and dry-run do not call live providers",
+    "Live run requires operator-confirmed payload and live_approved=true",
+    "Returned labels require validation and agreement before R1 gold",
+    "Community feedback loop is future contract only; comment runtime is disabled",
 )
 
 
@@ -396,6 +423,24 @@ def build_date_pinned_live_run_frontier(*, out: dict) -> dict:
         "r1_first_contact_next_action": out["r1_first_contact_next_action"],
         "hot_post_preview_status": out["hot_post_preview_status"],
         "hot_post_preview_public_blocked": bool(out["hot_post_preview_public_blocked"]),
+        # ADR#93 real payload promotion + operator live command pack + freeze→R1 executable checklist + Hot Post
+        # activation map + community feedback loop + next provider expansion (sanitized·runtime 0·real path 미독·GDELT 0).
+        "real_payload_promotion_status": out["real_payload_promotion_status"],
+        "real_payload_promotion_next_action": out["real_payload_promotion_next_action"],
+        "operator_live_command_pack_status": out["operator_live_command_pack_status"],
+        "validate_payload_command_ready": bool(out["validate_payload_command_ready"]),
+        "dry_run_command_ready": bool(out["dry_run_command_ready"]),
+        "live_run_command_ready": bool(out["live_run_command_ready"]),
+        "expected_provider_calls": int(out["expected_provider_calls"] or 0),
+        "real_payload_present": bool(out["real_payload_present"]),
+        "real_payload_valid": bool(out["real_payload_valid"]),
+        "freeze_to_r1_status": out["freeze_to_r1_status"],
+        "label_validation_command_ready": bool(out["label_validation_command_ready"]),
+        "label_intake_command_ready": bool(out["label_intake_command_ready"]),
+        "agreement_check_command_ready": bool(out["agreement_check_command_ready"]),
+        "hot_post_activation_map_status": out["hot_post_activation_map_status"],
+        "community_feedback_loop_status": out["community_feedback_loop_status"],
+        "next_provider_expansion_status": out["next_provider_expansion_status"],
         "ko_source_lane_status": out["ko_source_lane_status"],
         "ko_named_seed_needed": bool(out["ko_named_seed_needed"]),
         "ko_floor_current": int(out["ko_floor_current"] or 0),
@@ -674,6 +719,45 @@ def _adr92_product_ops_fields(
     }
 
 
+def _adr93_product_ops_fields(
+    *, operator_payload_status: str, live_no_yield_taxonomy_status: str,
+) -> dict:
+    """ADR#93 sanitized frontier 필드(real payload promotion + operator live command pack + freeze→R1 executable
+    checklist + Hot Post activation map + community feedback loop contract + next provider expansion pack).
+
+    read API 안전: 전부 **pure/injection**(network 0·real payload path 미독·live runner 미경유·GDELT 실행 0). promotion 은
+    operator_payload_status 주입(disk read 0·draft-only·operator_confirmed/live_approved 강제 False); command pack 은
+    operator_event 미주입 → template-only 명령 문자열만(실행 0·fidelity probe 미경유); freeze→R1 은 artifact 미제공(freeze 0)
+    → blocked(label 명령 ready 는 FR1_READY 게이트로 status 와 정합); activation/feedback 은 contract-only(runtime 0);
+    provider expansion 은 taxonomy status 주입 → planning 권고만(GDELT 실행 0)."""
+    promotion = build_real_payload_promotion_workflow(operator_payload_status=operator_payload_status)
+    cmd = build_operator_live_command_pack(operator_event=None, operator_payload_status=operator_payload_status)
+    freeze = build_freeze_to_r1_executable_checklist(freeze_artifact=None)
+    activation = build_hot_post_activation_map()
+    feedback = build_community_feedback_loop_contract()
+    provider = build_next_provider_expansion_pack(no_yield_reason=live_no_yield_taxonomy_status)
+    freeze_ready = freeze["freeze_to_r1_status"] == FR1_READY
+    real_present = operator_payload_status not in (None, "", PAYLOAD_NOT_PROVIDED)
+    return {
+        "real_payload_promotion_status": promotion["real_payload_promotion_status"],
+        "real_payload_promotion_next_action": promotion["next_action"],
+        "operator_live_command_pack_status": cmd["operator_live_command_pack_status"],
+        "validate_payload_command_ready": bool(cmd.get("validate_payload_command")),
+        "dry_run_command_ready": bool(cmd.get("dry_run_command")),
+        "live_run_command_ready": bool(cmd.get("live_run_command")),
+        "expected_provider_calls": int(cmd["expected_provider_calls"]),
+        "real_payload_present": bool(real_present),
+        "real_payload_valid": bool(operator_payload_status == PAYLOAD_PRESENT_VALID),
+        "freeze_to_r1_status": freeze["freeze_to_r1_status"],
+        "label_validation_command_ready": bool(freeze_ready and freeze.get("label_validation_command")),
+        "label_intake_command_ready": bool(freeze_ready and freeze.get("label_intake_command")),
+        "agreement_check_command_ready": bool(freeze_ready and freeze.get("agreement_check_command")),
+        "hot_post_activation_map_status": activation["hot_post_activation_map_status"],
+        "community_feedback_loop_status": feedback["community_feedback_loop_status"],
+        "next_provider_expansion_status": provider["next_provider_expansion_status"],
+    }
+
+
 def run_bounded_live_breadth_run(
     *, directory: Optional[Any] = None, batch_id: str = PROD_BATCH_ID, as_of: Optional[str] = None,
     live_query: bool = False, operator_event: Optional[dict] = None, pinned_event: Optional[dict] = None,
@@ -926,6 +1010,13 @@ def run_bounded_live_breadth_run(
         live_no_yield_taxonomy_status=_adr90["live_no_yield_taxonomy_status"],
         overlap_blocked_dimension=_adr91["overlap_blocked_dimension"],
         batch_id=batch_id)
+    # ADR#93 — real payload promotion + operator live command pack + freeze→R1 executable checklist + Hot Post
+    # activation map + community feedback loop contract + next provider expansion pack. pure/injection(real path 미독·
+    # live runner 미경유·GDELT 실행 0): promotion 은 payload status 주입(draft-only), command pack 은 event 미주입(template-only),
+    # freeze→R1 은 artifact 0→blocked, activation/feedback 은 contract-only, provider expansion 은 taxonomy status 주입(planning).
+    _adr93 = _adr93_product_ops_fields(
+        operator_payload_status=_adr89["operator_payload_status"],
+        live_no_yield_taxonomy_status=_adr90["live_no_yield_taxonomy_status"])
 
     out = {
         "operation_name": BOUNDED_OPERATION_NAME,
@@ -1067,6 +1158,25 @@ def run_bounded_live_breadth_run(
         "r1_first_contact_next_action": _adr92["r1_first_contact_next_action"],
         "hot_post_preview_status": _adr92["hot_post_preview_status"],
         "hot_post_preview_public_blocked": _adr92["hot_post_preview_public_blocked"],
+        # ADR#93 real payload promotion + operator live command pack + freeze→R1 executable checklist + Hot Post
+        # activation map + community feedback loop contract + next provider expansion pack (sanitized·real path 미독·
+        # live runner 미경유·GDELT 실행 0·freeze artifact 0·runtime 0).
+        "real_payload_promotion_status": _adr93["real_payload_promotion_status"],
+        "real_payload_promotion_next_action": _adr93["real_payload_promotion_next_action"],
+        "operator_live_command_pack_status": _adr93["operator_live_command_pack_status"],
+        "validate_payload_command_ready": _adr93["validate_payload_command_ready"],
+        "dry_run_command_ready": _adr93["dry_run_command_ready"],
+        "live_run_command_ready": _adr93["live_run_command_ready"],
+        "expected_provider_calls": _adr93["expected_provider_calls"],
+        "real_payload_present": _adr93["real_payload_present"],
+        "real_payload_valid": _adr93["real_payload_valid"],
+        "freeze_to_r1_status": _adr93["freeze_to_r1_status"],
+        "label_validation_command_ready": _adr93["label_validation_command_ready"],
+        "label_intake_command_ready": _adr93["label_intake_command_ready"],
+        "agreement_check_command_ready": _adr93["agreement_check_command_ready"],
+        "hot_post_activation_map_status": _adr93["hot_post_activation_map_status"],
+        "community_feedback_loop_status": _adr93["community_feedback_loop_status"],
+        "next_provider_expansion_status": _adr93["next_provider_expansion_status"],
         # KO source lane(§3-E·§8).
         "ko_source_lane_status": ko_lane["ko_source_lane_status"],
         "ko_named_seed_needed": ko_lane["ko_named_seed_needed"],

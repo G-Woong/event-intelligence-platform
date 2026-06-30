@@ -536,6 +536,25 @@ export interface InternalOpsDatePinnedLiveRunFrontier {
   r1_first_contact_next_action: string;
   hot_post_preview_status: string;
   hot_post_preview_public_blocked: boolean;
+  // ADR#93: real payload promotion(draft-only) + operator live command pack(validate/dry-run/live-run 분리·network 0) +
+  // freeze→R1 executable checklist(batch_id 정합·gold gate) + Hot Post activation map(9 stage·R1→R2) + community feedback
+  // loop contract(future loop·runtime 0) + next provider expansion pack(planning·GDELT 실행 0). 전부 sanitized — runtime No-Go.
+  real_payload_promotion_status: string;
+  real_payload_promotion_next_action: string;
+  operator_live_command_pack_status: string;
+  validate_payload_command_ready: boolean;
+  dry_run_command_ready: boolean;
+  live_run_command_ready: boolean;
+  expected_provider_calls: number;
+  real_payload_present: boolean;
+  real_payload_valid: boolean;
+  freeze_to_r1_status: string;
+  label_validation_command_ready: boolean;
+  label_intake_command_ready: boolean;
+  agreement_check_command_ready: boolean;
+  hot_post_activation_map_status: string;
+  community_feedback_loop_status: string;
+  next_provider_expansion_status: string;
   // KO source lane(§8).
   ko_source_lane_status: string;
   ko_named_seed_needed: boolean;

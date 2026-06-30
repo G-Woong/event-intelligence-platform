@@ -408,6 +408,8 @@ DIRECTION §3.2/§3.3, ADR#15. 커뮤니티 (b)층(성장). 현재 `backend/app/
 
 > **ADR#92 cross-ref (contract/guard-only · runtime No-Go):** 실전 데이터 흐름을 다음 시도로 잇는 5 모듈 — `5_REFERENCE/LIVE_ATTEMPT_PACK_CONTRACT.md`(real payload 부재 시 operator-fillable 후보 묶음·후보 live 트리거 불가)·`news_breadth_trigger.py`(news-side 수율 0→source 확장 판정·GDELT 실행 0)·`first_freeze_package_hardening.py`(freeze worklist reviewer-safe 검사)·`5_REFERENCE/R1_FIRST_CONTACT_PROTOCOL.md`(8단계 freeze→contact→label→gold·전송 0)·`5_REFERENCE/HOT_POST_PREVIEW_GUARD.md`(internal-only preview·public 차단·R1/R2 후 게시). frontier parity 78→88·**R1 = FAIL·R2~R7 = No-Go 불변.**
 
+> **ADR#93 cross-ref (contract/planning-only · runtime No-Go):** 실 live/freeze 시도 경로를 실행 가능하게 만드는 6 모듈 — `5_REFERENCE/REAL_PAYLOAD_PROMOTION_WORKFLOW.md`(pack 후보→draft 승격·발생 확인 FIRST·real path 미작성)·`5_REFERENCE/OPERATOR_LIVE_COMMAND_PACK.md`(validate/dry-run/live-run 분리·network 0·fidelity probe 미경유)·`5_REFERENCE/FREEZE_TO_R1_EXECUTABLE_CHECKLIST.md`(freeze→contact→dropbox→intake 명령·batch_id 정합·gold gated)·`5_REFERENCE/HOT_POST_ACTIVATION_MAP.md`(9 stage·public publish 는 R1 AND R2 후·runtime 0)·`5_REFERENCE/COMMUNITY_FEEDBACK_LOOP_CONTRACT.md`(11 loop step·moderation/privacy/audit/citation 필수·reply runtime 0)·`5_REFERENCE/NEXT_PROVIDER_EXPANSION_PACK.md`(no-yield→provider 권고·GDELT 실행 0·KO lane 분리). frontier parity 88→104·**R1 = FAIL·R2~R7 = No-Go 불변.**
+
 ### §9.1 Comment 모델 확장 (비파괴 additive)
 `author_type` VARCHAR(8)('user'/'agent', 기본 'user' → 기존 비파괴) · `agent_persona` VARCHAR(64) NULL("energy-analyst"/"skeptic"/"geopolitics-desk") · `reply_to` UUID NULL(부모 comment 스레드) · `stance` VARCHAR(12) NULL(claim/counter/evidence/question) · `evidence_refs` JSONB(발화 근거 EvidenceNode[]).
 

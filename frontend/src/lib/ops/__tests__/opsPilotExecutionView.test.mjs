@@ -1284,6 +1284,11 @@ const OPS_DATE_PINNED_COPY = {
   freezeWorklistNotGold: "Freeze is a reviewer worklist only, not gold",
   firstContactManual: "Reviewer first contact is manual; the system never sends labels or messages",
   hotPostPreviewInternalOnly: "Hot Post preview is internal-only and cannot be published before R1/R2 gates",
+  liveAttemptPackManualVerify: "Live attempt packs must be manually verified before becoming real payloads",
+  validateDryRunNoLive: "Validate-only and dry-run do not call live providers",
+  liveRunRequiresApproved: "Live run requires operator-confirmed payload and live_approved=true",
+  returnedLabelsValidationAgreement: "Returned labels require validation and agreement before R1 gold",
+  communityFeedbackFutureOnly: "Community feedback loop is future contract only; comment runtime is disabled",
 };
 
 function toR1DatePinnedLiveRunFrontierDisplayRows(f) {
@@ -1364,6 +1369,22 @@ function toR1DatePinnedLiveRunFrontierDisplayRows(f) {
     { label: "R1 first-contact next action", value: f.r1_first_contact_next_action },
     { label: "Hot Post preview status (internal-only)", value: f.hot_post_preview_status },
     { label: "Hot Post preview public blocked", value: String(f.hot_post_preview_public_blocked) },
+    { label: "Real payload promotion status (draft-only)", value: f.real_payload_promotion_status },
+    { label: "Real payload promotion next action", value: f.real_payload_promotion_next_action },
+    { label: "Operator live command pack status", value: f.operator_live_command_pack_status },
+    { label: "Validate-only command ready (no network)", value: String(f.validate_payload_command_ready) },
+    { label: "Dry-run command ready (no live network)", value: String(f.dry_run_command_ready) },
+    { label: "Live-run command ready (requires approval)", value: String(f.live_run_command_ready) },
+    { label: "Expected provider calls", value: `${f.expected_provider_calls}` },
+    { label: "Real payload present", value: String(f.real_payload_present) },
+    { label: "Real payload valid", value: String(f.real_payload_valid) },
+    { label: "Freeze→R1 executable checklist status", value: f.freeze_to_r1_status },
+    { label: "Label validation command ready", value: String(f.label_validation_command_ready) },
+    { label: "Label intake command ready", value: String(f.label_intake_command_ready) },
+    { label: "Agreement check command ready", value: String(f.agreement_check_command_ready) },
+    { label: "Hot Post activation map status (runtime disabled)", value: f.hot_post_activation_map_status },
+    { label: "Community feedback loop status (runtime disabled)", value: f.community_feedback_loop_status },
+    { label: "Next provider expansion status (planning only)", value: f.next_provider_expansion_status },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -1403,6 +1424,12 @@ function r1DatePinnedLiveRunFrontierWarnings(f) {
   ensure(OPS_DATE_PINNED_COPY.freezeWorklistNotGold);
   ensure(OPS_DATE_PINNED_COPY.firstContactManual);
   ensure(OPS_DATE_PINNED_COPY.hotPostPreviewInternalOnly);
+  // ADR#93 — real payload promotion + operator live command pack + freeze→R1 + activation map + feedback loop copy.
+  ensure(OPS_DATE_PINNED_COPY.liveAttemptPackManualVerify);
+  ensure(OPS_DATE_PINNED_COPY.validateDryRunNoLive);
+  ensure(OPS_DATE_PINNED_COPY.liveRunRequiresApproved);
+  ensure(OPS_DATE_PINNED_COPY.returnedLabelsValidationAgreement);
+  ensure(OPS_DATE_PINNED_COPY.communityFeedbackFutureOnly);
   if (f.r2_r7_no_go) ensure(OPS_DATE_PINNED_COPY.laddersNoGo);
   return out;
 }
@@ -1490,6 +1517,23 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
     "no production-candidate freeze yet — acquire in-window official×news pairs, freeze, and harden the worklist (first_freeze_package_hardening) before first contact",
   hot_post_preview_status: "preview_blocked_fix_draft",
   hot_post_preview_public_blocked: true,
+  real_payload_promotion_status: "promotion_draft_ready_operator_must_confirm",
+  real_payload_promotion_next_action:
+    "the selected attempt candidate is a DRAFT, not a confirmed event — verify the event actually occurred first, then set operator_confirmed=true ∧ live_approved=true, save to inputs/operator_events/ (gitignored), and run the manual live command",
+  operator_live_command_pack_status: "command_pack_ready_no_event_template_only",
+  validate_payload_command_ready: true,
+  dry_run_command_ready: true,
+  live_run_command_ready: true,
+  expected_provider_calls: 3,
+  real_payload_present: false,
+  real_payload_valid: false,
+  freeze_to_r1_status: "blocked_no_production_candidate_freeze",
+  label_validation_command_ready: false,
+  label_intake_command_ready: false,
+  agreement_check_command_ready: false,
+  hot_post_activation_map_status: "hot_post_activation_map_defined_runtime_disabled",
+  community_feedback_loop_status: "community_feedback_loop_defined_runtime_disabled",
+  next_provider_expansion_status: "no_expansion_recommended",
   ko_source_lane_status: "ready_5_keyfree_live_ko_news_anchors",
   ko_named_seed_needed: true,
   ko_floor_current: 0,
@@ -1530,6 +1574,11 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
     "Freeze is a reviewer worklist only, not gold",
     "Reviewer first contact is manual; the system never sends labels or messages",
     "Hot Post preview is internal-only and cannot be published before R1/R2 gates",
+    "Live attempt packs must be manually verified before becoming real payloads",
+    "Validate-only and dry-run do not call live providers",
+    "Live run requires operator-confirmed payload and live_approved=true",
+    "Returned labels require validation and agreement before R1 gold",
+    "Community feedback loop is future contract only; comment runtime is disabled",
   ],
   flags: {
     no_public_truth: true, no_same_event_truth: true, no_score: true, no_rationale: true,
@@ -1878,6 +1927,47 @@ describe("ADR#83 date-pinned live query plumbing + bounded live run + freeze fro
       "recommended_provider_expansion", "freeze_package_hardening_status", "freeze_artifact_safe",
       "r1_first_contact_protocol_status", "r1_first_contact_next_action", "hot_post_preview_status",
       "hot_post_preview_public_blocked",
+    ]) {
+      assert.ok(k in SAMPLE_DATE_PINNED_FRONTIER, `missing ${k}`);
+    }
+  });
+
+  it("(ADR#93) shows promotion draft-ready + command pack template-only + freeze→R1 blocked + activation/feedback runtime disabled + provider expansion not triggered", () => {
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    // payload 미제공 → promotion 은 draft(operator 확인 대기), command pack 은 event 미주입 template-only(명령 ready=참).
+    assert.equal(byLabel["Real payload promotion status (draft-only)"], "promotion_draft_ready_operator_must_confirm");
+    assert.equal(byLabel["Operator live command pack status"], "command_pack_ready_no_event_template_only");
+    assert.equal(byLabel["Validate-only command ready (no network)"], "true");
+    assert.equal(byLabel["Live-run command ready (requires approval)"], "true");
+    assert.equal(byLabel["Expected provider calls"], "3");
+    assert.equal(byLabel["Real payload present"], "false");
+    // freeze 0 → freeze→R1 blocked·label 명령 ready 는 FR1_READY 게이트로 false(status 와 정합). activation/feedback runtime 0.
+    assert.equal(byLabel["Freeze→R1 executable checklist status"], "blocked_no_production_candidate_freeze");
+    assert.equal(byLabel["Label intake command ready"], "false");
+    assert.equal(byLabel["Hot Post activation map status (runtime disabled)"], "hot_post_activation_map_defined_runtime_disabled");
+    assert.equal(byLabel["Community feedback loop status (runtime disabled)"], "community_feedback_loop_defined_runtime_disabled");
+    assert.equal(byLabel["Next provider expansion status (planning only)"], "no_expansion_recommended");
+  });
+
+  it("(ADR#93) warns: packs need manual verify + validate/dry-run no live + live run needs approval + labels need agreement + feedback loop is future-only", () => {
+    const w = r1DatePinnedLiveRunFrontierWarnings(SAMPLE_DATE_PINNED_FRONTIER);
+    assert.ok(w.includes("Live attempt packs must be manually verified before becoming real payloads"));
+    assert.ok(w.includes("Validate-only and dry-run do not call live providers"));
+    assert.ok(w.includes("Live run requires operator-confirmed payload and live_approved=true"));
+    assert.ok(w.includes("Returned labels require validation and agreement before R1 gold"));
+    assert.ok(w.includes("Community feedback loop is future contract only; comment runtime is disabled"));
+  });
+
+  it("(ADR#93) keeps the date-pinned frontier sanitized with the 16 ADR#93 fields (no forbidden keys)", () => {
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_DATE_PINNED_FRONTIER));
+    for (const k of [
+      "real_payload_promotion_status", "real_payload_promotion_next_action", "operator_live_command_pack_status",
+      "validate_payload_command_ready", "dry_run_command_ready", "live_run_command_ready", "expected_provider_calls",
+      "real_payload_present", "real_payload_valid", "freeze_to_r1_status", "label_validation_command_ready",
+      "label_intake_command_ready", "agreement_check_command_ready", "hot_post_activation_map_status",
+      "community_feedback_loop_status", "next_provider_expansion_status",
     ]) {
       assert.ok(k in SAMPLE_DATE_PINNED_FRONTIER, `missing ${k}`);
     }

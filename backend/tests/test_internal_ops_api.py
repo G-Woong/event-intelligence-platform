@@ -785,8 +785,16 @@ def test_r1_date_pinned_response_keys_are_sanitized_subset(client, monkeypatch):
         "recommended_provider_expansion", "freeze_package_hardening_status", "freeze_artifact_safe",
         "r1_first_contact_protocol_status", "r1_first_contact_next_action", "hot_post_preview_status",
         "hot_post_preview_public_blocked",
+        # ADR#93 real payload promotion + operator live command pack + freeze→R1 executable checklist + Hot Post
+        # activation map + community feedback loop contract + next provider expansion pack(+16): draft-only 승격·
+        # validate/dry-run/live-run 분리·batch_id 정합·9단계 activation·future loop·planning(전부 sanitized·runtime 0).
+        "real_payload_promotion_status", "real_payload_promotion_next_action", "operator_live_command_pack_status",
+        "validate_payload_command_ready", "dry_run_command_ready", "live_run_command_ready", "expected_provider_calls",
+        "real_payload_present", "real_payload_valid", "freeze_to_r1_status", "label_validation_command_ready",
+        "label_intake_command_ready", "agreement_check_command_ready", "hot_post_activation_map_status",
+        "community_feedback_loop_status", "next_provider_expansion_status",
         "ko_source_lane_status", "ko_named_seed_needed",
         "ko_floor_current", "ko_floor_required", "blocked_reason", "acquisition_next_action",
         "current_r1_gap", "production_gold_count", "r2_r7_no_go", "required_copy", "flags",
     }
-    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(88 field·ADR#92 +10).
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(104 field·ADR#92 +10·ADR#93 +16).

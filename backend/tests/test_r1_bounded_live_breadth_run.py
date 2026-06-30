@@ -275,7 +275,7 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     f = out["internal_ops_date_pinned_live_run_frontier"]
     model = InternalOpsDatePinnedLiveRunFrontier(**f)   # raises on missing/type mismatch.
     assert set(f.keys()) == set(InternalOpsDatePinnedLiveRunFrontier.model_fields.keys())
-    assert len(f) == 88   # ADR#92 +10(live attempt pack + news breadth trigger + first freeze hardening + R1 first-contact protocol + Hot Post preview guard).
+    assert len(f) == 104   # ADR#92 +10·ADR#93 +16(real payload promotion + operator live command pack + freeze→R1 executable checklist + Hot Post activation map + community feedback loop contract + next provider expansion pack).
     assert model.r2_r7_no_go is True
     assert model.latest_date_pinned_live_run_status == BLOCKED_MISSING_OPERATOR_EVENT
     # ADR#84: no live run(synthetic base) → date window 미강제·handoff 미준비(freeze 없음).
@@ -325,6 +325,20 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     assert f["agent_hotness_contract_status"] == "contract_ready_runtime_disabled"
     assert f["community_interaction_gate_status"] == "community_interaction_requirements_unmet"
     assert len(f["flags"]) == 7
+    # ADR#93: real payload 미제공(read 경로) → promotion draft·command pack template-only·freeze→R1 blocked·
+    # activation/feedback runtime-disabled·provider expansion 미발동. command pack status 는 주입 status 로 판정
+    # (fs stat 0) → real_payload_present 와 정합. label 명령 ready 는 FR1_READY 게이트로 False(freeze 없음).
+    assert f["real_payload_present"] is False
+    assert f["real_payload_valid"] is False
+    assert f["real_payload_promotion_status"] == "promotion_draft_ready_operator_must_confirm"
+    assert f["operator_live_command_pack_status"] == "command_pack_ready_no_event_template_only"
+    assert f["expected_provider_calls"] == 3
+    assert f["validate_payload_command_ready"] is True and f["live_run_command_ready"] is True
+    assert f["freeze_to_r1_status"] == "blocked_no_production_candidate_freeze"
+    assert f["label_intake_command_ready"] is False
+    assert f["hot_post_activation_map_status"] == "hot_post_activation_map_defined_runtime_disabled"
+    assert f["community_feedback_loop_status"] == "community_feedback_loop_defined_runtime_disabled"
+    assert f["next_provider_expansion_status"] == "no_expansion_recommended"
 
 
 def test_date_pinned_frontier_no_forbidden_or_raw_entity_fields():

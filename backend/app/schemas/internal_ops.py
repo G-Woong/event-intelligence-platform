@@ -504,6 +504,26 @@ class InternalOpsDatePinnedLiveRunFrontier(BaseModel):
     r1_first_contact_next_action: str
     hot_post_preview_status: str
     hot_post_preview_public_blocked: bool
+    # ADR#93 real payload promotion(draft-only·operator_confirmed/live_approved 강제 False) + operator live command pack
+    # (validate/dry-run/live-run 분리·network 0) + freeze→R1 executable checklist(batch_id 정합·gold gate) + Hot Post
+    # activation map(9 stage·R1→R2 게이트) + community feedback loop contract(future loop·runtime 0) + next provider
+    # expansion pack(planning·GDELT 실행 0). 전부 sanitized 문자열/bool/int — public post·comment runtime No-Go.
+    real_payload_promotion_status: str
+    real_payload_promotion_next_action: str
+    operator_live_command_pack_status: str
+    validate_payload_command_ready: bool
+    dry_run_command_ready: bool
+    live_run_command_ready: bool
+    expected_provider_calls: int
+    real_payload_present: bool
+    real_payload_valid: bool
+    freeze_to_r1_status: str
+    label_validation_command_ready: bool
+    label_intake_command_ready: bool
+    agreement_check_command_ready: bool
+    hot_post_activation_map_status: str
+    community_feedback_loop_status: str
+    next_provider_expansion_status: str
     ko_source_lane_status: str
     ko_named_seed_needed: bool
     ko_floor_current: int
