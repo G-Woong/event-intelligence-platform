@@ -40,6 +40,12 @@ from backend.app.tools.r1_provider_breadth_acquisition import (
     run_provider_breadth_named_seed_ko_path,
 )
 from backend.app.tools.regulatory_event_seed_bank import build_regulatory_event_seed_bank
+from backend.app.tools.returned_label_dropbox_readiness import (
+    build_returned_label_dropbox_readiness,
+)
+from backend.app.tools.reviewer_contact_launch_checklist import (
+    build_reviewer_contact_launch_checklist,
+)
 from backend.app.tools.reviewer_contact_readiness import build_reviewer_contact_readiness
 from backend.app.tools.reviewer_handoff_bridge import build_reviewer_handoff_bridge
 from backend.app.tools.reviewer_pilot_handoff import _assert_pii_safe
@@ -117,6 +123,8 @@ DATE_PINNED_REQUIRED_COPY: tuple[str, ...] = (
     "A regulatory-class seed needs an agency/entity, an action, and a confirmed date window",
     "Operator confirmation is required before live regulatory acquisition",
     "Reviewer contact readiness is not actual sending",
+    "Provide an operator-confirmed regulatory event payload before live acquisition",
+    "Returned label dropbox readiness is not production gold",
     "Production candidate freeze is a reviewer worklist, not same-event truth",
     "Production gold remains 0 until human labels are returned",
     "R2~R7 remain No-Go",
@@ -293,6 +301,14 @@ def build_date_pinned_live_run_frontier(*, out: dict) -> dict:
         "confirmation_blocked_reason": out["confirmation_blocked_reason"],
         "reviewer_contact_ready": bool(out["reviewer_contact_ready"]),
         "label_intake_readiness_status": out["label_intake_readiness_status"],
+        # ADR#89 operator payload entrypoint + returned label dropbox readiness + reviewer contact launch checklist.
+        # operator payload=real(gitignored)/example(committed) 분리·live-run gate; dropbox=수신 경로/schema 준비(실 label
+        # 전까지 production gold 0); contact launch checklist=수동 접촉 직전(actual sending 0).
+        "operator_payload_status": out["operator_payload_status"],
+        "operator_payload_path_status": out["operator_payload_path_status"],
+        "label_dropbox_ready": bool(out["label_dropbox_ready"]),
+        "actual_returned_label_count": int(out["actual_returned_label_count"] or 0),
+        "reviewer_contact_checklist_ready": bool(out["reviewer_contact_checklist_ready"]),
         "ko_source_lane_status": out["ko_source_lane_status"],
         "ko_named_seed_needed": bool(out["ko_named_seed_needed"]),
         "ko_floor_current": int(out["ko_floor_current"] or 0),
@@ -457,6 +473,27 @@ def _adr88_operator_intake_fields(
     }
 
 
+def _adr89_operator_payload_dropbox_fields(
+    *, payload_entrypoint: Optional[dict], dropbox_readiness: dict, launch_checklist: dict,
+) -> dict:
+    """ADR#89 sanitized frontier 필드(operator payload entrypoint + returned label dropbox readiness + reviewer
+    contact launch checklist·aggregate-only·secret 0·score 0·raw payload 0).
+
+    payload_entrypoint(`operator_regulatory_event_payload.resolve_operator_payload_entrypoint`) 주입 시 real payload
+    status 노출, 없으면 not_provided(read API 는 real path 를 읽지 않아 live 미실행). dropbox_readiness·launch_checklist
+    는 network 0·항상 산출(dropbox=synthetic schema dry-run·실 label 0·gold 0; checklist=freeze 없으면 launch 미준비)."""
+    pe = payload_entrypoint or {}
+    db = dropbox_readiness or {}
+    lc = launch_checklist or {}
+    return {
+        "operator_payload_status": pe.get("operator_payload_status") or "not_provided",
+        "operator_payload_path_status": pe.get("operator_payload_path_status") or "example_only_no_real_payload",
+        "label_dropbox_ready": bool(db.get("label_dropbox_ready")),
+        "actual_returned_label_count": int(db.get("actual_returned_label_count") or 0),
+        "reviewer_contact_checklist_ready": bool(lc.get("reviewer_contact_launch_ready")),
+    }
+
+
 def run_bounded_live_breadth_run(
     *, directory: Optional[Any] = None, batch_id: str = PROD_BATCH_ID, as_of: Optional[str] = None,
     live_query: bool = False, operator_event: Optional[dict] = None, pinned_event: Optional[dict] = None,
@@ -477,6 +514,9 @@ def run_bounded_live_breadth_run(
     operator_event_intake_result: Optional[dict] = None,
     reviewer_contact_readiness_result: Optional[dict] = None,
     official_news_label_intake_readiness_result: Optional[dict] = None,
+    operator_payload_entrypoint_result: Optional[dict] = None,
+    returned_label_dropbox_readiness_result: Optional[dict] = None,
+    reviewer_contact_launch_checklist_result: Optional[dict] = None,
 ) -> dict:
     """ADR#82/#83/#84 단일 진입 — base(breadth/seed/KO/actual-input) + date-pin gate + date-pinned live executor +
     freeze + reviewer handoff bridge + sanitized snapshot.
@@ -676,6 +716,16 @@ def run_bounded_live_breadth_run(
     _adr88 = _adr88_operator_intake_fields(
         operator_intake=operator_event_intake_result,
         contact_readiness=_contact_readiness, label_intake_readiness=_label_intake_readiness)
+    # ── ADR#89: operator payload entrypoint(주입 시·없으면 not_provided — read API 는 real gitignored path 를 읽지 않아
+    # live 미실행) + returned label dropbox readiness(network 0·항상·dropbox=synthetic schema dry-run·실 label 0·gold 0)
+    # + reviewer contact launch checklist(contact readiness ∧ dropbox readiness·freeze 없으면 launch 미준비·전송 0) ──
+    _dropbox = returned_label_dropbox_readiness_result or build_returned_label_dropbox_readiness(
+        label_readiness=_label_intake_readiness)
+    _launch_checklist = reviewer_contact_launch_checklist_result or build_reviewer_contact_launch_checklist(
+        contact_readiness=_contact_readiness, dropbox_readiness=_dropbox)
+    _adr89 = _adr89_operator_payload_dropbox_fields(
+        payload_entrypoint=operator_payload_entrypoint_result,
+        dropbox_readiness=_dropbox, launch_checklist=_launch_checklist)
 
     out = {
         "operation_name": BOUNDED_OPERATION_NAME,
@@ -777,6 +827,13 @@ def run_bounded_live_breadth_run(
         "confirmation_blocked_reason": _adr88["confirmation_blocked_reason"],
         "reviewer_contact_ready": _adr88["reviewer_contact_ready"],
         "label_intake_readiness_status": _adr88["label_intake_readiness_status"],
+        # ADR#89 operator payload entrypoint + returned label dropbox readiness + reviewer contact launch checklist
+        # (sanitized·aggregate-only·raw payload 0·secret 0·score 0). payload not_provided=read API 는 real path 미독.
+        "operator_payload_status": _adr89["operator_payload_status"],
+        "operator_payload_path_status": _adr89["operator_payload_path_status"],
+        "label_dropbox_ready": _adr89["label_dropbox_ready"],
+        "actual_returned_label_count": _adr89["actual_returned_label_count"],
+        "reviewer_contact_checklist_ready": _adr89["reviewer_contact_checklist_ready"],
         # KO source lane(§3-E·§8).
         "ko_source_lane_status": ko_lane["ko_source_lane_status"],
         "ko_named_seed_needed": ko_lane["ko_named_seed_needed"],

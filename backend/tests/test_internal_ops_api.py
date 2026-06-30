@@ -767,8 +767,10 @@ def test_r1_date_pinned_response_keys_are_sanitized_subset(client, monkeypatch):
         "official_news_production_candidate_status", "official_news_reviewer_handoff_ready",
         "operator_event_status", "operator_confirmed", "confirmation_valid", "confirmation_blocked_reason",
         "reviewer_contact_ready", "label_intake_readiness_status",
+        "operator_payload_status", "operator_payload_path_status", "label_dropbox_ready",
+        "actual_returned_label_count", "reviewer_contact_checklist_ready",
         "ko_source_lane_status", "ko_named_seed_needed",
         "ko_floor_current", "ko_floor_required", "blocked_reason", "acquisition_next_action",
         "current_r1_gap", "production_gold_count", "r2_r7_no_go", "required_copy", "flags",
     }
-    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(57 field·ADR#88 +6).
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(62 field·ADR#89 +5).

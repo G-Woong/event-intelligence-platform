@@ -1,0 +1,16 @@
+{
+  "_note": "TEMPLATE ONLY — this is a committed dummy, NOT a real regulatory event. Copy it to the gitignored real path (inputs/operator_events/operator_regulatory_event_payload.json), fill every field with a real operator-confirmed event, set operator_confirmed=true, and set live_approved=true only when you authorize a bounded live run. Do NOT add secrets / API keys / reviewer PII. operator_confirmed is a live-run approval gate, NOT a same-event or occurrence assertion.",
+  "_usage": "python -m backend.app.tools.operator_regulatory_event_payload --event-json inputs/operator_events/operator_regulatory_event_payload.json",
+  "seed_id": "operator_filled_example",
+  "operator_confirmed": false,
+  "confirmed_by": "operator_name_or_role",
+  "confirmed_at": "YYYY-MM-DD",
+  "agency_or_entity": "NAMED_AGENCY_OR_ENTITY",
+  "action_phrase": "SPECIFIC_REGULATORY_ACTION",
+  "date_window_start": "YYYY-MM-DD",
+  "date_window_end": "YYYY-MM-DD",
+  "official_query": "FEDERAL_REGISTER_QUERY",
+  "news_query": "NEWS_QUERY",
+  "expected_news_angle": "WHY_NEWS_SHOULD_COVER_THIS",
+  "live_approved": false
+}

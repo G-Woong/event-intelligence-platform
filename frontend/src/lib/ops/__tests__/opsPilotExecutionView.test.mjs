@@ -1267,6 +1267,8 @@ const OPS_DATE_PINNED_COPY = {
   queryTargetsOperatorEvent: "The live query targets the operator event, never a curated seed fallback",
   operatorConfirmationRequired: "Operator confirmation is required before live regulatory acquisition",
   contactReadinessNotSending: "Reviewer contact readiness is not actual sending",
+  payloadRequiredBeforeLive: "Provide an operator-confirmed regulatory event payload before live acquisition",
+  dropboxNotGold: "Returned label dropbox readiness is not production gold",
   freezeNotTruth: "Production candidate freeze is a reviewer worklist, not same-event truth",
   productionGoldZero: "Production gold remains 0 until human labels are returned",
   laddersNoGo: "R2~R7 remain No-Go",
@@ -1319,6 +1321,11 @@ function toR1DatePinnedLiveRunFrontierDisplayRows(f) {
     { label: "Confirmation blocked reason", value: f.confirmation_blocked_reason || "(none)" },
     { label: "Reviewer contact ready (readiness ≠ actual sending)", value: String(f.reviewer_contact_ready) },
     { label: "Official×news label intake readiness (synthetic dry-run)", value: f.label_intake_readiness_status },
+    { label: "Operator payload status (real gitignored / example template)", value: f.operator_payload_status },
+    { label: "Operator payload path status (where to drop the real payload)", value: f.operator_payload_path_status },
+    { label: "Returned label dropbox ready (readiness ≠ production gold)", value: String(f.label_dropbox_ready) },
+    { label: "Actual returned label count (real files only)", value: `${f.actual_returned_label_count}` },
+    { label: "Reviewer contact launch checklist ready (not actual sending)", value: String(f.reviewer_contact_checklist_ready) },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -1341,6 +1348,8 @@ function r1DatePinnedLiveRunFrontierWarnings(f) {
   ensure(OPS_DATE_PINNED_COPY.queryTargetsOperatorEvent);
   ensure(OPS_DATE_PINNED_COPY.operatorConfirmationRequired);
   ensure(OPS_DATE_PINNED_COPY.contactReadinessNotSending);
+  ensure(OPS_DATE_PINNED_COPY.payloadRequiredBeforeLive);
+  ensure(OPS_DATE_PINNED_COPY.dropboxNotGold);
   ensure(OPS_DATE_PINNED_COPY.freezeNotTruth);
   ensure(OPS_DATE_PINNED_COPY.productionGoldZero);
   if (f.r2_r7_no_go) ensure(OPS_DATE_PINNED_COPY.laddersNoGo);
@@ -1394,6 +1403,11 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
   confirmation_blocked_reason: "operator_event_not_provided",
   reviewer_contact_ready: false,
   label_intake_readiness_status: "official_news_label_intake_dry_run_ready",
+  operator_payload_status: "not_provided",
+  operator_payload_path_status: "example_only_no_real_payload",
+  label_dropbox_ready: true,
+  actual_returned_label_count: 0,
+  reviewer_contact_checklist_ready: false,
   ko_source_lane_status: "ready_5_keyfree_live_ko_news_anchors",
   ko_named_seed_needed: true,
   ko_floor_current: 0,
@@ -1417,6 +1431,8 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
     "A regulatory-class seed needs an agency/entity, an action, and a confirmed date window",
     "Operator confirmation is required before live regulatory acquisition",
     "Reviewer contact readiness is not actual sending",
+    "Provide an operator-confirmed regulatory event payload before live acquisition",
+    "Returned label dropbox readiness is not production gold",
     "Production candidate freeze is a reviewer worklist, not same-event truth",
     "Production gold remains 0 until human labels are returned",
     "R2~R7 remain No-Go",
@@ -1622,5 +1638,43 @@ describe("ADR#83 date-pinned live query plumbing + bounded live run + freeze fro
     const w = r1DatePinnedLiveRunFrontierWarnings(SAMPLE_DATE_PINNED_FRONTIER);
     assert.ok(w.includes(OPS_DATE_PINNED_COPY.operatorConfirmationRequired));
     assert.ok(w.includes(OPS_DATE_PINNED_COPY.contactReadinessNotSending));
+  });
+
+  it("(ADR#89) shows operator payload not provided + dropbox ready (not gold) + checklist not ready", () => {
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    // operator payload=real(gitignored)/example 분리·미제공이면 not_provided·example_only. dropbox readiness=수신
+    // 경로/schema 준비(실 label 전까지 production gold 0). contact launch checklist 는 freeze 없음 → 미준비.
+    assert.equal(byLabel["Operator payload status (real gitignored / example template)"], "not_provided");
+    assert.equal(
+      byLabel["Operator payload path status (where to drop the real payload)"],
+      "example_only_no_real_payload",
+    );
+    assert.equal(byLabel["Returned label dropbox ready (readiness ≠ production gold)"], "true");
+    assert.equal(byLabel["Actual returned label count (real files only)"], "0");
+    assert.equal(byLabel["Reviewer contact launch checklist ready (not actual sending)"], "false");
+  });
+
+  it("(ADR#89) reflects a present real payload + launch checklist ready (still no sending/gold)", () => {
+    const ready = {
+      ...SAMPLE_DATE_PINNED_FRONTIER,
+      operator_payload_status: "present_valid_json",
+      operator_payload_path_status: "real_payload_present",
+      reviewer_contact_checklist_ready: true,
+    };
+    assert.doesNotThrow(() => assertOpsContractSafe(ready));
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(ready).map((r) => [r.label, r.value]),
+    );
+    assert.equal(byLabel["Operator payload status (real gitignored / example template)"], "present_valid_json");
+    assert.equal(byLabel["Reviewer contact launch checklist ready (not actual sending)"], "true");
+    assert.equal(byLabel["Production gold count"], "0");
+  });
+
+  it("(ADR#89) warns: operator payload required before live + returned label dropbox readiness is not production gold", () => {
+    const w = r1DatePinnedLiveRunFrontierWarnings(SAMPLE_DATE_PINNED_FRONTIER);
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.payloadRequiredBeforeLive));
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.dropboxNotGold));
   });
 });

@@ -83,6 +83,10 @@ outputs/reviewer_batch/
 # sanitized live-run snapshots (ADR#84) — reproducibility artifacts under outputs/; never commit (status/path only)
 outputs/live_snapshots/
 
+# operator-confirmed regulatory event payloads (ADR#89) — real operator input may carry confirmed_by/agency; never
+# commit. The committed dummy template (no real event) lives at examples/operator_regulatory_event_payload.example.json
+inputs/operator_events/
+
 # GCP service account keys (never commit)
 gcp-service-account-key.json
 *service-account*.json

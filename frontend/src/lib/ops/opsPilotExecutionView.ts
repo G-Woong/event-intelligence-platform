@@ -516,6 +516,8 @@ export const OPS_DATE_PINNED_COPY = {
   queryTargetsOperatorEvent: "The live query targets the operator event, never a curated seed fallback",
   operatorConfirmationRequired: "Operator confirmation is required before live regulatory acquisition",
   contactReadinessNotSending: "Reviewer contact readiness is not actual sending",
+  payloadRequiredBeforeLive: "Provide an operator-confirmed regulatory event payload before live acquisition",
+  dropboxNotGold: "Returned label dropbox readiness is not production gold",
   freezeNotTruth: "Production candidate freeze is a reviewer worklist, not same-event truth",
   productionGoldZero: "Production gold remains 0 until human labels are returned",
   laddersNoGo: "R2~R7 remain No-Go",
@@ -573,6 +575,11 @@ export function toR1DatePinnedLiveRunFrontierDisplayRows(
     { label: "Confirmation blocked reason", value: f.confirmation_blocked_reason || "(none)" },
     { label: "Reviewer contact ready (readiness ≠ actual sending)", value: String(f.reviewer_contact_ready) },
     { label: "Official×news label intake readiness (synthetic dry-run)", value: f.label_intake_readiness_status },
+    { label: "Operator payload status (real gitignored / example template)", value: f.operator_payload_status },
+    { label: "Operator payload path status (where to drop the real payload)", value: f.operator_payload_path_status },
+    { label: "Returned label dropbox ready (readiness ≠ production gold)", value: String(f.label_dropbox_ready) },
+    { label: "Actual returned label count (real files only)", value: `${f.actual_returned_label_count}` },
+    { label: "Reviewer contact launch checklist ready (not actual sending)", value: String(f.reviewer_contact_checklist_ready) },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -599,6 +606,8 @@ export function r1DatePinnedLiveRunFrontierWarnings(
   ensure(OPS_DATE_PINNED_COPY.queryTargetsOperatorEvent);
   ensure(OPS_DATE_PINNED_COPY.operatorConfirmationRequired);
   ensure(OPS_DATE_PINNED_COPY.contactReadinessNotSending);
+  ensure(OPS_DATE_PINNED_COPY.payloadRequiredBeforeLive);
+  ensure(OPS_DATE_PINNED_COPY.dropboxNotGold);
   ensure(OPS_DATE_PINNED_COPY.freezeNotTruth);
   ensure(OPS_DATE_PINNED_COPY.productionGoldZero);
   if (f.r2_r7_no_go) ensure(OPS_DATE_PINNED_COPY.laddersNoGo);

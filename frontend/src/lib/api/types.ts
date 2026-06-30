@@ -493,6 +493,14 @@ export interface InternalOpsDatePinnedLiveRunFrontier {
   confirmation_blocked_reason: string;
   reviewer_contact_ready: boolean;
   label_intake_readiness_status: string;
+  // ADR#89: operator payload entrypoint + returned label dropbox readiness + reviewer contact launch checklist.
+  // operator payload=real(gitignored)/example(committed) 분리·live-run gate; dropbox=수신 경로/schema(실 returned label
+  // 전까지 production gold 0); contact launch checklist=수동 접촉 직전(actual sending 0).
+  operator_payload_status: string;
+  operator_payload_path_status: string;
+  label_dropbox_ready: boolean;
+  actual_returned_label_count: number;
+  reviewer_contact_checklist_ready: boolean;
   // KO source lane(§8).
   ko_source_lane_status: string;
   ko_named_seed_needed: boolean;

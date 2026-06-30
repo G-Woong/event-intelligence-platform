@@ -461,6 +461,14 @@ class InternalOpsDatePinnedLiveRunFrontier(BaseModel):
     confirmation_blocked_reason: str
     reviewer_contact_ready: bool
     label_intake_readiness_status: str
+    # ADR#89 operator payload entrypoint + returned label dropbox readiness + reviewer contact launch checklist.
+    # operator payload=real(gitignored)/example(committed) 분리·live-run gate; dropbox=수신 경로/schema(실 returned label
+    # 전까지 production gold 0); contact launch checklist=수동 접촉 직전(actual sending 0). raw payload·score·PII 필드 부재.
+    operator_payload_status: str
+    operator_payload_path_status: str
+    label_dropbox_ready: bool
+    actual_returned_label_count: int
+    reviewer_contact_checklist_ready: bool
     ko_source_lane_status: str
     ko_named_seed_needed: bool
     ko_floor_current: int

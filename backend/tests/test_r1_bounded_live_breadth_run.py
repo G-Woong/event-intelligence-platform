@@ -275,7 +275,7 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     f = out["internal_ops_date_pinned_live_run_frontier"]
     model = InternalOpsDatePinnedLiveRunFrontier(**f)   # raises on missing/type mismatch.
     assert set(f.keys()) == set(InternalOpsDatePinnedLiveRunFrontier.model_fields.keys())
-    assert len(f) == 57
+    assert len(f) == 62
     assert model.r2_r7_no_go is True
     assert model.latest_date_pinned_live_run_status == BLOCKED_MISSING_OPERATOR_EVENT
     # ADR#84: no live run(synthetic base) → date window 미강제·handoff 미준비(freeze 없음).
@@ -308,6 +308,14 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     assert f["confirmation_valid"] is False
     assert f["reviewer_contact_ready"] is False
     assert f["label_intake_readiness_status"] == "official_news_label_intake_dry_run_ready"
+    # ADR#89: operator payload 미주입(read 경로는 real gitignored path 미독) → not_provided·example_only. returned
+    # label dropbox readiness 는 network 0·항상 ready(synthetic schema dry-run·실 returned label 0). reviewer contact
+    # launch checklist 는 freeze 없음 → 미준비(launch ≠ sending).
+    assert f["operator_payload_status"] == "not_provided"
+    assert f["operator_payload_path_status"] == "example_only_no_real_payload"
+    assert f["label_dropbox_ready"] is True
+    assert f["actual_returned_label_count"] == 0
+    assert f["reviewer_contact_checklist_ready"] is False
     assert len(f["flags"]) == 7
 
 
@@ -401,4 +409,31 @@ def test_adr88_operator_intake_and_contact_readiness_surface_in_frontier():
         assert forbidden not in f
     assert f["production_gold_count"] == 0   # freeze 는 worklist·gold 아님(불변).
     for forbidden in ("score", "rationale", "predicted_status", "same_event", "shared_tokens"):
+        assert forbidden not in f
+
+
+def test_adr89_operator_payload_dropbox_and_launch_checklist_surface_in_frontier():
+    # ADR#89: operator payload entrypoint(real present) + returned label dropbox readiness + reviewer contact launch
+    # checklist 주입 시 frontier 가 sanitized 로 노출. payload 경계=live-run gate(truth 아님)·dropbox readiness ≠ gold·
+    # launch checklist ≠ actual sending. raw payload/secret/score 미노출.
+    payload_entry = {"operator_payload_status": "present_valid_json",
+                     "operator_payload_path_status": "real_payload_present"}
+    dropbox = {"label_dropbox_ready": True, "actual_returned_label_count": 0, "production_gold_count": 0}
+    launch = {"reviewer_contact_launch_ready": True}
+    out = run_bounded_live_breadth_run(
+        base_result=_synthetic_base(), operator_payload_entrypoint_result=payload_entry,
+        returned_label_dropbox_readiness_result=dropbox, reviewer_contact_launch_checklist_result=launch)
+    f = out["internal_ops_date_pinned_live_run_frontier"]
+    assert f["operator_payload_status"] == "present_valid_json"
+    assert f["operator_payload_path_status"] == "real_payload_present"
+    assert f["label_dropbox_ready"] is True
+    assert f["actual_returned_label_count"] == 0
+    assert f["reviewer_contact_checklist_ready"] is True
+    # required copy 에 operator payload 제공 + dropbox readiness ≠ gold 명시.
+    assert any("operator-confirmed regulatory event payload" in c for c in f["required_copy"])
+    assert any("Returned label dropbox readiness is not production gold" in c for c in f["required_copy"])
+    assert f["production_gold_count"] == 0   # dropbox readiness 는 gold 아님(불변).
+    # sanitized — raw payload/secret/score/same_event 미노출(주입돼도).
+    for forbidden in ("score", "rationale", "predicted_status", "same_event", "secret", "confirmed_by",
+                      "agency_or_entity"):
         assert forbidden not in f
