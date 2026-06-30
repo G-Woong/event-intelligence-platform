@@ -598,6 +598,7 @@
 - 2026-06-30 ADR#90 부분진전: payload **authoring helper** 구현(`operator_payload_authoring_helper.py`·curated seed→operator-fillable 템플릿·operator_confirmed/live_approved 강제 False·missing_fields/actionable next_action·draft 경로 ≠ real path·코드가 event fabricate 0) + operator-confirmed **live runner**(`operator_confirmed_live_runner.py`·load→§8 gate→live→no-yield 분류 실행-준비·fake acquisition_fn 결정론). operator 가 빈손으로 막히지 않도록 채울 템플릿을 제공하나 코드가 confirmed event 를 만들지 않는다. **종결 금지**(실 operator payload 미제공·`inputs/operator_events/` 여전히 ABSENT·실 live-derived freeze 0).
 - 2026-06-30 ADR#92 부분진전: **live attempt pack builder**(`live_attempt_pack_builder.py`·curated seed→operator-fillable 후보 4개 묶음·전부 operator_confirmed/live_approved 강제 False·후보 live 트리거 불가·real path 미작성·network 0)로 operator 가 *어떤 후보 중에서* 골라 채울지 한눈에 보이게 하고 `live_attempt_pack_next_action`(frontier)으로 다음 행동을 구체화. **종결 금지**(코드가 발생을 단정하지 않으므로 pack 후보 ≠ 실 confirmed payload·`inputs/operator_events/` 여전히 ABSENT·실 live-derived freeze 0).
 - 2026-06-30 ADR#93 부분진전: **real payload promotion workflow**(`real_payload_promotion_workflow.py`·pack 후보→draft 승격 절차·발생 확인 FIRST checklist·`validate_operator_confirmed_event` 로 draft 가 live-ineligible 임을 증명·operator_confirmed/live_approved 강제 False·real path 미작성) + **operator live command pack**(`operator_live_command_pack.py`·validate→live 명령을 operator 에게 명시·expected_provider_calls=3·fidelity probe 미경유)로 후보 선택→승격→실행 경로를 *실행 가능* 하게 만들었다. **종결 금지**(실 operator payload 여전히 미제공·`inputs/operator_events/` ABSENT·promotion ≠ 실 confirmed payload·실 live-derived freeze 0).
+- 2026-06-30 ADR#94 부분진전: **first real payload execution sprint**(`first_real_payload_execution_sprint.py`·present/valid 주입 판정→valid∧approved∧executor 면 `run_operator_confirmed_live` 단 한 번[runner 경유만·lazy import·probe 미경유]·없으면 안내) + **operator-confirmed-ready package**(`operator_confirmed_ready_package.py`·외부확인용 묶음·real payload 아님·confirmed/approved False)로 후보→발생확인→실행 sprint 를 *단일 진입점* 화. **종결 금지**(실 operator payload 여전히 미제공·sprint ≠ 실 live·실 live-derived freeze 0).
 
 ### R-ReviewerContactPrematureLaunch · reviewer contact readiness 를 actual contact/sending 완료로 둔갑  — Severity: LOW (신규 2026-06-30 · ADR#88 — reviewer contact readiness gate 도입에 따른 경계 RISK)
 - Area: reviewer contact readiness / 수동 배포 경계
@@ -734,6 +735,62 @@
 - Description: ADR#92 `hot_post_preview_guard.py` 가 내부 preview 를 public post 와 분리한다. 위험은 internal-only preview 가 실수로 게시되거나 body/댓글이 생성되는 것이다.
 - Current mitigation: `public_post_body_generated=False`·`comment_reply_generated=False`·`preview_publishable=False`·`hot_post_preview_public_blocked=True`(항상)·structural(official evidence/uncertainty/community reaction-only/source role) 통과해야 internal-only·hotness/community 단독 reject·public 은 R1 gold+MERGE_GATE+public_readiness 필요. 잠금: test_hot_post_preview_guard(body/reply 0·no R1/merge → public 차단·hotness/community-only reject·uncertainty 필수·internal-only 게시 불가). 알려진 별개 경로: `ai_replies.py` mock 엔드포인트(ungated·범위 밖·HOT_POST_PREVIEW_GUARD.md flag·미수정).
 - Closure: public Hot Post runtime ADR + auth/safety gate 후에만·그 전까지 LOW 유지·**preview 를 public post 로·placeholder 를 게시 가능으로 둔갑 금지**.
+
+### R-ConfirmedReadyPackageAsPayloadLeakage · operator-confirmed-ready package 가 real confirmed payload 로 둔갑  — Severity: LOW (신규 2026-06-30 · ADR#94 — operator-confirmed-ready package 도입에 따른 경계 RISK)
+- Area: operator-confirmed-ready package / package↔real payload 경계
+- Description: ADR#94 `operator_confirmed_ready_package.py` 는 operator 가 외부확인 후 real payload 로 옮길 묶음(candidate/official·news query draft/checklist/path/commands)을 만든다. 위험은 package 가 *실 confirmed payload* 로 오인돼 live 트리거되거나, 코드가 real path 를 자동 작성하는 것이다.
+- 경계: R-OperatorConfirmedEventScarcity(payload 가용성)와 달리, 본 RISK 는 *ready package ≠ real payload* 경계 한 점만 본다.
+- Current mitigation: `operator_confirmed=False`·`live_approved=False`·`same_event_asserted=False`·`event_occurrence_verified_by_code=False`·`code_writes_real_payload=False`·`code_claims_event_occurred=False`·network 0·real_payload_path 는 문자열만(미작성). 잠금: test_operator_confirmed_ready_package(package ≠ real payload·live 미트리거·real path 미작성).
+- Closure: 운영에서 operator 가 package 를 보고 실 payload 를 별도 작성·drop 함이 관찰되고 package↔real 혼동이 없을 때까지 LOW 유지·**package 를 real payload 로 보고 금지**.
+
+### R-UnifiedClosureAsTruthLeakage · unified live result closure 가 truth/gold 로 둔갑  — Severity: LOW (신규 2026-06-30 · ADR#94 — unified live result closure 도입에 따른 경계 RISK)
+- Area: unified live result closure / diagnostic↔truth 경계
+- Description: ADR#94 `unified_live_result_closure.py` 는 taxonomy/overlap/breadth/provider/freeze 를 1-closure 로 합성한다. 위험은 closure 가 same_event truth·production gold 로 오인되는 것이다.
+- 경계: R-LiveNoYieldTaxonomyBlindspot(taxonomy sub-cause)와 달리, 본 RISK 는 *closure ≠ truth/gold* 경계 한 점만 본다.
+- Current mitigation: `is_truth=False`·`same_event_asserted=False`·`merge_allowed=False`·`increases_gold=False`·`production_gold_count=0`·closure 는 다음 행동(operator_next_action/recommended_iteration)만 산출. 잠금: test_unified_live_result_closure(same_event 단정 0·gold 0·다음 행동 산출).
+- Closure: closure 가 reviewer-routing/다음 행동 지시로만 쓰이고 truth/gold 로 승격되지 않음이 검증될 때까지 LOW 유지·**closure 를 truth/gold 로 둔갑 금지**.
+
+### R-FreezeR1DryRunAsProductionLeakage · 합성 freeze/R1 dry-run harness 가 production freeze/gold 로 유입  — Severity: LOW (신규 2026-06-30 · ADR#94 — first live freeze/R1 dry-run harness 도입에 따른 경계 RISK)
+- Area: first live freeze/R1 dry-run harness / synthetic↔production 경계
+- Description: ADR#94 `first_live_freeze_r1_dry_run_harness.py` 는 합성 freeze 후보로 hardening→freeze→R1 경로를 미리 검증한다. 위험은 synthetic artifact 가 production gold/실 freeze 로 새는 것이다.
+- 경계: R-SyntheticProductionContamination(synthetic 일반)·R-SyntheticLabelFixtureLeakage(label fixture)와 달리, 본 RISK 는 *freeze/R1 dry-run harness* 한 경로만 본다.
+- Current mitigation: `synthetic_or_fake=True`·`is_production_gold=False`·`production_gold_count` bridge passthrough 0·`actual_sending_performed=False`·`reviewer_roster_committed=False`·`real_label_counted=False`·unsafe artifact 거부. 잠금: test_first_live_freeze_r1_dry_run_harness(synthetic ≠ production·gold 0·unsafe reject).
+- Closure: 실 live-derived freeze 후보가 동일 경로를 통과하고 synthetic↔production 이 끝까지 분리됨이 검증될 때까지 LOW 유지·**synthetic 을 production 으로 둔갑 금지**.
+
+### R-AiRepliesUngatedDrift · ungated `ai_replies.py` mock 엔드포인트가 실 댓글 runtime 으로 drift  — Severity: LOW (신규 2026-06-30 · ADR#94 — ai_replies guard audit 가 표면화한 실 latent blocker)
+- Area: ai_replies mock 엔드포인트 / comment reply runtime 경계
+- Description: `backend/app/api/ai_replies.py` 는 `POST /api/ai-replies/request` 를 public·unauthenticated(`main.py:79` admin dep 없음)·무게이트로 mount 하고 `LLMClient(provider="mock").complete(...)` 에 직결한다. 현재는 mock(canned)·실 댓글 본문 없음·게시 0 으로 CONTAINED 이나, `provider="openai"` flip 또는 게이트 미추가 시 무게이트 LLM 댓글 생성으로 escalate.
+- 경계: R-CommunityFeedbackLoopOverclaim(future loop 계약)·R-HotPostActivationOverclaim(activation map)과 달리, 본 RISK 는 *실재하는 ungated 엔드포인트* 한 점만 본다.
+- Current mitigation: ADR#94 `ai_replies_guard_audit.py` 가 정적(`ai_replies.py`/`main.py` 텍스트 read·import 0·미수정)으로 ungated 를 *기록*·`runtime_enabled` 탐지·6 require 게이트(moderation/privacy/audit_log/source_citation/uncertainty/public_readiness) 권고·`runtime_enabled_by_audit=False`·reply/LLM 0. 엔드포인트는 이번 턴 미수정(audit-only). 잠금: test_ai_replies_guard_audit(ungated 분류·미import[sys.modules 미등록]·미수정·LLM 0).
+- Closure: `ai_replies.py` 가 admin/flag+community_interaction_future_gate 뒤로 게이팅되고 moderation/privacy/audit/citation/uncertainty 가 runtime 에 구현될 때까지 LOW 유지·**게이트 전 `provider="openai"` flip·실 댓글 runtime 활성 금지**.
+
+### R-PublicRuntimeKillSwitchBypass · public runtime override 가 R1/R2 게이트 전 열림  — Severity: LOW (신규 2026-06-30 · ADR#94 — public runtime kill-switch map 도입에 따른 경계 RISK)
+- Area: public runtime kill-switch / override 경계
+- Description: ADR#94 `public_runtime_kill_switch_map.py` 는 8 public runtime(public_hot_post/comment_reply/public_iu/llm_generation/embedding/kg/db_write/actual_sending)을 기본 disabled 로 선언한다. 위험은 operator override 가 R1/R2 충족 전·별도 ADR/test 없이 열리는 것이다.
+- 경계: R-OpsUIPrematureTruth(internal ops 표면)와 달리, 본 RISK 는 *public runtime override 게이트* 한 점만 본다.
+- Current mitigation: `all_public_runtime_disabled=True`·`operator_override_allowed=(r1_satisfied∧r2_satisfied)∧explicit_adr_and_tests_present(=False)` → 이번 턴 항상 False·`override_requires_tests=True`·drift fail-loud 가드(8 dimension 정합·enabled drift→ValueError). 잠금: test_public_runtime_kill_switch_map(8 runtime disabled·R1/R2 미충족→override False).
+- Closure: 실제 override 가 R1∧R2+별도 ADR+passing test 하에서만 일어남이 운영에서 검증될 때까지 LOW 유지·**게이트 전 runtime override 금지**.
+
+### R-SourceGraphInsightOverclaim · source graph/insight candidate 가 게시/truth 로 둔갑  — Severity: LOW (신규 2026-06-30 · ADR#94 — source graph/time-series insight contract 도입에 따른 경계 RISK)
+- Area: source graph/time-series insight contract / candidate↔truth 경계
+- Description: ADR#94 `source_graph_timeseries_insight_contract.py` 는 15 component candidate-only contract 를 선언한다. 위험은 graph edge/insight candidate 가 MERGE_GATE 전 truth·public 게시로 오인되거나, community/market/catalog 가 anchor 로 승격되는 것이다.
+- 경계: R-RagKgPrematureBuild(KG runtime)와 달리, 본 RISK 는 *source graph contract 의 candidate↔truth* 한 점만 본다.
+- Current mitigation: `graph_edge_candidate_until_merge_gate=True`·`insight_candidate_publishable=False`·official/news 만 anchor(`is_valid_anchor_role`·community/market/catalog=False)·`runtime_enabled=False`·`llm_summary_enabled=False`·`merge_allowed=False`. 잠금: test_source_graph_timeseries_insight_contract(community/market/catalog ≠ anchor·edge candidate·insight 게시 불가).
+- Closure: graph/insight 가 MERGE_GATE 후에만 truth 로 승격되고 public 게시가 R1/R2 뒤에만 일어남이 검증될 때까지 LOW 유지·**candidate 를 truth/게시로 둔갑 금지**.
+
+### R-TimeSeriesUpdateAsSameEventLeakage · 시계열 update 가 검증 없이 same_event 단정  — Severity: LOW (신규 2026-06-30 · ADR#94 — source graph/time-series insight contract 도입에 따른 경계 RISK)
+- Area: time-series insight / update↔same_event 경계
+- Description: ADR#94 contract 의 timeline_updates component 는 사건의 시계열 갱신을 다룬다. 위험은 update_of/timeline update 가 MERGE_GATE 검증 없이 *같은 사건* 으로 단정되는 것이다.
+- 경계: R-FalseMerge(병합 일반)·R-CrossBatchEventIdentity 와 달리, 본 RISK 는 *시계열 update 의 same_event 단정* 한 점만 본다.
+- Current mitigation: `timeseries_update_asserts_same_event=False`·timeline_updates 는 candidate_until_merge_gate·`merge_gate_state` blocked 기본·update 는 evidence 요구. 잠금: test_source_graph_timeseries_insight_contract(timeline update same_event 단정 0·evidence 요구).
+- Closure: 시계열 update 가 verified identity(MERGE_GATE)하에서만 same_event 로 묶임이 검증될 때까지 LOW 유지·**gate 전 same_event 단정 금지**.
+
+### R-OperatorSprintUXGap · first real payload execution sprint 가 직관 부족으로 오용/포기  — Severity: LOW (신규 2026-06-30 · ADR#94 — first real payload execution sprint 도입에 따른 경계 RISK)
+- Area: first real payload execution sprint / operator UX 경계
+- Description: ADR#94 `first_real_payload_execution_sprint.py` 는 실 payload 실행 진입점을 단일화한다. 위험은 operator 가 분기(awaiting/invalid/not_executed/executed)·validate→dry→live 순서를 혼동해 미승인 live 를 실행하거나 포기하는 것이다.
+- 경계: R-OperatorLiveCommandMisuse(명령 혼동)·R-ValidateDryLiveConfusion(3-mode)와 달리, 본 RISK 는 *sprint 진입점의 분기 UX* 한 점만 본다.
+- Current mitigation: 4 분기 status 명확(awaiting_operator_payload/payload_invalid/payload_present_not_executed/operator_confirmed_live_executed)·각 분기 next_action·missing 면 ready package 안내·valid∧approved∧executor 아니면 live 0(fail-closed)·runner 경유만(probe 미경유). 잠금: test_first_real_payload_execution_sprint(missing/invalid/not-approved→network 0·valid+approved→runner 1회).
+- Closure: 운영에서 operator 가 sprint 안내로 실 payload 를 오류 없이 실행함이 관찰될 때까지 LOW 유지·**sprint 를 실 live·미승인 실행으로 오용 금지**.
 
 ### R-RealPayloadPromotionUXGap · live attempt pack 후보 승격 절차가 real payload/confirmed 로 둔갑 또는 UX 과난해  — Severity: LOW (신규 2026-06-30 · ADR#93 — real payload promotion workflow 도입에 따른 경계 RISK)
 - Area: real payload promotion workflow / draft ≠ real confirmed payload 경계

@@ -275,7 +275,7 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     f = out["internal_ops_date_pinned_live_run_frontier"]
     model = InternalOpsDatePinnedLiveRunFrontier(**f)   # raises on missing/type mismatch.
     assert set(f.keys()) == set(InternalOpsDatePinnedLiveRunFrontier.model_fields.keys())
-    assert len(f) == 104   # ADR#92 +10·ADR#93 +16(real payload promotion + operator live command pack + freeze→R1 executable checklist + Hot Post activation map + community feedback loop contract + next provider expansion pack).
+    assert len(f) == 111   # ADR#93 +16·ADR#94 +7(first real payload sprint + operator-confirmed-ready package + unified live closure + freeze/R1 dry-run harness + ai_replies guard audit + public runtime kill-switch + source graph/time-series contract).
     assert model.r2_r7_no_go is True
     assert model.latest_date_pinned_live_run_status == BLOCKED_MISSING_OPERATOR_EVENT
     # ADR#84: no live run(synthetic base) → date window 미강제·handoff 미준비(freeze 없음).
@@ -339,6 +339,16 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     assert f["hot_post_activation_map_status"] == "hot_post_activation_map_defined_runtime_disabled"
     assert f["community_feedback_loop_status"] == "community_feedback_loop_defined_runtime_disabled"
     assert f["next_provider_expansion_status"] == "no_expansion_recommended"
+    # ADR#94: real payload 미제공(read 경로) → sprint awaiting·confirmed-ready package ready·unified closure missing
+    # payload·freeze/R1 dry-run 은 합성 후보로 ready(production gold 0)·ai_replies endpoint ungated 감지·public runtime
+    # 전부 disabled·source graph/time-series candidate-only. 전부 sanitized 문자열(same_event/score/raw body 노출 0).
+    assert f["first_real_payload_sprint_status"] == "awaiting_operator_payload"
+    assert f["operator_confirmed_ready_package_status"] == "operator_confirmed_ready_package_ready"
+    assert f["unified_live_closure_status"] == "closed_missing_payload"
+    assert f["freeze_r1_dry_run_status"] == "synthetic_freeze_r1_dry_run_ready"
+    assert f["ai_replies_guard_audit_status"] == "ungated_mock_endpoint_detected"
+    assert f["public_runtime_kill_switch_status"] == "public_runtime_kill_switch_all_disabled"
+    assert f["source_graph_timeseries_contract_status"] == "candidate_only_runtime_disabled"
 
 
 def test_date_pinned_frontier_no_forbidden_or_raw_entity_fields():

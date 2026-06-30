@@ -524,6 +524,15 @@ class InternalOpsDatePinnedLiveRunFrontier(BaseModel):
     hot_post_activation_map_status: str
     community_feedback_loop_status: str
     next_provider_expansion_status: str
+    # ADR#94 first real payload sprint + confirmed-ready package + unified live closure + freeze/R1 dry-run +
+    # ai_replies guard audit + public runtime kill-switch + source graph/time-series contract(+7·sanitized·runtime 0).
+    first_real_payload_sprint_status: str
+    operator_confirmed_ready_package_status: str
+    unified_live_closure_status: str
+    freeze_r1_dry_run_status: str
+    ai_replies_guard_audit_status: str
+    public_runtime_kill_switch_status: str
+    source_graph_timeseries_contract_status: str
     ko_source_lane_status: str
     ko_named_seed_needed: bool
     ko_floor_current: int

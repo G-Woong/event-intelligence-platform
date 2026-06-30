@@ -1385,6 +1385,13 @@ function toR1DatePinnedLiveRunFrontierDisplayRows(f) {
     { label: "Hot Post activation map status (runtime disabled)", value: f.hot_post_activation_map_status },
     { label: "Community feedback loop status (runtime disabled)", value: f.community_feedback_loop_status },
     { label: "Next provider expansion status (planning only)", value: f.next_provider_expansion_status },
+    { label: "First real payload execution sprint status", value: f.first_real_payload_sprint_status },
+    { label: "Operator-confirmed-ready package status", value: f.operator_confirmed_ready_package_status },
+    { label: "Unified live result closure status (diagnostic)", value: f.unified_live_closure_status },
+    { label: "Freeze→R1 dry-run status (synthetic)", value: f.freeze_r1_dry_run_status },
+    { label: "ai_replies guard audit status", value: f.ai_replies_guard_audit_status },
+    { label: "Public runtime kill-switch status (all disabled)", value: f.public_runtime_kill_switch_status },
+    { label: "Source graph/time-series contract status (candidate)", value: f.source_graph_timeseries_contract_status },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -1534,6 +1541,13 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
   hot_post_activation_map_status: "hot_post_activation_map_defined_runtime_disabled",
   community_feedback_loop_status: "community_feedback_loop_defined_runtime_disabled",
   next_provider_expansion_status: "no_expansion_recommended",
+  first_real_payload_sprint_status: "awaiting_operator_payload",
+  operator_confirmed_ready_package_status: "operator_confirmed_ready_package_ready",
+  unified_live_closure_status: "closed_missing_payload",
+  freeze_r1_dry_run_status: "synthetic_freeze_r1_dry_run_ready",
+  ai_replies_guard_audit_status: "ungated_mock_endpoint_detected",
+  public_runtime_kill_switch_status: "public_runtime_kill_switch_all_disabled",
+  source_graph_timeseries_contract_status: "candidate_only_runtime_disabled",
   ko_source_lane_status: "ready_5_keyfree_live_ko_news_anchors",
   ko_named_seed_needed: true,
   ko_floor_current: 0,
@@ -1968,6 +1982,17 @@ describe("ADR#83 date-pinned live query plumbing + bounded live run + freeze fro
       "real_payload_present", "real_payload_valid", "freeze_to_r1_status", "label_validation_command_ready",
       "label_intake_command_ready", "agreement_check_command_ready", "hot_post_activation_map_status",
       "community_feedback_loop_status", "next_provider_expansion_status",
+    ]) {
+      assert.ok(k in SAMPLE_DATE_PINNED_FRONTIER, `missing ${k}`);
+    }
+  });
+
+  it("(ADR#94) keeps the date-pinned frontier sanitized with the 7 ADR#94 fields (no forbidden keys)", () => {
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_DATE_PINNED_FRONTIER));
+    for (const k of [
+      "first_real_payload_sprint_status", "operator_confirmed_ready_package_status", "unified_live_closure_status",
+      "freeze_r1_dry_run_status", "ai_replies_guard_audit_status", "public_runtime_kill_switch_status",
+      "source_graph_timeseries_contract_status",
     ]) {
       assert.ok(k in SAMPLE_DATE_PINNED_FRONTIER, `missing ${k}`);
     }

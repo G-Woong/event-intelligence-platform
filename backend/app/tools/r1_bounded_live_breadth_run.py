@@ -37,6 +37,7 @@ from typing import Any, Callable, Optional
 from backend.app.tools.agent_hotness_reasoning_contract import (
     build_agent_hotness_reasoning_contract,
 )
+from backend.app.tools.ai_replies_guard_audit import build_ai_replies_guard_audit
 from backend.app.tools.community_feedback_loop_contract import (
     build_community_feedback_loop_contract,
 )
@@ -48,6 +49,12 @@ from backend.app.tools.community_posting_roadmap_contract import (
 )
 from backend.app.tools.first_freeze_package_hardening import (
     build_first_freeze_package_hardening,
+)
+from backend.app.tools.first_live_freeze_r1_dry_run_harness import (
+    build_first_live_freeze_r1_dry_run_harness,
+)
+from backend.app.tools.first_real_payload_execution_sprint import (
+    build_first_real_payload_execution_sprint,
 )
 from backend.app.tools.freeze_to_r1_executable_checklist import (
     FR1_READY,
@@ -76,6 +83,9 @@ from backend.app.tools.official_news_label_intake_readiness import (
 from backend.app.tools.official_news_overlap_diagnostics import (
     build_official_news_overlap_diagnostics,
 )
+from backend.app.tools.operator_confirmed_ready_package import (
+    build_operator_confirmed_ready_package,
+)
 from backend.app.tools.operator_live_command_pack import (
     build_operator_live_command_pack,
 )
@@ -88,6 +98,9 @@ from backend.app.tools.operator_payload_sourcing_workflow import (
 from backend.app.tools.operator_regulatory_event_payload import (
     PAYLOAD_NOT_PROVIDED,
     PAYLOAD_PRESENT_VALID,
+)
+from backend.app.tools.public_runtime_kill_switch_map import (
+    build_public_runtime_kill_switch_map,
 )
 from backend.app.tools.r1_first_contact_protocol import build_r1_first_contact_protocol
 from backend.app.tools.r1_label_return_operational_bridge import (
@@ -113,6 +126,12 @@ from backend.app.tools.reviewer_pilot_handoff import _assert_pii_safe
 from backend.app.tools.sanitized_live_snapshot import (
     build_sanitized_live_snapshot,
     write_sanitized_live_snapshot,
+)
+from backend.app.tools.source_graph_timeseries_insight_contract import (
+    build_source_graph_timeseries_insight_contract,
+)
+from backend.app.tools.unified_live_result_closure import (
+    build_unified_live_result_closure,
 )
 from backend.app.tools.window_honoring_source_readiness import (
     build_window_honoring_source_readiness,
@@ -441,6 +460,14 @@ def build_date_pinned_live_run_frontier(*, out: dict) -> dict:
         "hot_post_activation_map_status": out["hot_post_activation_map_status"],
         "community_feedback_loop_status": out["community_feedback_loop_status"],
         "next_provider_expansion_status": out["next_provider_expansion_status"],
+        # ADR#94 (sanitized·runtime 0·real path 미독·module import 0).
+        "first_real_payload_sprint_status": out["first_real_payload_sprint_status"],
+        "operator_confirmed_ready_package_status": out["operator_confirmed_ready_package_status"],
+        "unified_live_closure_status": out["unified_live_closure_status"],
+        "freeze_r1_dry_run_status": out["freeze_r1_dry_run_status"],
+        "ai_replies_guard_audit_status": out["ai_replies_guard_audit_status"],
+        "public_runtime_kill_switch_status": out["public_runtime_kill_switch_status"],
+        "source_graph_timeseries_contract_status": out["source_graph_timeseries_contract_status"],
         "ko_source_lane_status": out["ko_source_lane_status"],
         "ko_named_seed_needed": bool(out["ko_named_seed_needed"]),
         "ko_floor_current": int(out["ko_floor_current"] or 0),
@@ -758,6 +785,36 @@ def _adr93_product_ops_fields(
     }
 
 
+def _adr94_product_ops_fields(*, operator_payload_status: str) -> dict:
+    """ADR#94 sanitized frontier 필드(first real payload execution sprint + operator-confirmed-ready package +
+    unified live result closure + first live freeze/R1 dry-run harness + ai_replies guard audit + public runtime
+    kill-switch map + source graph/time-series insight contract).
+
+    read API 안전: 전부 **pure/injection**(live runner 미경유·real payload path 미독·GDELT/LLM/embedding 0·전송 0). sprint 는
+    operator_payload_status 주입 + acquisition_fn 미주입 → missing-payload 분기(network 0·file read 0); ready package/
+    unified closure/dry-run harness(합성 freeze 후보·production gold 0)/kill-switch/source-graph 는 전부 pure compose;
+    ai_replies guard audit 만 committed source 2개(ai_replies.py·main.py) **정적 text read**(real payload path 미독·
+    module import 0·LLM 0·endpoint 미수정)."""
+    real_present = operator_payload_status not in (None, "", PAYLOAD_NOT_PROVIDED)
+    sprint = build_first_real_payload_execution_sprint(
+        operator_payload_status=operator_payload_status, acquisition_fn=None)
+    ready = build_operator_confirmed_ready_package(operator_payload_status=operator_payload_status)
+    closure = build_unified_live_result_closure(real_payload_present=real_present)
+    dry_run = build_first_live_freeze_r1_dry_run_harness()
+    audit = build_ai_replies_guard_audit()
+    kill_switch = build_public_runtime_kill_switch_map()
+    source_graph = build_source_graph_timeseries_insight_contract()
+    return {
+        "first_real_payload_sprint_status": sprint["first_real_payload_sprint_status"],
+        "operator_confirmed_ready_package_status": ready["operator_confirmed_ready_package_status"],
+        "unified_live_closure_status": closure["unified_live_closure_status"],
+        "freeze_r1_dry_run_status": dry_run["freeze_r1_dry_run_status"],
+        "ai_replies_guard_audit_status": audit["ai_replies_guard_audit_status"],
+        "public_runtime_kill_switch_status": kill_switch["public_runtime_kill_switch_status"],
+        "source_graph_timeseries_contract_status": source_graph["source_graph_timeseries_contract_status"],
+    }
+
+
 def run_bounded_live_breadth_run(
     *, directory: Optional[Any] = None, batch_id: str = PROD_BATCH_ID, as_of: Optional[str] = None,
     live_query: bool = False, operator_event: Optional[dict] = None, pinned_event: Optional[dict] = None,
@@ -1017,6 +1074,12 @@ def run_bounded_live_breadth_run(
     _adr93 = _adr93_product_ops_fields(
         operator_payload_status=_adr89["operator_payload_status"],
         live_no_yield_taxonomy_status=_adr90["live_no_yield_taxonomy_status"])
+    # ADR#94 — first real payload execution sprint + operator-confirmed-ready package + unified live result closure
+    # + first live freeze/R1 dry-run harness + ai_replies guard audit + public runtime kill-switch map + source graph/
+    # time-series insight contract. pure/injection(live runner 미경유·real payload path 미독·GDELT/LLM/embedding 0):
+    # sprint 는 payload status 주입+acquisition_fn 미주입(missing→network 0·file read 0), ready/closure/harness/kill-switch/
+    # source-graph 는 pure compose, ai_replies audit 만 committed source 정적 text read(module import 0·endpoint 미수정).
+    _adr94 = _adr94_product_ops_fields(operator_payload_status=_adr89["operator_payload_status"])
 
     out = {
         "operation_name": BOUNDED_OPERATION_NAME,
@@ -1177,6 +1240,15 @@ def run_bounded_live_breadth_run(
         "hot_post_activation_map_status": _adr93["hot_post_activation_map_status"],
         "community_feedback_loop_status": _adr93["community_feedback_loop_status"],
         "next_provider_expansion_status": _adr93["next_provider_expansion_status"],
+        # ADR#94 first real payload sprint + confirmed-ready package + unified live closure + freeze/R1 dry-run +
+        # ai_replies guard audit + public runtime kill-switch + source graph/time-series contract (sanitized·runtime 0).
+        "first_real_payload_sprint_status": _adr94["first_real_payload_sprint_status"],
+        "operator_confirmed_ready_package_status": _adr94["operator_confirmed_ready_package_status"],
+        "unified_live_closure_status": _adr94["unified_live_closure_status"],
+        "freeze_r1_dry_run_status": _adr94["freeze_r1_dry_run_status"],
+        "ai_replies_guard_audit_status": _adr94["ai_replies_guard_audit_status"],
+        "public_runtime_kill_switch_status": _adr94["public_runtime_kill_switch_status"],
+        "source_graph_timeseries_contract_status": _adr94["source_graph_timeseries_contract_status"],
         # KO source lane(§3-E·§8).
         "ko_source_lane_status": ko_lane["ko_source_lane_status"],
         "ko_named_seed_needed": ko_lane["ko_named_seed_needed"],

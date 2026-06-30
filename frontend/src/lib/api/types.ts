@@ -555,6 +555,15 @@ export interface InternalOpsDatePinnedLiveRunFrontier {
   hot_post_activation_map_status: string;
   community_feedback_loop_status: string;
   next_provider_expansion_status: string;
+  // ADR#94: first real payload sprint + confirmed-ready package + unified live closure + freeze/R1 dry-run + ai_replies
+  // guard audit + public runtime kill-switch + source graph/time-series contract(+7·sanitized·runtime No-Go).
+  first_real_payload_sprint_status: string;
+  operator_confirmed_ready_package_status: string;
+  unified_live_closure_status: string;
+  freeze_r1_dry_run_status: string;
+  ai_replies_guard_audit_status: string;
+  public_runtime_kill_switch_status: string;
+  source_graph_timeseries_contract_status: string;
   // KO source lane(§8).
   ko_source_lane_status: string;
   ko_named_seed_needed: boolean;
