@@ -3,6 +3,7 @@ contact_readiness/dropbox_readiness 주입으로 결정론 검증(network 0)."""
 from __future__ import annotations
 
 from backend.app.tools.reviewer_contact_launch_checklist import (
+    LAUNCH_BLOCKED_BATCH_MISMATCH,
     LAUNCH_BLOCKED_NO_FREEZE,
     LAUNCH_READY,
     build_reviewer_contact_launch_checklist,
@@ -129,6 +130,47 @@ def test_real_handoff_integration_launch_ready():
     assert out["reviewer_contact_launch_ready"] is True
     assert out["actual_sending_performed"] is False
     assert out["production_gold_count"] == 0
+
+
+# ── ADR#90 §15·GAP4: batch_id 정합(dropbox 와 contact 가 같은 batch 를 가리킴) ─────────────────────────────
+def test_adr90_dropbox_follows_contact_freeze_batch():
+    # 실 handoff freeze → 내부 dropbox 가 contact freeze batch(oxn_b1)를 따라간다(어긋남 0).
+    pcand = {
+        "production_candidate_batch_ready": True, "production_batch_id": "oxn_b1",
+        "production_frozen_pair_count": 2, "candidate_provenance": "live_official_news",
+        "production_gold_count": 0, "current_r1_gap": 200,
+    }
+    handoff = build_reviewer_handoff_bridge(pcand)
+    out = build_reviewer_contact_launch_checklist(handoff)
+    assert out["batch_id"] == "oxn_b1"
+    assert out["contact_batch_id"] == "oxn_b1"
+    assert out["dropbox_batch_id"] == "oxn_b1"
+    assert out["dropbox_batch_matches_contact_batch"] is True
+
+
+def test_adr90_injected_dropbox_batch_mismatch_surfaced():
+    # 주입된 dropbox 의 batch 가 contact batch 와 다르면 mismatch 를 표면화(거짓 정합 0).
+    out = build_reviewer_contact_launch_checklist(
+        contact_readiness=_READY_CONTACT,   # production_batch_id="oxn_b1"
+        dropbox_readiness={"label_dropbox_ready": True, "validation_command_ready": True,
+                           "batch_id": "DIFFERENT_BATCH", "actual_returned_label_count": 0,
+                           "production_gold_count": 0})
+    assert out["contact_batch_id"] == "oxn_b1"
+    assert out["dropbox_batch_id"] == "DIFFERENT_BATCH"
+    assert out["dropbox_batch_matches_contact_batch"] is False
+    # adversarial F2 — mismatch 면 launch 차단(안전 플래그를 산출만 하지 않고 게이팅).
+    assert out["reviewer_contact_launch_ready"] is False
+    assert out["reviewer_contact_launch_status"] == LAUNCH_BLOCKED_BATCH_MISMATCH
+    assert out["blocked_reason"] == LAUNCH_BLOCKED_BATCH_MISMATCH
+
+
+def test_adr90_no_freeze_uses_passed_batch_id():
+    # freeze 없음(contact_batch 빈값) → 전달된 batch_id 사용·flag vacuously True.
+    out = build_reviewer_contact_launch_checklist(
+        contact_readiness=_NO_FREEZE_CONTACT, batch_id="my_run_batch",
+        dropbox_readiness={"label_dropbox_ready": True, "batch_id": "my_run_batch"})
+    assert out["batch_id"] == "my_run_batch"
+    assert out["dropbox_batch_matches_contact_batch"] is True
 
 
 # ── 추가: sanitized 투영 ────────────────────────────────────────────────────────────────────────────────────

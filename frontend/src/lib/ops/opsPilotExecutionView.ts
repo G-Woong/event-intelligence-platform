@@ -520,6 +520,10 @@ export const OPS_DATE_PINNED_COPY = {
   dropboxNotGold: "Returned label dropbox readiness is not production gold",
   freezeNotTruth: "Production candidate freeze is a reviewer worklist, not same-event truth",
   productionGoldZero: "Production gold remains 0 until human labels are returned",
+  // ADR#90 product-vision copy(community-style intelligence post 방향·runtime 은 gate 전 No-Go).
+  communityStyleProduct: "This project targets a community-style intelligence web product, not a raw news feed",
+  hotPostRuntimeDisabled: "Hot Intelligence Post runtime remains disabled until evidence, gold, and merge gates pass",
+  communityReactionOnly: "Community reaction is reaction_to only, not an evidence anchor",
   laddersNoGo: "R2~R7 remain No-Go",
 } as const;
 
@@ -580,6 +584,12 @@ export function toR1DatePinnedLiveRunFrontierDisplayRows(
     { label: "Returned label dropbox ready (readiness ≠ production gold)", value: String(f.label_dropbox_ready) },
     { label: "Actual returned label count (real files only)", value: `${f.actual_returned_label_count}` },
     { label: "Reviewer contact launch checklist ready (not actual sending)", value: String(f.reviewer_contact_checklist_ready) },
+    { label: "Operator payload template ready (authoring helper)", value: String(f.operator_payload_template_ready) },
+    { label: "Operator payload next action", value: f.operator_payload_next_action },
+    { label: "Live no-yield taxonomy status", value: f.live_no_yield_taxonomy_status },
+    { label: "Hot Intelligence Post contract (runtime disabled)", value: f.hot_intelligence_post_contract_status },
+    { label: "Agent hotness reasoning contract (runtime disabled)", value: f.agent_hotness_contract_status },
+    { label: "Community interaction gate (runtime disabled)", value: f.community_interaction_gate_status },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -610,6 +620,10 @@ export function r1DatePinnedLiveRunFrontierWarnings(
   ensure(OPS_DATE_PINNED_COPY.dropboxNotGold);
   ensure(OPS_DATE_PINNED_COPY.freezeNotTruth);
   ensure(OPS_DATE_PINNED_COPY.productionGoldZero);
+  // ADR#90 product-vision copy(community-style intelligence post 방향·Hot Post/community runtime No-Go).
+  ensure(OPS_DATE_PINNED_COPY.communityStyleProduct);
+  ensure(OPS_DATE_PINNED_COPY.hotPostRuntimeDisabled);
+  ensure(OPS_DATE_PINNED_COPY.communityReactionOnly);
   if (f.r2_r7_no_go) ensure(OPS_DATE_PINNED_COPY.laddersNoGo);
   return out;
 }

@@ -402,6 +402,8 @@ EvidenceNode:
 
 DIRECTION §3.2/§3.3, ADR#15. 커뮤니티 (b)층(성장). 현재 `backend/app/models/comment.py` author 1칸 + `ai_replies.py` mock 스텁(debate 컬럼 0건 — GroundTruth). (Comment 확장 DDL = `EVENT_SCHEMA.md` Part 2 §Comment 확장.)
 
+> **ADR#90 cross-ref (contract-only · runtime No-Go):** 이 §9 Agent Debate / community 상호작용의 미래 계약은 `5_REFERENCE/HOT_INTELLIGENCE_POST_CONTRACT.md`·`AGENT_HOTNESS_REASONING_CONTRACT.md`·`COMMUNITY_INTERACTION_FUTURE_GATE.md`(ADR#90 신설)에 고정됐다 — Hot Intelligence Post·agent hotness·community interaction 은 **runtime 비활성**이며, public Hot Post / comment-reply runtime 은 **R1 gold + MERGE_GATE + public-IU gate + 11 community-interaction 요구** 충족 후에만 개방(community reaction=`reaction_to` 전용·event anchor 아님).
+
 ### §9.1 Comment 모델 확장 (비파괴 additive)
 `author_type` VARCHAR(8)('user'/'agent', 기본 'user' → 기존 비파괴) · `agent_persona` VARCHAR(64) NULL("energy-analyst"/"skeptic"/"geopolitics-desk") · `reply_to` UUID NULL(부모 comment 스레드) · `stance` VARCHAR(12) NULL(claim/counter/evidence/question) · `evidence_refs` JSONB(발화 근거 EvidenceNode[]).
 
@@ -910,6 +912,16 @@ ADR#76 opt-in gate 를 **user 명시 opt-in 으로 실제 실행**(`r1_productio
 - **결과(정직)**: 실 operator payload 미제공(`inputs/operator_events/` ABSENT)→operator_payload_status=not_provided·실 live 0·실 freeze 0·reviewer_contact_checklist_ready False·actual_returned_label_count 0·gold 0·gap 200. **entrypoint→gate→engine→freeze→contact/dropbox 경로는 fake acquisition_fn/scan_fn 로 결정론 검증**(test_16 engine 1회 호출·operator-confirmed seed 전달·test_08/09 secret/PII payload fail-closed·test_37 freeze→launch ready·test_46~54 dropbox 실 label 0·gold 0).
 - **tests(실구현)**: operator_regulatory_event_payload 16·returned_label_dropbox_readiness 12·reviewer_contact_launch_checklist 13·r1_bounded_live_breadth_run +1. backend +42·frontend node:test ops view 84→**87**(+3 ADR#89)·npm test 99·parity **62==62==62==62**.
 - **risk(실측)**: 부분진전 R-OperatorConfirmedEventScarcity/R-ReviewerContactPrematureLaunch/R-SyntheticLabelFixtureLeakage/R-ProductionCandidateScarcity(전부 실 operator payload/labels 전까지 종결 금지)·신규 LOW R-OperatorPayloadPIILeakage/R-ReturnedLabelDropboxExposure/R-ExamplePayloadAsRealEventLeakage·종결 0.
+
+**ADR#90 — operator payload authoring helper + live no-yield taxonomy + operator-confirmed live runner + Hot Intelligence Post / agent hotness / community interaction future-gate 계약 (구현 완료·contract-only·runtime 비활성·실 operator payload 미제공·실 live 0):**
+
+- **operator payload authoring helper(`operator_payload_authoring_helper.py`·신규)**: operator 가 실 payload 를 *작성*하도록 안내(template readiness·next action·forbidden[secret/PII/score] 키 가드)·raw payload 본문 미재임베드·실 payload 없으면 not_provided.
+- **live no-yield taxonomy(`live_no_yield_taxonomy.py`·신규)**: live run 이 0 산출일 때 원인을 결정론 분류(no operator payload·no in-window·no official×news overlap·no freeze 등)·`live_no_yield_taxonomy_status` 단일 출처.
+- **operator-confirmed live runner(`operator_confirmed_live_runner.py`·신규)**: payload→intake gate→live acquisition→freeze 를 한 경로로 묶되 operator 미확인/미제공이면 fail-closed(실 live 0·network 0).
+- **Hot Intelligence Post / agent hotness / community interaction 계약(`hot_intelligence_post_contract.py`·`agent_hotness_reasoning_contract.py`·`community_interaction_future_gate.py`·신규·contract-only·runtime No-Go)**: 이 제품이 "raw news feed 가 아니라 community-style intelligence web product"임을 계약으로 고정 — community reaction=`reaction_to` 전용(절대 event anchor 아님)·Hot Post/comment-reply runtime 은 evidence/gold/merge gate 통과 전 비활성. docs `5_REFERENCE/HOT_INTELLIGENCE_POST_CONTRACT.md`·`AGENT_HOTNESS_REASONING_CONTRACT.md`·`COMMUNITY_INTERACTION_FUTURE_GATE.md`.
+- **fix + orchestrator/frontier(+6)**: `reviewer_contact_launch_checklist` + `returned_label_dropbox_readiness` batch_id 일관성 수정(GAP4/§15). frontier +6 필드(operator_payload_template_ready·operator_payload_next_action·live_no_yield_taxonomy_status·hot_intelligence_post_contract_status·agent_hotness_contract_status·community_interaction_gate_status) → `InternalOpsDatePinnedLiveRunFrontier` **dict==pydantic==TS==mjs 68==68==68==68**(was 62).
+- **결과(정직)**: 실 operator payload 미제공(`inputs/operator_events/` ABSENT)→실 live 0·official/news records 0·bridge 0·freeze 0·production_gold_count 0·current_r1_gap 200·R1 FAIL·R2~R7 No-Go. 3 계약은 contract-only(LLM/embedding/merge/public IU/comment-reply runtime 0)·public Hot Post/comment-reply runtime 은 R1 gold + MERGE_GATE + public-IU gate + 11 community-interaction 요구 충족 후에만 개방.
+- **risk(실측)**: 부분진전 R-OperatorConfirmedEventScarcity/R-ProductionCandidateScarcity(실 operator payload/labels 전까지 종결 금지)·contract-only 계약은 runtime 비활성으로 신규 runtime risk 0·**계약 정의 ≠ runtime 활성·helper/taxonomy/runner 머신 무장 ≠ 실 operator payload.**
 
 ## §20. 단계별 "정의된 완료(Definition of Done)"
 

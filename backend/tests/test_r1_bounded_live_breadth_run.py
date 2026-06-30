@@ -275,7 +275,7 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     f = out["internal_ops_date_pinned_live_run_frontier"]
     model = InternalOpsDatePinnedLiveRunFrontier(**f)   # raises on missing/type mismatch.
     assert set(f.keys()) == set(InternalOpsDatePinnedLiveRunFrontier.model_fields.keys())
-    assert len(f) == 62
+    assert len(f) == 68   # ADR#90 +6(payload template/next action·no-yield taxonomy·hot-post/hotness/community contract).
     assert model.r2_r7_no_go is True
     assert model.latest_date_pinned_live_run_status == BLOCKED_MISSING_OPERATOR_EVENT
     # ADR#84: no live run(synthetic base) → date window 미강제·handoff 미준비(freeze 없음).
@@ -316,6 +316,14 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     assert f["label_dropbox_ready"] is True
     assert f["actual_returned_label_count"] == 0
     assert f["reviewer_contact_checklist_ready"] is False
+    # ADR#90: payload authoring helper 는 curated seed→fillable 템플릿 항상 준비(operator next action). live no-yield
+    # taxonomy 는 payload 미제공 → missing_payload. hot-post/hotness/community 는 전부 runtime-disabled contract.
+    assert f["operator_payload_template_ready"] is True
+    assert f["operator_payload_next_action"]   # non-empty(operator 가 채울 안내).
+    assert f["live_no_yield_taxonomy_status"] == "missing_payload"
+    assert f["hot_intelligence_post_contract_status"] == "contract_ready_runtime_disabled"
+    assert f["agent_hotness_contract_status"] == "contract_ready_runtime_disabled"
+    assert f["community_interaction_gate_status"] == "community_interaction_requirements_unmet"
     assert len(f["flags"]) == 7
 
 

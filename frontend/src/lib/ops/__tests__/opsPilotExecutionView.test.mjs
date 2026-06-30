@@ -1271,6 +1271,9 @@ const OPS_DATE_PINNED_COPY = {
   dropboxNotGold: "Returned label dropbox readiness is not production gold",
   freezeNotTruth: "Production candidate freeze is a reviewer worklist, not same-event truth",
   productionGoldZero: "Production gold remains 0 until human labels are returned",
+  communityStyleProduct: "This project targets a community-style intelligence web product, not a raw news feed",
+  hotPostRuntimeDisabled: "Hot Intelligence Post runtime remains disabled until evidence, gold, and merge gates pass",
+  communityReactionOnly: "Community reaction is reaction_to only, not an evidence anchor",
   laddersNoGo: "R2~R7 remain No-Go",
 };
 
@@ -1326,6 +1329,12 @@ function toR1DatePinnedLiveRunFrontierDisplayRows(f) {
     { label: "Returned label dropbox ready (readiness ≠ production gold)", value: String(f.label_dropbox_ready) },
     { label: "Actual returned label count (real files only)", value: `${f.actual_returned_label_count}` },
     { label: "Reviewer contact launch checklist ready (not actual sending)", value: String(f.reviewer_contact_checklist_ready) },
+    { label: "Operator payload template ready (authoring helper)", value: String(f.operator_payload_template_ready) },
+    { label: "Operator payload next action", value: f.operator_payload_next_action },
+    { label: "Live no-yield taxonomy status", value: f.live_no_yield_taxonomy_status },
+    { label: "Hot Intelligence Post contract (runtime disabled)", value: f.hot_intelligence_post_contract_status },
+    { label: "Agent hotness reasoning contract (runtime disabled)", value: f.agent_hotness_contract_status },
+    { label: "Community interaction gate (runtime disabled)", value: f.community_interaction_gate_status },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -1352,6 +1361,9 @@ function r1DatePinnedLiveRunFrontierWarnings(f) {
   ensure(OPS_DATE_PINNED_COPY.dropboxNotGold);
   ensure(OPS_DATE_PINNED_COPY.freezeNotTruth);
   ensure(OPS_DATE_PINNED_COPY.productionGoldZero);
+  ensure(OPS_DATE_PINNED_COPY.communityStyleProduct);
+  ensure(OPS_DATE_PINNED_COPY.hotPostRuntimeDisabled);
+  ensure(OPS_DATE_PINNED_COPY.communityReactionOnly);
   if (f.r2_r7_no_go) ensure(OPS_DATE_PINNED_COPY.laddersNoGo);
   return out;
 }
@@ -1408,6 +1420,13 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
   label_dropbox_ready: true,
   actual_returned_label_count: 0,
   reviewer_contact_checklist_ready: false,
+  operator_payload_template_ready: true,
+  operator_payload_next_action:
+    "fill the missing fields in the template, then save it to inputs/operator_events/operator_regulatory_event_payload.json",
+  live_no_yield_taxonomy_status: "missing_payload",
+  hot_intelligence_post_contract_status: "contract_ready_runtime_disabled",
+  agent_hotness_contract_status: "contract_ready_runtime_disabled",
+  community_interaction_gate_status: "community_interaction_requirements_unmet",
   ko_source_lane_status: "ready_5_keyfree_live_ko_news_anchors",
   ko_named_seed_needed: true,
   ko_floor_current: 0,
@@ -1435,6 +1454,9 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
     "Returned label dropbox readiness is not production gold",
     "Production candidate freeze is a reviewer worklist, not same-event truth",
     "Production gold remains 0 until human labels are returned",
+    "This project targets a community-style intelligence web product, not a raw news feed",
+    "Hot Intelligence Post runtime remains disabled until evidence, gold, and merge gates pass",
+    "Community reaction is reaction_to only, not an evidence anchor",
     "R2~R7 remain No-Go",
   ],
   flags: {
@@ -1676,5 +1698,39 @@ describe("ADR#83 date-pinned live query plumbing + bounded live run + freeze fro
     const w = r1DatePinnedLiveRunFrontierWarnings(SAMPLE_DATE_PINNED_FRONTIER);
     assert.ok(w.includes(OPS_DATE_PINNED_COPY.payloadRequiredBeforeLive));
     assert.ok(w.includes(OPS_DATE_PINNED_COPY.dropboxNotGold));
+  });
+
+  it("(ADR#90) shows payload authoring template ready + live no-yield taxonomy + runtime-disabled contracts", () => {
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    // payload 미제공이어도 authoring helper 가 fillable 템플릿을 준비(operator next action), no-yield 는 missing_payload.
+    assert.equal(byLabel["Operator payload template ready (authoring helper)"], "true");
+    assert.equal(byLabel["Live no-yield taxonomy status"], "missing_payload");
+    // Hot Post / hotness / community gate 는 전부 runtime-disabled contract(public post·comment runtime No-Go).
+    assert.equal(byLabel["Hot Intelligence Post contract (runtime disabled)"], "contract_ready_runtime_disabled");
+    assert.equal(byLabel["Agent hotness reasoning contract (runtime disabled)"], "contract_ready_runtime_disabled");
+    assert.equal(
+      byLabel["Community interaction gate (runtime disabled)"],
+      "community_interaction_requirements_unmet",
+    );
+  });
+
+  it("(ADR#90) warns: community-style product + Hot Post runtime disabled + community reaction is reaction_to only", () => {
+    const w = r1DatePinnedLiveRunFrontierWarnings(SAMPLE_DATE_PINNED_FRONTIER);
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.communityStyleProduct));
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.hotPostRuntimeDisabled));
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.communityReactionOnly));
+  });
+
+  it("(ADR#90) keeps the date-pinned frontier sanitized with the 6 ADR#90 fields (no forbidden keys)", () => {
+    // ADR#90 6필드가 추가돼도 forbidden-key 가드를 통과한다(score/same_event/raw body/PII 미노출).
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_DATE_PINNED_FRONTIER));
+    for (const k of [
+      "operator_payload_template_ready", "operator_payload_next_action", "live_no_yield_taxonomy_status",
+      "hot_intelligence_post_contract_status", "agent_hotness_contract_status", "community_interaction_gate_status",
+    ]) {
+      assert.ok(k in SAMPLE_DATE_PINNED_FRONTIER, `missing ${k}`);
+    }
   });
 });

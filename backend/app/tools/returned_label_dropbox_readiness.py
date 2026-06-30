@@ -85,6 +85,7 @@ def build_returned_label_dropbox_readiness(
         "returned_label_dropbox_status": status,
         "label_dropbox_ready": schema_ready,
         # 수신 경로/형식(단일 출처).
+        "batch_id": str(batch_id),   # ADR#90 — batch 검사 가능(launch checklist batch 정합 lock).
         "dropbox_path": dropbox_path,
         "dropbox_gitignored": True,   # outputs/reviewer_batch/ 전체 gitignored(test-lock).
         "expected_returned_files_example": list(plan["expected_label_files"]),

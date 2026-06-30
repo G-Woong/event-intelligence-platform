@@ -27,13 +27,30 @@ import json
 import sys
 from typing import Any, Callable, Optional
 
+# ADR#90 product-vision contracts(read API 안전: 전부 pure·real payload path 미독·network 0).
+# authoring helper 는 curated seed 기반(`operator_regulatory_event_payload` 의 상수/순수 헬퍼[REAL_PAYLOAD_PATH·
+# is_example_payload·validate]만 전이 사용·real-path **리더** resolve_/load_ 에는 도달 0). taxonomy/3 contract 는 pure.
+# real-path 를 읽는 `operator_confirmed_live_runner` 는 미import → GET 이 live/real-path 미접촉(전이 그래프에 디스크 리더 0).
+from backend.app.tools.agent_hotness_reasoning_contract import (
+    build_agent_hotness_reasoning_contract,
+)
+from backend.app.tools.community_interaction_future_gate import (
+    build_community_interaction_future_gate,
+)
+from backend.app.tools.hot_intelligence_post_contract import (
+    build_hot_intelligence_post_contract,
+)
 from backend.app.tools.ko_source_readiness import build_ko_source_lane
+from backend.app.tools.live_no_yield_taxonomy import build_live_no_yield_taxonomy
 from backend.app.tools.live_query_target import (
     build_live_query_target,
     execute_date_pinned_bounded_live_run,
 )
 from backend.app.tools.official_news_label_intake_readiness import (
     run_official_news_label_intake_readiness,
+)
+from backend.app.tools.operator_payload_authoring_helper import (
+    build_operator_payload_authoring,
 )
 from backend.app.tools.r1_production_candidate_acquisition import PROD_BATCH_ID
 from backend.app.tools.r1_provider_breadth_acquisition import (
@@ -127,6 +144,10 @@ DATE_PINNED_REQUIRED_COPY: tuple[str, ...] = (
     "Returned label dropbox readiness is not production gold",
     "Production candidate freeze is a reviewer worklist, not same-event truth",
     "Production gold remains 0 until human labels are returned",
+    # ADR#90 product-vision copy(community-style intelligence post 방향·runtime 은 gate 전 No-Go).
+    "This project targets a community-style intelligence web product, not a raw news feed",
+    "Hot Intelligence Post runtime remains disabled until evidence, gold, and merge gates pass",
+    "Community reaction is reaction_to only, not an evidence anchor",
     "R2~R7 remain No-Go",
 )
 
@@ -309,6 +330,14 @@ def build_date_pinned_live_run_frontier(*, out: dict) -> dict:
         "label_dropbox_ready": bool(out["label_dropbox_ready"]),
         "actual_returned_label_count": int(out["actual_returned_label_count"] or 0),
         "reviewer_contact_checklist_ready": bool(out["reviewer_contact_checklist_ready"]),
+        # ADR#90 product-vision contracts(payload authoring next action + live no-yield taxonomy + hot-post/hotness/
+        # community gate·runtime-disabled·sanitized 문자열/bool 만·public post/comment runtime No-Go).
+        "operator_payload_template_ready": bool(out["operator_payload_template_ready"]),
+        "operator_payload_next_action": out["operator_payload_next_action"],
+        "live_no_yield_taxonomy_status": out["live_no_yield_taxonomy_status"],
+        "hot_intelligence_post_contract_status": out["hot_intelligence_post_contract_status"],
+        "agent_hotness_contract_status": out["agent_hotness_contract_status"],
+        "community_interaction_gate_status": out["community_interaction_gate_status"],
         "ko_source_lane_status": out["ko_source_lane_status"],
         "ko_named_seed_needed": bool(out["ko_named_seed_needed"]),
         "ko_floor_current": int(out["ko_floor_current"] or 0),
@@ -491,6 +520,36 @@ def _adr89_operator_payload_dropbox_fields(
         "label_dropbox_ready": bool(db.get("label_dropbox_ready")),
         "actual_returned_label_count": int(db.get("actual_returned_label_count") or 0),
         "reviewer_contact_checklist_ready": bool(lc.get("reviewer_contact_launch_ready")),
+    }
+
+
+# ADR#90 contract status 어휘(runtime disabled·contract only — frontier 노출용 sanitized 문자열).
+_CONTRACT_READY_RUNTIME_DISABLED = "contract_ready_runtime_disabled"
+
+
+def _adr90_product_contract_fields(*, operator_payload_status: str, official_news_live_status: str) -> dict:
+    """ADR#90 sanitized frontier 필드(payload authoring + live no-yield taxonomy + hot-post/hotness/community contract).
+
+    전부 **pure**(network 0·real payload path 미독): authoring helper 는 curated seed→fillable 템플릿(operator next
+    action), taxonomy 는 payload_status+engine status→세분 분류, 3 contract 는 runtime-disabled 계약 상태. read API 가
+    이 헬퍼를 거쳐도 live/real-path 를 건드리지 않는다(Hot-Post/comment runtime 은 gate 전 No-Go)."""
+    auth = build_operator_payload_authoring()
+    tax = build_live_no_yield_taxonomy(
+        {"official_news_live_status": official_news_live_status},
+        payload_entrypoint_out={"operator_payload_status": operator_payload_status})
+    hp = build_hot_intelligence_post_contract()
+    hn = build_agent_hotness_reasoning_contract()
+    cg = build_community_interaction_future_gate()
+    return {
+        "operator_payload_template_ready": bool(auth.get("payload_template_ready")),
+        "operator_payload_next_action": auth.get("next_action") or "",
+        "live_no_yield_taxonomy_status": tax.get("live_no_yield_taxonomy_status") or "not_run",
+        "hot_intelligence_post_contract_status": (
+            _CONTRACT_READY_RUNTIME_DISABLED if not hp.get("runtime_enabled") else "runtime_enabled"),
+        "agent_hotness_contract_status": (
+            _CONTRACT_READY_RUNTIME_DISABLED if not hn.get("runtime_enabled") else "runtime_enabled"),
+        "community_interaction_gate_status": (
+            cg.get("community_interaction_gate_status") or "community_interaction_requirements_unmet"),
     }
 
 
@@ -719,13 +778,19 @@ def run_bounded_live_breadth_run(
     # ── ADR#89: operator payload entrypoint(주입 시·없으면 not_provided — read API 는 real gitignored path 를 읽지 않아
     # live 미실행) + returned label dropbox readiness(network 0·항상·dropbox=synthetic schema dry-run·실 label 0·gold 0)
     # + reviewer contact launch checklist(contact readiness ∧ dropbox readiness·freeze 없으면 launch 미준비·전송 0) ──
+    # ADR#90 §15·GAP4 — run batch_id 를 dropbox 와 launch checklist 양쪽에 전파(수신 경로와 worklist 가 같은 batch).
     _dropbox = returned_label_dropbox_readiness_result or build_returned_label_dropbox_readiness(
-        label_readiness=_label_intake_readiness)
+        batch_id=batch_id, label_readiness=_label_intake_readiness)
     _launch_checklist = reviewer_contact_launch_checklist_result or build_reviewer_contact_launch_checklist(
-        contact_readiness=_contact_readiness, dropbox_readiness=_dropbox)
+        contact_readiness=_contact_readiness, dropbox_readiness=_dropbox, batch_id=batch_id)
     _adr89 = _adr89_operator_payload_dropbox_fields(
         payload_entrypoint=operator_payload_entrypoint_result,
         dropbox_readiness=_dropbox, launch_checklist=_launch_checklist)
+    # ADR#90 — product-vision contract 상태(payload authoring next action + live no-yield taxonomy + hot-post/hotness/
+    # community gate). 전부 pure(network 0·real path 미독) — read API 가 거쳐도 live/real-path 미접촉.
+    _adr90 = _adr90_product_contract_fields(
+        operator_payload_status=_adr89["operator_payload_status"],
+        official_news_live_status=_adr87["official_news_live_status"])
 
     out = {
         "operation_name": BOUNDED_OPERATION_NAME,
@@ -834,6 +899,14 @@ def run_bounded_live_breadth_run(
         "label_dropbox_ready": _adr89["label_dropbox_ready"],
         "actual_returned_label_count": _adr89["actual_returned_label_count"],
         "reviewer_contact_checklist_ready": _adr89["reviewer_contact_checklist_ready"],
+        # ADR#90 product-vision contracts(payload authoring next action + live no-yield taxonomy + hot-post/hotness/
+        # community gate·전부 runtime-disabled contract·pure·real path 미독). community-style intelligence post 방향 정렬.
+        "operator_payload_template_ready": _adr90["operator_payload_template_ready"],
+        "operator_payload_next_action": _adr90["operator_payload_next_action"],
+        "live_no_yield_taxonomy_status": _adr90["live_no_yield_taxonomy_status"],
+        "hot_intelligence_post_contract_status": _adr90["hot_intelligence_post_contract_status"],
+        "agent_hotness_contract_status": _adr90["agent_hotness_contract_status"],
+        "community_interaction_gate_status": _adr90["community_interaction_gate_status"],
         # KO source lane(§3-E·§8).
         "ko_source_lane_status": ko_lane["ko_source_lane_status"],
         "ko_named_seed_needed": ko_lane["ko_named_seed_needed"],

@@ -501,6 +501,15 @@ export interface InternalOpsDatePinnedLiveRunFrontier {
   label_dropbox_ready: boolean;
   actual_returned_label_count: number;
   reviewer_contact_checklist_ready: boolean;
+  // ADR#90 product-vision contracts(payload authoring next action + live no-yield taxonomy + hot intelligence post /
+  // agent hotness / community interaction gate). 전부 runtime-disabled contract — public post·comment auto-reply 는
+  // R1/R2·MERGE_GATE·public-IU gate 전 No-Go. community-style intelligence post 방향 정렬.
+  operator_payload_template_ready: boolean;
+  operator_payload_next_action: string;
+  live_no_yield_taxonomy_status: string;
+  hot_intelligence_post_contract_status: string;
+  agent_hotness_contract_status: string;
+  community_interaction_gate_status: string;
   // KO source lane(§8).
   ko_source_lane_status: string;
   ko_named_seed_needed: boolean;

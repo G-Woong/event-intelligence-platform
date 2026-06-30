@@ -32,6 +32,7 @@ OPERATION_NAME = "reviewer_contact_launch_checklist"
 
 LAUNCH_READY = "reviewer_contact_launch_ready"
 LAUNCH_BLOCKED_NO_FREEZE = "blocked_no_production_candidate_freeze"
+LAUNCH_BLOCKED_BATCH_MISMATCH = "blocked_dropbox_batch_mismatch"   # dropbox 와 contact freeze batch 불일치(launch 차단).
 
 # §10 manual contact 절차(실제 사람이 수행·시스템 발송 0·score/rationale/raw body 미포함).
 _MANUAL_CONTACT_STEPS = (
@@ -55,12 +56,28 @@ def build_reviewer_contact_launch_checklist(
     `build_returned_label_dropbox_readiness`. launch_ready 는 reviewer_contact_ready ∧ label_dropbox_ready 일 때만 True.
     actual_sending_performed=False 불변(시스템 발송 0)."""
     cr = contact_readiness or build_reviewer_contact_readiness(handoff or {})
-    db = dropbox_readiness or build_returned_label_dropbox_readiness(batch_id=batch_id)
+    contact_batch = str(cr.get("production_batch_id") or "")
+    # ADR#90 §15·GAP4 — 단일 run batch 정합: freeze 된 contact batch 가 있으면 그것을 **dropbox 에도** 써서 수신 경로
+    # (dropbox)와 worklist(contact)가 같은 batch 를 가리키게 한다(이전엔 batch_id 가 dropbox 에만 가고 output batch_id
+    # 는 handoff batch 를 써서 둘이 어긋날 수 있었다). freeze 없으면 contact_batch="" → 전달된 batch_id 사용.
+    effective_batch_id = contact_batch or batch_id
+    db = dropbox_readiness or build_returned_label_dropbox_readiness(batch_id=effective_batch_id)
+    dropbox_batch = str(db.get("batch_id") or "")
 
     contact_ready = bool(cr.get("reviewer_contact_ready"))
     dropbox_ready = bool(db.get("label_dropbox_ready"))
-    launch_ready = bool(contact_ready and dropbox_ready)
-    status = LAUNCH_READY if launch_ready else LAUNCH_BLOCKED_NO_FREEZE
+    # ADR#90 §15·GAP4 — batch 정합: 둘 다 present 이고 다르면 mismatch(한쪽이 unknown[빈값]이면 단정 불가 → mismatch 아님).
+    batch_matches = (not contact_batch) or (not dropbox_batch) or (dropbox_batch == contact_batch)
+    # adversarial F2 — mismatch 면 launch 차단: reviewer 가 **틀린 batch 의 dropbox** 로 라벨을 반환하는데 "발진 준비됨"으로
+    # 표시되는 것을 막는다(안전 플래그를 산출만 하지 않고 의사결정에 반영).
+    launch_ready = bool(contact_ready and dropbox_ready and batch_matches)
+    batch_mismatch_blocks = bool(contact_ready and dropbox_ready and not batch_matches)
+    if launch_ready:
+        status = LAUNCH_READY
+    elif batch_mismatch_blocks:
+        status = LAUNCH_BLOCKED_BATCH_MISMATCH
+    else:
+        status = LAUNCH_BLOCKED_NO_FREEZE
     out = {
         "operation_name": OPERATION_NAME,
         "reviewer_contact_launch_status": status,
@@ -69,7 +86,12 @@ def build_reviewer_contact_launch_checklist(
         "production_candidate_batch_ready": contact_ready,
         "reviewer_handoff_ready": contact_ready,
         "reviewer_contact_ready": contact_ready,
-        "batch_id": str(cr.get("production_batch_id") or ""),
+        # ADR#90 §15·GAP4 — dropbox 와 contact 가 같은 batch 를 가리킴을 lock(effective=contact freeze batch 우선).
+        "batch_id": effective_batch_id,
+        "contact_batch_id": contact_batch,
+        "dropbox_batch_id": dropbox_batch,
+        # contact freeze batch 와 dropbox batch 일치(둘 다 present 일 때만 단정·한쪽 unknown 이면 True)·mismatch 면 launch 차단.
+        "dropbox_batch_matches_contact_batch": batch_matches,
         "candidate_count": int(cr.get("candidate_count") or 0),
         "official_news_instruction_ready": bool(cr.get("instruction_ready")),
         "label_schema_ready": bool(cr.get("label_schema_ready")),
@@ -94,11 +116,16 @@ def build_reviewer_contact_launch_checklist(
         "production_gold_count": int(db.get("production_gold_count") or 0),
         "merge_allowed": False,
         "r2_r7_no_go": True,
-        "blocked_reason": "" if launch_ready else (cr.get("blocked_reason") or LAUNCH_BLOCKED_NO_FREEZE),
+        "blocked_reason": "" if launch_ready else (
+            LAUNCH_BLOCKED_BATCH_MISMATCH if batch_mismatch_blocks
+            else (cr.get("blocked_reason") or LAUNCH_BLOCKED_NO_FREEZE)),
         "next_action": (
             "operator: begin manual reviewer contact using the checklist (no system sending); collect returned JSONL "
             "labels into the gitignored dropbox and run the validation_command — production gold stays 0 until import"
             if launch_ready else
+            "dropbox batch and contact freeze batch disagree — align the returned-label dropbox to the frozen batch "
+            "before reviewer contact (reviewers must return labels to the frozen batch's dropbox)"
+            if batch_mismatch_blocks else
             "no live-derived production-candidate freeze yet — resolve the official×news acquisition blocker before "
             "reviewer contact (the checklist is not actual sending)"),
     }

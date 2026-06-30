@@ -34,6 +34,14 @@ def test_46_dropbox_path_declared():
     assert "outputs/reviewer_batch" in out["dropbox_path"].replace("\\", "/")
 
 
+# ── ADR#90 — batch_id 출력 필드(launch checklist batch 정합 lock 의 입력·직접 검증) ──────────────────────────
+def test_adr90_batch_id_field_exposed():
+    out = build_returned_label_dropbox_readiness(scan_fn=_empty_scan, batch_id="my_batch_xyz")
+    assert out["batch_id"] == "my_batch_xyz"
+    # dropbox_path 도 그 batch 를 경로에 반영(batch-specific).
+    assert "my_batch_xyz" in out["dropbox_path"].replace("\\", "/")
+
+
 # ── §19-47: dropbox path gitignored ────────────────────────────────────────────────────────────────────────
 def test_47_dropbox_gitignored():
     gitignore = (_REPO_ROOT / ".gitignore").read_text(encoding="utf-8")

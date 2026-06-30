@@ -769,8 +769,12 @@ def test_r1_date_pinned_response_keys_are_sanitized_subset(client, monkeypatch):
         "reviewer_contact_ready", "label_intake_readiness_status",
         "operator_payload_status", "operator_payload_path_status", "label_dropbox_ready",
         "actual_returned_label_count", "reviewer_contact_checklist_ready",
+        # ADR#90 product-vision contracts(+6): payload authoring next action·live no-yield taxonomy·hot-post/hotness/
+        # community gate contract status(전부 runtime-disabled·sanitized 문자열/bool).
+        "operator_payload_template_ready", "operator_payload_next_action", "live_no_yield_taxonomy_status",
+        "hot_intelligence_post_contract_status", "agent_hotness_contract_status", "community_interaction_gate_status",
         "ko_source_lane_status", "ko_named_seed_needed",
         "ko_floor_current", "ko_floor_required", "blocked_reason", "acquisition_next_action",
         "current_r1_gap", "production_gold_count", "r2_r7_no_go", "required_copy", "flags",
     }
-    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(62 field·ADR#89 +5).
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(68 field·ADR#90 +6).
