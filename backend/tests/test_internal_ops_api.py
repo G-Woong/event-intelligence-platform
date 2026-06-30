@@ -773,8 +773,14 @@ def test_r1_date_pinned_response_keys_are_sanitized_subset(client, monkeypatch):
         # community gate contract status(전부 runtime-disabled·sanitized 문자열/bool).
         "operator_payload_template_ready", "operator_payload_next_action", "live_no_yield_taxonomy_status",
         "hot_intelligence_post_contract_status", "agent_hotness_contract_status", "community_interaction_gate_status",
+        # ADR#91 sourcing workflow + overlap diagnostics + R1 label-return bridge + hot-post gate + community roadmap
+        # (+10): 행동 가능한 next_action·차원 분해·승격 상태·public_readiness 결속·8단계 roadmap(전부 sanitized·runtime 0).
+        "payload_sourcing_status", "payload_sourcing_next_action", "taxonomy_next_action",
+        "overlap_diagnostic_status", "overlap_blocked_dimension", "r1_label_return_status",
+        "r1_label_return_next_action", "hot_post_gate_status", "hot_post_public_readiness",
+        "community_posting_roadmap_status",
         "ko_source_lane_status", "ko_named_seed_needed",
         "ko_floor_current", "ko_floor_required", "blocked_reason", "acquisition_next_action",
         "current_r1_gap", "production_gold_count", "r2_r7_no_go", "required_copy", "flags",
     }
-    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(68 field·ADR#90 +6).
+    assert set(body) == allowed   # response_model 화이트리스트 — 추가 누출 0(78 field·ADR#91 +10).

@@ -27,19 +27,26 @@ import json
 import sys
 from typing import Any, Callable, Optional
 
-# ADR#90 product-vision contracts(read API 안전: 전부 pure·real payload path 미독·network 0).
-# authoring helper 는 curated seed 기반(`operator_regulatory_event_payload` 의 상수/순수 헬퍼[REAL_PAYLOAD_PATH·
-# is_example_payload·validate]만 전이 사용·real-path **리더** resolve_/load_ 에는 도달 0). taxonomy/3 contract 는 pure.
-# real-path 를 읽는 `operator_confirmed_live_runner` 는 미import → GET 이 live/real-path 미접촉(전이 그래프에 디스크 리더 0).
+# ADR#90/#91 product-vision contracts(read API 안전: 전부 pure 또는 status 주입·real payload path 미독·network 0).
+# authoring helper/sourcing workflow 는 curated seed + 주입 status 기반(`operator_regulatory_event_payload` 의 상수/순수
+# 헬퍼[REAL_PAYLOAD_PATH·is_example_payload·validate]만 전이 사용·real-path **리더** resolve_/load_ 에는 도달 0 — sourcing
+# workflow 는 operator_payload_status 를 주입받아 disk read 0). taxonomy/overlap diagnostics/hot-post gate/community roadmap/
+# 3 contract 는 pure. r1_label_return_operational_bridge 는 dropbox readiness + r1_gold_acquisition_plan 합성(gitignored
+# outputs/ 스캔·network 0)이며 **real-path 를 읽는 `operator_confirmed_live_runner` 는 어느 ADR#91 모듈도 미import** →
+# GET 이 live/real-path 미접촉(전이 그래프에 operator payload 디스크 리더 0).
 from backend.app.tools.agent_hotness_reasoning_contract import (
     build_agent_hotness_reasoning_contract,
 )
 from backend.app.tools.community_interaction_future_gate import (
     build_community_interaction_future_gate,
 )
+from backend.app.tools.community_posting_roadmap_contract import (
+    build_community_posting_roadmap_contract,
+)
 from backend.app.tools.hot_intelligence_post_contract import (
     build_hot_intelligence_post_contract,
 )
+from backend.app.tools.hot_post_gate_alignment import build_hot_post_gate_alignment
 from backend.app.tools.ko_source_readiness import build_ko_source_lane
 from backend.app.tools.live_no_yield_taxonomy import build_live_no_yield_taxonomy
 from backend.app.tools.live_query_target import (
@@ -49,8 +56,17 @@ from backend.app.tools.live_query_target import (
 from backend.app.tools.official_news_label_intake_readiness import (
     run_official_news_label_intake_readiness,
 )
+from backend.app.tools.official_news_overlap_diagnostics import (
+    build_official_news_overlap_diagnostics,
+)
 from backend.app.tools.operator_payload_authoring_helper import (
     build_operator_payload_authoring,
+)
+from backend.app.tools.operator_payload_sourcing_workflow import (
+    build_operator_payload_sourcing_workflow,
+)
+from backend.app.tools.r1_label_return_operational_bridge import (
+    build_r1_label_return_operational_bridge,
 )
 from backend.app.tools.r1_production_candidate_acquisition import PROD_BATCH_ID
 from backend.app.tools.r1_provider_breadth_acquisition import (
@@ -148,6 +164,11 @@ DATE_PINNED_REQUIRED_COPY: tuple[str, ...] = (
     "This project targets a community-style intelligence web product, not a raw news feed",
     "Hot Intelligence Post runtime remains disabled until evidence, gold, and merge gates pass",
     "Community reaction is reaction_to only, not an evidence anchor",
+    # ADR#91 — sourcing workflow + no-yield diagnostics + hot-post gate + label-return agreement gate copy.
+    "Operator must provide a real confirmed payload before live acquisition",
+    "Live no-yield results are actionable diagnostics, not failure endpoints",
+    "Hot Post public runtime requires R1/R2 gates",
+    "Returned labels are not gold until agreement gates pass",
     "R2~R7 remain No-Go",
 )
 
@@ -338,6 +359,18 @@ def build_date_pinned_live_run_frontier(*, out: dict) -> dict:
         "hot_intelligence_post_contract_status": out["hot_intelligence_post_contract_status"],
         "agent_hotness_contract_status": out["agent_hotness_contract_status"],
         "community_interaction_gate_status": out["community_interaction_gate_status"],
+        # ADR#91 sourcing workflow + overlap diagnostics + R1 label-return bridge + hot-post gate + community roadmap
+        # (sanitized·runtime-disabled·real payload 미독·public post/comment runtime No-Go). 행동 가능한 next_action 노출.
+        "payload_sourcing_status": out["payload_sourcing_status"],
+        "payload_sourcing_next_action": out["payload_sourcing_next_action"],
+        "taxonomy_next_action": out["taxonomy_next_action"],
+        "overlap_diagnostic_status": out["overlap_diagnostic_status"],
+        "overlap_blocked_dimension": out["overlap_blocked_dimension"],
+        "r1_label_return_status": out["r1_label_return_status"],
+        "r1_label_return_next_action": out["r1_label_return_next_action"],
+        "hot_post_gate_status": out["hot_post_gate_status"],
+        "hot_post_public_readiness": bool(out["hot_post_public_readiness"]),
+        "community_posting_roadmap_status": out["community_posting_roadmap_status"],
         "ko_source_lane_status": out["ko_source_lane_status"],
         "ko_named_seed_needed": bool(out["ko_named_seed_needed"]),
         "ko_floor_current": int(out["ko_floor_current"] or 0),
@@ -550,6 +583,37 @@ def _adr90_product_contract_fields(*, operator_payload_status: str, official_new
             _CONTRACT_READY_RUNTIME_DISABLED if not hn.get("runtime_enabled") else "runtime_enabled"),
         "community_interaction_gate_status": (
             cg.get("community_interaction_gate_status") or "community_interaction_requirements_unmet"),
+    }
+
+
+def _adr91_product_ops_fields(
+    *, operator_payload_status: str, official_news_live_status: str, dropbox: dict, batch_id: str,
+) -> dict:
+    """ADR#91 sanitized frontier 필드(payload sourcing workflow + overlap diagnostics + R1 label-return bridge +
+    hot-post gate alignment + community posting roadmap).
+
+    read API 안전: sourcing workflow 는 operator_payload_status 를 **주입**받아 real path 미독(disk read 0); overlap
+    diagnostics/hot-post gate/community roadmap 은 pure; r1_label_return_bridge 는 이미 계산된 dropbox 를 주입받고
+    r1_gold_acquisition_plan 으로 gitignored outputs/ 만 스캔한다(network 0·live runner 미경유·real payload 미독)."""
+    sourcing = build_operator_payload_sourcing_workflow(operator_payload_status=operator_payload_status)
+    overlap = build_official_news_overlap_diagnostics()   # 후보 없음 → not_run.
+    r1_return = build_r1_label_return_operational_bridge(batch_id=batch_id, dropbox_readiness=dropbox)
+    hp_gate = build_hot_post_gate_alignment()             # 빈 draft → blocked_requirements_unmet.
+    roadmap = build_community_posting_roadmap_contract()
+    tax = build_live_no_yield_taxonomy(
+        {"official_news_live_status": official_news_live_status},
+        payload_entrypoint_out={"operator_payload_status": operator_payload_status})
+    return {
+        "payload_sourcing_status": sourcing["payload_sourcing_status"],
+        "payload_sourcing_next_action": sourcing["next_action"],
+        "taxonomy_next_action": tax["current"]["next_action"],
+        "overlap_diagnostic_status": overlap["overlap_diagnostic_status"],
+        "overlap_blocked_dimension": overlap.get("blocked_dimension") or "",
+        "r1_label_return_status": r1_return["r1_label_return_status"],
+        "r1_label_return_next_action": r1_return["next_action"],
+        "hot_post_gate_status": hp_gate["hot_post_gate_status"],
+        "hot_post_public_readiness": bool(hp_gate["public_readiness"]),
+        "community_posting_roadmap_status": roadmap["community_posting_roadmap_status"],
     }
 
 
@@ -791,6 +855,12 @@ def run_bounded_live_breadth_run(
     _adr90 = _adr90_product_contract_fields(
         operator_payload_status=_adr89["operator_payload_status"],
         official_news_live_status=_adr87["official_news_live_status"])
+    # ADR#91 — sourcing workflow + overlap diagnostics + R1 label-return bridge + hot-post gate + community roadmap.
+    # sourcing 은 status 주입(real path 미독)·overlap/gate/roadmap pure·r1_return 은 이미 만든 _dropbox 주입(중복 스캔 0).
+    _adr91 = _adr91_product_ops_fields(
+        operator_payload_status=_adr89["operator_payload_status"],
+        official_news_live_status=_adr87["official_news_live_status"],
+        dropbox=_dropbox, batch_id=batch_id)
 
     out = {
         "operation_name": BOUNDED_OPERATION_NAME,
@@ -907,6 +977,19 @@ def run_bounded_live_breadth_run(
         "hot_intelligence_post_contract_status": _adr90["hot_intelligence_post_contract_status"],
         "agent_hotness_contract_status": _adr90["agent_hotness_contract_status"],
         "community_interaction_gate_status": _adr90["community_interaction_gate_status"],
+        # ADR#91 sourcing workflow + overlap diagnostics + R1 label-return bridge + hot-post gate + community roadmap
+        # (sanitized 문자열/bool·runtime-disabled·real payload 미독·public post/comment runtime No-Go). operator 가
+        # 다음에 무엇을 채우고/고치고/import 할지를 행동 가능한 next_action 으로 노출(상용 운영자 관점).
+        "payload_sourcing_status": _adr91["payload_sourcing_status"],
+        "payload_sourcing_next_action": _adr91["payload_sourcing_next_action"],
+        "taxonomy_next_action": _adr91["taxonomy_next_action"],
+        "overlap_diagnostic_status": _adr91["overlap_diagnostic_status"],
+        "overlap_blocked_dimension": _adr91["overlap_blocked_dimension"],
+        "r1_label_return_status": _adr91["r1_label_return_status"],
+        "r1_label_return_next_action": _adr91["r1_label_return_next_action"],
+        "hot_post_gate_status": _adr91["hot_post_gate_status"],
+        "hot_post_public_readiness": _adr91["hot_post_public_readiness"],
+        "community_posting_roadmap_status": _adr91["community_posting_roadmap_status"],
         # KO source lane(§3-E·§8).
         "ko_source_lane_status": ko_lane["ko_source_lane_status"],
         "ko_named_seed_needed": ko_lane["ko_named_seed_needed"],

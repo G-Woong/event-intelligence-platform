@@ -478,6 +478,19 @@ class InternalOpsDatePinnedLiveRunFrontier(BaseModel):
     hot_intelligence_post_contract_status: str
     agent_hotness_contract_status: str
     community_interaction_gate_status: str
+    # ADR#91 sourcing workflow(real payload 작성 절차) + overlap diagnostics(no-yield 차원 분해) + R1 label-return
+    # bridge(intake_command + 승격 상태) + hot-post gate alignment(public_readiness 를 gold/merge/evidence 에 결속) +
+    # community posting roadmap(8단계·runtime 0). 전부 sanitized 문자열/bool — public post·comment runtime No-Go.
+    payload_sourcing_status: str
+    payload_sourcing_next_action: str
+    taxonomy_next_action: str
+    overlap_diagnostic_status: str
+    overlap_blocked_dimension: str
+    r1_label_return_status: str
+    r1_label_return_next_action: str
+    hot_post_gate_status: str
+    hot_post_public_readiness: bool
+    community_posting_roadmap_status: str
     ko_source_lane_status: str
     ko_named_seed_needed: bool
     ko_floor_current: int

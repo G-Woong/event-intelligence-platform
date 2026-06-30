@@ -661,6 +661,43 @@
 - 경계: R-HotPostContractPrematureRuntime(post 게시)와 달리, 본 RISK 는 *댓글/응답 runtime ≠ contract* 한 점만 본다.
 - Current mitigation: `runtime_enabled=False`·`comment_reply_generation=False`·`comment_auto_reply_enabled=False`·`user_comment_runtime_open=False`·**all_requirements_met 이어도 runtime disabled**(public-IU/MERGE_GATE No-Go)·`community_is_evidence_anchor=False`. 잠금: test_community_interaction_future_gate(runtime disabled·comment reply 0·all_met 이어도 disabled).
 - Closure: 11 requirement + public-IU/MERGE_GATE 통과 후에만 runtime 검토·그 전까지 LOW 유지·**계약을 runtime 으로·community 를 anchor 로 둔갑 금지**.
+- ADR#91 부분진전: `official_news_overlap_diagnostics.py` 가 entity/action/date/canonical/published/role/window 차원을 분리(bridge feature 재사용 + seed 토큰 ∩ shared_tokens)하고 기존 `classify_overlap_failure` 로 verdict 를 얻어 umbrella 사각을 줄였다. **종결 금지**: 실 payload 미제공으로 live 결과에 적용된 적 없음(현 not_run).
+
+### R-OperatorPayloadSourcingUXGap · sourcing workflow 가 있어도 operator 가 real confirmed payload 를 못 만드는 병목 잔존  — Severity: LOW (신규 2026-06-30 · ADR#91 — operator payload sourcing workflow 도입에 따른 경계 RISK)
+- Area: operator payload sourcing / real payload authoring 병목
+- Description: ADR#91 `operator_payload_sourcing_workflow.py` 가 authoring 템플릿 + real path + 검증/live 명령 + 체크리스트를 한 곳에 모았다. 그러나 병목의 본질(operator 가 *실제 사건 발생을 확인* 하고 confirmed payload 를 작성·drop)은 코드가 대신할 수 없다(fabricate 금지). 위험은 절차가 여전히 부족해 real payload 가 안 들어와 live 가 영영 blocked 되는 것이다.
+- Current mitigation: 행동 가능한 6단계 체크리스트·real/example path·validation_command(live_approved=false)·manual live_command·safety_notes·`payload_sourcing_next_action`(frontier 노출). 코드는 operator_confirmed/live_approved 를 자동으로 쓰지 않고 real path 에 자동 기록하지 않는다(disk write 0). 잠금: test_operator_payload_sourcing_workflow(real path·명령·draft live 불가·confirmed/approved False).
+- Closure: 실 operator 가 payload 를 drop → live 실행 → 절차 충분성 실증 시 LOW 유지·**authoring 템플릿을 real confirmed payload 로 둔갑 금지**.
+
+### R-OfficialNewsOverlapDiagnosticDrift · overlap 진단 score/차원 분류가 truth 로 둔갑하거나 bridge gate 와 어긋남  — Severity: LOW (신규 2026-06-30 · ADR#91 — official×news overlap diagnostics 도입에 따른 경계 RISK)
+- Area: official×news overlap diagnostics / 진단 ≠ truth 경계
+- Description: ADR#91 `official_news_overlap_diagnostics.py` 가 no-yield 를 차원별로 분해해 operator 조정 제안을 만든다. 위험은 ① 진단 결과(entity/action overlap count·blocked_dimension)가 reviewer/public artifact 에 노출돼 truth/score 로 오인되거나, ② entity/action 토큰 도출이 bridge 의 결합 게이트와 어긋나 freeze 판정과 불일치하는 것이다.
+- Current mitigation: `is_truth=False`·`same_event_asserted=False`·`merge_allowed=False`·`reviewer_facing=False`·`public_exposed=False`·composite score 미생성·sanitized 투영은 status/dimension/count 만. entity/action 은 bridge `shared_tokens`(official∩news 교집합) ∩ seed 토큰으로 도출(bridge feature 재사용). 잠금: test_official_news_overlap_diagnostics(차원별 분류·not exposed·taxonomy 매퍼 재사용).
+- Closure: 실 live 결과에 적용해 진단↔freeze 정합 실증 시 LOW 유지·**진단을 same_event truth 로·reviewer/public 에 score 노출 금지**.
+
+### R-R1ReturnBridgeGoldLeakage · R1 label return bridge 의 intake_command/승격 상태가 gold 존재로 오인  — Severity: LOW (신규 2026-06-30 · ADR#91 — R1 label return operational bridge 도입에 따른 경계 RISK)
+- Area: R1 label return bridge / gold 승격 경계
+- Description: ADR#91 `r1_label_return_operational_bridge.py` 가 returned label 도착 시 `intake_command` + gold_promotion_status 를 노출한다. 위험은 ① intake_command 가 *실행되면 gold 가 생긴다* 고 오인되거나, ② gold_promotion_status 가 production gold 존재로 둔갑하는 것이다(실은 ≥2 reviewer 합의 전까지 0).
+- Current mitigation: production_gold_count 는 `r1_gold_acquisition_plan` exact passthrough(bridge 가 증가 0)·synthetic/single/unsure 미승격 플래그 passthrough·`agreement_required_for_gold=True`·gold_promotion_blockers 명명·merge_allowed=False. 잠금: test_r1_label_return_operational_bridge(synthetic/single/unsure 미승격·no gold without agreement·validation/intake command).
+- Closure: 실 returned human label → 2-reviewer 합의 → gold 승격 실증 시 LOW 유지·**intake_command 실행을 gold 생성으로·승격 상태를 production gold 로 둔갑 금지**.
+
+### R-HotPostGateAlignmentDrift · Hot Post public_readiness 가 runtime latch 와 혼동되거나 조기 True  — Severity: LOW (신규 2026-06-30 · ADR#91 — Hot Post gate alignment 도입에 따른 경계 RISK)
+- Area: Hot Post gate alignment / public_readiness ≠ runtime 경계
+- Description: ADR#91 `hot_post_gate_alignment.py` 가 public_readiness 를 11개 요구(gold/merge/evidence/source-role/community/safety/moderation/reply)에 결속한다. 위험은 ① public_readiness=True(전 요구 충족)가 *게시 가능* 으로 오인되거나(실은 runtime latch 별개·항상 disabled), ② 일부 요구만으로 readiness 가 조기 True 되는 것이다.
+- Current mitigation: 모든 요구 충족이어도 `runtime_enabled=False`·`public_post_body_generated=False`·`comment_reply_generation=False`·`publishable=False`·hotness/community/official 단독 게시 불가 상수. public_readiness = 11요구 **전부** 충족일 때만. 잠금: test_hot_post_gate_alignment(no gold/merge/community/hotness/official/uncertainty → false·all met 이어도 runtime disabled).
+- Closure: public Hot Post runtime 은 후속 ADR 의 auth/safety gate 후에만·그 전까지 LOW 유지·**public_readiness 를 게시 허가로·요구 일부로 readiness True 금지**.
+
+### R-CommunityRoadmapOverclaim · community posting roadmap 의 단계가 runtime 활성으로 오인  — Severity: LOW (신규 2026-06-30 · ADR#91 — community posting roadmap contract 도입에 따른 경계 RISK)
+- Area: community posting roadmap / 순서 계약 ≠ runtime 경계
+- Description: ADR#91 `community_posting_roadmap_contract.py` 가 게시→반응→moderation→댓글→후속 8단계 순서를 정의한다. 위험은 후반 단계(stage_4 reaction·stage_6 comment reply·stage_7 followup)가 *지금 가동 가능* 으로 오인되는 것이다.
+- Current mitigation: 전 단계 `publish_runtime="disabled"`·`comment_reply_runtime="disabled"`·top-level `runtime_enabled=False`·`comment_reply_generation=False`·`community_reaction_anchor=False`·`agent_followup_fabricates_facts=False`·terminal 단계는 `community_interaction_future_gate.all_requirements_met` 참조(11요구 단일 출처). 잠금: test_community_posting_roadmap_contract(단계 순서·publish 전 게시 0·moderation 전 reply 0·reaction_to only·날조 0).
+- Closure: 각 runtime 은 해당 gate 통과 후 별도 ADR 로만 개방·그 전까지 LOW 유지·**roadmap 단계를 runtime 가동으로 둔갑 금지**.
+
+### R-PublicReadinessFalsePositive · public_readiness=True 가 게시 준비 완료로 오인(runtime off 무시)  — Severity: LOW (신규 2026-06-30 · ADR#91 — Hot Post gate alignment public_readiness 표면화에 따른 경계 RISK)
+- Area: public readiness 표면화 / 게시 false positive
+- Description: frontier 에 `hot_post_public_readiness` 가 노출된다. 위험은 운영자가 이 bool 을 *게시해도 됨* 으로 읽어 runtime No-Go 경계를 무시하는 것이다.
+- Current mitigation: 현 상태 항상 False(gold/merge/evidence 부재)·frontier copy "Hot Post public runtime requires R1/R2 gates"·`hot_post_gate_status=blocked_requirements_unmet`·runtime latch 는 readiness 와 별개로 항상 disabled. 잠금: test_internal_ops_api(allowed set·sanitized)·opsPilotExecutionView.test.mjs(public readiness false·warning copy).
+- Closure: public Hot Post runtime ADR 도달 + auth/safety gate 후에만 의미 부여·그 전까지 LOW 유지·**readiness bool 을 게시 허가로 둔갑 금지**.
 
 ### R-DiscoveryCostStarvation · 발견 triage가 확장 LLM 예산 잠식  — Severity: MEDIUM (미래, 2026-06-20 신규 — adversarial)
 - Area: Authority Discovery / budget / 발견 폭주

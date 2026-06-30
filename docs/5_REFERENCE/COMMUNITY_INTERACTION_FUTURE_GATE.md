@@ -52,4 +52,5 @@ human_override · rate_limit · audit_log
 - `RAG_KG_ENTITY_GATE_CONTRACT.md §2/§4/§5` (reaction_to·attach-timing·public-IU gate)
 - `HOT_INTELLIGENCE_POST_CONTRACT.md §2/§4` (reply_policy disabled·public_readiness)
 - `AGENT_HOTNESS_REASONING_CONTRACT.md §2` (community_layer_requirements)
+- `COMMUNITY_POSTING_ROADMAP_CONTRACT.md` (ADR#91·이 gate 를 stage_6 의 precondition 으로 참조하는 8단계 순서)
 - `docs/2_ROADMAP/19_WEB_INTELLIGENCE_IMPLEMENTATION_SPEC.md §9.3` (debate 수용 기준·investment-advice/evidence-less blocking)

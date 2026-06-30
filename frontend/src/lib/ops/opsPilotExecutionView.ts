@@ -524,6 +524,11 @@ export const OPS_DATE_PINNED_COPY = {
   communityStyleProduct: "This project targets a community-style intelligence web product, not a raw news feed",
   hotPostRuntimeDisabled: "Hot Intelligence Post runtime remains disabled until evidence, gold, and merge gates pass",
   communityReactionOnly: "Community reaction is reaction_to only, not an evidence anchor",
+  // ADR#91 — sourcing workflow + no-yield diagnostics + hot-post gate + label-return agreement gate copy.
+  realPayloadBeforeLive: "Operator must provide a real confirmed payload before live acquisition",
+  liveNoYieldActionable: "Live no-yield results are actionable diagnostics, not failure endpoints",
+  hotPostRequiresR1R2: "Hot Post public runtime requires R1/R2 gates",
+  returnedLabelsNotGoldUntilAgreement: "Returned labels are not gold until agreement gates pass",
   laddersNoGo: "R2~R7 remain No-Go",
 } as const;
 
@@ -590,6 +595,16 @@ export function toR1DatePinnedLiveRunFrontierDisplayRows(
     { label: "Hot Intelligence Post contract (runtime disabled)", value: f.hot_intelligence_post_contract_status },
     { label: "Agent hotness reasoning contract (runtime disabled)", value: f.agent_hotness_contract_status },
     { label: "Community interaction gate (runtime disabled)", value: f.community_interaction_gate_status },
+    { label: "Operator payload sourcing status", value: f.payload_sourcing_status },
+    { label: "Payload sourcing next action", value: f.payload_sourcing_next_action },
+    { label: "Live no-yield taxonomy next action", value: f.taxonomy_next_action },
+    { label: "Official×news overlap diagnostic status", value: f.overlap_diagnostic_status },
+    { label: "Overlap blocked dimension", value: f.overlap_blocked_dimension || "(none)" },
+    { label: "R1 label return status", value: f.r1_label_return_status },
+    { label: "R1 label return next action", value: f.r1_label_return_next_action },
+    { label: "Hot Post gate alignment status", value: f.hot_post_gate_status },
+    { label: "Hot Post public readiness (requires R1/R2)", value: String(f.hot_post_public_readiness) },
+    { label: "Community posting roadmap status (runtime disabled)", value: f.community_posting_roadmap_status },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -624,6 +639,11 @@ export function r1DatePinnedLiveRunFrontierWarnings(
   ensure(OPS_DATE_PINNED_COPY.communityStyleProduct);
   ensure(OPS_DATE_PINNED_COPY.hotPostRuntimeDisabled);
   ensure(OPS_DATE_PINNED_COPY.communityReactionOnly);
+  // ADR#91 — sourcing workflow + no-yield diagnostics + hot-post gate + label-return agreement gate copy.
+  ensure(OPS_DATE_PINNED_COPY.realPayloadBeforeLive);
+  ensure(OPS_DATE_PINNED_COPY.liveNoYieldActionable);
+  ensure(OPS_DATE_PINNED_COPY.hotPostRequiresR1R2);
+  ensure(OPS_DATE_PINNED_COPY.returnedLabelsNotGoldUntilAgreement);
   if (f.r2_r7_no_go) ensure(OPS_DATE_PINNED_COPY.laddersNoGo);
   return out;
 }

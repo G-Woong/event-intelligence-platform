@@ -77,4 +77,6 @@ IU §2 대비 **추가 필드**: `headline`, `why_it_is_hot`, `public_readiness_
 - `RAG_KG_ENTITY_GATE_CONTRACT.md §2/§4/§5` (reaction_to·attach-timing·public-IU gate)
 - `AGENT_HOTNESS_REASONING_CONTRACT.md` (어떤 사건을 post 후보로 고를지)
 - `COMMUNITY_INTERACTION_FUTURE_GATE.md` (댓글/응답 runtime gate)
+- `HOT_POST_GATE_ALIGNMENT.md` (ADR#91·이 계약의 `evaluate_hot_post_readiness` 를 COMPOSE 해 public_readiness 를 R1/R2·gold·evidence 에 결속)
+- `COMMUNITY_POSTING_ROADMAP_CONTRACT.md` (ADR#91·이 계약은 stage_2 draft·HOT_POST_GATE_ALIGNMENT 는 stage_3 gate)
 - `docs/2_ROADMAP/19_WEB_INTELLIGENCE_IMPLEMENTATION_SPEC.md §9` (Agent Debate Layer)

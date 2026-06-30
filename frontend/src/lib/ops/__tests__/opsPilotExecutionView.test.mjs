@@ -1274,6 +1274,10 @@ const OPS_DATE_PINNED_COPY = {
   communityStyleProduct: "This project targets a community-style intelligence web product, not a raw news feed",
   hotPostRuntimeDisabled: "Hot Intelligence Post runtime remains disabled until evidence, gold, and merge gates pass",
   communityReactionOnly: "Community reaction is reaction_to only, not an evidence anchor",
+  realPayloadBeforeLive: "Operator must provide a real confirmed payload before live acquisition",
+  liveNoYieldActionable: "Live no-yield results are actionable diagnostics, not failure endpoints",
+  hotPostRequiresR1R2: "Hot Post public runtime requires R1/R2 gates",
+  returnedLabelsNotGoldUntilAgreement: "Returned labels are not gold until agreement gates pass",
   laddersNoGo: "R2~R7 remain No-Go",
 };
 
@@ -1335,6 +1339,16 @@ function toR1DatePinnedLiveRunFrontierDisplayRows(f) {
     { label: "Hot Intelligence Post contract (runtime disabled)", value: f.hot_intelligence_post_contract_status },
     { label: "Agent hotness reasoning contract (runtime disabled)", value: f.agent_hotness_contract_status },
     { label: "Community interaction gate (runtime disabled)", value: f.community_interaction_gate_status },
+    { label: "Operator payload sourcing status", value: f.payload_sourcing_status },
+    { label: "Payload sourcing next action", value: f.payload_sourcing_next_action },
+    { label: "Live no-yield taxonomy next action", value: f.taxonomy_next_action },
+    { label: "Official×news overlap diagnostic status", value: f.overlap_diagnostic_status },
+    { label: "Overlap blocked dimension", value: f.overlap_blocked_dimension || "(none)" },
+    { label: "R1 label return status", value: f.r1_label_return_status },
+    { label: "R1 label return next action", value: f.r1_label_return_next_action },
+    { label: "Hot Post gate alignment status", value: f.hot_post_gate_status },
+    { label: "Hot Post public readiness (requires R1/R2)", value: String(f.hot_post_public_readiness) },
+    { label: "Community posting roadmap status (runtime disabled)", value: f.community_posting_roadmap_status },
     { label: "KO source lane status", value: f.ko_source_lane_status },
     { label: "KO named seed needed", value: String(f.ko_named_seed_needed) },
     { label: "KO floor", value: `${f.ko_floor_current}/${f.ko_floor_required}` },
@@ -1364,6 +1378,10 @@ function r1DatePinnedLiveRunFrontierWarnings(f) {
   ensure(OPS_DATE_PINNED_COPY.communityStyleProduct);
   ensure(OPS_DATE_PINNED_COPY.hotPostRuntimeDisabled);
   ensure(OPS_DATE_PINNED_COPY.communityReactionOnly);
+  ensure(OPS_DATE_PINNED_COPY.realPayloadBeforeLive);
+  ensure(OPS_DATE_PINNED_COPY.liveNoYieldActionable);
+  ensure(OPS_DATE_PINNED_COPY.hotPostRequiresR1R2);
+  ensure(OPS_DATE_PINNED_COPY.returnedLabelsNotGoldUntilAgreement);
   if (f.r2_r7_no_go) ensure(OPS_DATE_PINNED_COPY.laddersNoGo);
   return out;
 }
@@ -1427,6 +1445,18 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
   hot_intelligence_post_contract_status: "contract_ready_runtime_disabled",
   agent_hotness_contract_status: "contract_ready_runtime_disabled",
   community_interaction_gate_status: "community_interaction_requirements_unmet",
+  payload_sourcing_status: "real_payload_absent_template_ready",
+  payload_sourcing_next_action:
+    "author the payload from the template, save it to inputs/operator_events/operator_regulatory_event_payload.json (gitignored), validate with live_approved=false, then confirm + approve and run the live command — no real payload is present yet",
+  taxonomy_next_action: "author and drop a real operator payload (use the authoring helper), then approve a live run",
+  overlap_diagnostic_status: "not_run",
+  overlap_blocked_dimension: "",
+  r1_label_return_status: "awaiting_returned_labels",
+  r1_label_return_next_action:
+    "no returned labels yet — distribute the handoff bundle manually, place returned JSONL in the gitignored intake directory, then run the intake command",
+  hot_post_gate_status: "blocked_requirements_unmet",
+  hot_post_public_readiness: false,
+  community_posting_roadmap_status: "community_posting_roadmap_defined_runtime_disabled",
   ko_source_lane_status: "ready_5_keyfree_live_ko_news_anchors",
   ko_named_seed_needed: true,
   ko_floor_current: 0,
@@ -1457,6 +1487,10 @@ const SAMPLE_DATE_PINNED_FRONTIER = {
     "This project targets a community-style intelligence web product, not a raw news feed",
     "Hot Intelligence Post runtime remains disabled until evidence, gold, and merge gates pass",
     "Community reaction is reaction_to only, not an evidence anchor",
+    "Operator must provide a real confirmed payload before live acquisition",
+    "Live no-yield results are actionable diagnostics, not failure endpoints",
+    "Hot Post public runtime requires R1/R2 gates",
+    "Returned labels are not gold until agreement gates pass",
     "R2~R7 remain No-Go",
   ],
   flags: {
@@ -1729,6 +1763,47 @@ describe("ADR#83 date-pinned live query plumbing + bounded live run + freeze fro
     for (const k of [
       "operator_payload_template_ready", "operator_payload_next_action", "live_no_yield_taxonomy_status",
       "hot_intelligence_post_contract_status", "agent_hotness_contract_status", "community_interaction_gate_status",
+    ]) {
+      assert.ok(k in SAMPLE_DATE_PINNED_FRONTIER, `missing ${k}`);
+    }
+  });
+
+  it("(ADR#91) shows sourcing status + overlap not_run + R1 label-return awaiting + hot-post blocked + roadmap runtime-disabled", () => {
+    const byLabel = Object.fromEntries(
+      toR1DatePinnedLiveRunFrontierDisplayRows(SAMPLE_DATE_PINNED_FRONTIER).map((r) => [r.label, r.value]),
+    );
+    // payload 미제공 → sourcing 은 템플릿 작성 절차를 안내(real path 부재).
+    assert.equal(byLabel["Operator payload sourcing status"], "real_payload_absent_template_ready");
+    // live 미실행 → overlap 진단 not_run·blocked dimension 없음.
+    assert.equal(byLabel["Official×news overlap diagnostic status"], "not_run");
+    assert.equal(byLabel["Overlap blocked dimension"], "(none)");
+    // returned label 0 → R1 label-return 은 awaiting(intake_command 대기).
+    assert.equal(byLabel["R1 label return status"], "awaiting_returned_labels");
+    // Hot Post gate 는 gold/merge/evidence 미충족 → blocked·public readiness false(runtime No-Go).
+    assert.equal(byLabel["Hot Post gate alignment status"], "blocked_requirements_unmet");
+    assert.equal(byLabel["Hot Post public readiness (requires R1/R2)"], "false");
+    // community posting roadmap 은 정의됐으나 runtime disabled.
+    assert.equal(
+      byLabel["Community posting roadmap status (runtime disabled)"],
+      "community_posting_roadmap_defined_runtime_disabled",
+    );
+  });
+
+  it("(ADR#91) warns: real payload before live + no-yield is actionable + Hot Post requires R1/R2 + labels not gold until agreement", () => {
+    const w = r1DatePinnedLiveRunFrontierWarnings(SAMPLE_DATE_PINNED_FRONTIER);
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.realPayloadBeforeLive));
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.liveNoYieldActionable));
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.hotPostRequiresR1R2));
+    assert.ok(w.includes(OPS_DATE_PINNED_COPY.returnedLabelsNotGoldUntilAgreement));
+  });
+
+  it("(ADR#91) keeps the date-pinned frontier sanitized with the 10 ADR#91 fields (no forbidden keys)", () => {
+    assert.doesNotThrow(() => assertOpsContractSafe(SAMPLE_DATE_PINNED_FRONTIER));
+    for (const k of [
+      "payload_sourcing_status", "payload_sourcing_next_action", "taxonomy_next_action",
+      "overlap_diagnostic_status", "overlap_blocked_dimension", "r1_label_return_status",
+      "r1_label_return_next_action", "hot_post_gate_status", "hot_post_public_readiness",
+      "community_posting_roadmap_status",
     ]) {
       assert.ok(k in SAMPLE_DATE_PINNED_FRONTIER, `missing ${k}`);
     }

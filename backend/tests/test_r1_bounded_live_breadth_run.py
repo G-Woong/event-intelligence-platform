@@ -275,7 +275,7 @@ def test_date_pinned_frontier_matches_pydantic_schema_exactly():
     f = out["internal_ops_date_pinned_live_run_frontier"]
     model = InternalOpsDatePinnedLiveRunFrontier(**f)   # raises on missing/type mismatch.
     assert set(f.keys()) == set(InternalOpsDatePinnedLiveRunFrontier.model_fields.keys())
-    assert len(f) == 68   # ADR#90 +6(payload template/next action·no-yield taxonomy·hot-post/hotness/community contract).
+    assert len(f) == 78   # ADR#91 +10(payload sourcing + taxonomy next action + overlap diagnostics + R1 label-return + hot-post gate + community roadmap).
     assert model.r2_r7_no_go is True
     assert model.latest_date_pinned_live_run_status == BLOCKED_MISSING_OPERATOR_EVENT
     # ADR#84: no live run(synthetic base) → date window 미강제·handoff 미준비(freeze 없음).
